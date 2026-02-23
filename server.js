@@ -24,7 +24,7 @@ downloadAndParseInstruments();
 
 // Middlewares
 app.use(express.json());
-app.use(cors());
+app.use(cors({orgins: '*'}));
 
 // ✅ 1. HTTP Server Create (Socket.io ke liye)
 const server = http.createServer(app);
@@ -32,7 +32,7 @@ const server = http.createServer(app);
 // ✅ 2. Socket.io Setup
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:5173", "http://localhost:3000"], // Frontend URL allow karein
+    origin: "*", // Frontend URL allow karein
     methods: ["GET", "POST"]
   }
 });
