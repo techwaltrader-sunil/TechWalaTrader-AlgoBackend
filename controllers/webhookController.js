@@ -190,11 +190,53 @@ const symbolMapper = {
 const getStrikeStep = (symbol) => {
     const sym = symbol.toUpperCase();
     if (sym.includes("BANKNIFTY")) return 100;
-    if (sym.includes("FINNIFTY") || sym.includes("NIFTY")) return 50;
+    if (sym.includes("FINNIFTY")) return 50;
+    if (sym.includes("MIDCPNIFTY")) return 25; // ✅ Naya: Midcap ke liye 25 point ka gap
+    if (sym.includes("NIFTY")) return 50;
     if (sym.includes("SENSEX")) return 100;
-    if (sym.includes("MIDCPNIFTY")) return 25;
     return 50; // Default fallback
 };
+
+// // 🔥 HELPER 2: Real Live Price Fetcher (Yahoo Finance API) 🔥
+// const fetchLivePrice = async (symbol) => {
+//     try {
+//         console.log(`📡 Fetching Live Price for ${symbol} from Global Market...`);
+        
+//         let ticker = "";
+//         const upperSymbol = symbol.toUpperCase();
+
+//         // Yahoo Finance ke liye Indian Indices ke Ticker Codes
+//         if (upperSymbol.includes("BANKNIFTY")) {
+//             ticker = "^NSEBANK";
+//         } else if (upperSymbol.includes("FINNIFTY")) {
+//             ticker = "NIFTY_FIN_SERVICE.NS"; 
+//         } else if (upperSymbol.includes("NIFTY")) {
+//             ticker = "^NSEI";
+//         } else if (upperSymbol.includes("SENSEX")) {
+//             ticker = "^BSESN";
+//         } else {
+//             console.log(`⚠️ Live price ticker not found for: ${symbol}`);
+//             return null;
+//         }
+
+//         // Yahoo Finance ki Free Open API
+//         const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1m`;
+        
+//         const response = await axios.get(url, {
+//             headers: {
+//                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' // Taki Yahoo block na kare
+//             }
+//         });
+
+//         // Response se Live Market Price (LTP) nikalna
+//         const ltp = response.data.chart.result[0].meta.regularMarketPrice;
+        
+//         return ltp;
+//     } catch (error) {
+//         console.error("❌ Error fetching Real-time LTP:", error.message);
+//         return null;
+//     }
+// };
 
 // 🔥 HELPER 2: Real Live Price Fetcher (Yahoo Finance API) 🔥
 const fetchLivePrice = async (symbol) => {
@@ -209,6 +251,8 @@ const fetchLivePrice = async (symbol) => {
             ticker = "^NSEBANK";
         } else if (upperSymbol.includes("FINNIFTY")) {
             ticker = "NIFTY_FIN_SERVICE.NS"; 
+        } else if (upperSymbol.includes("MIDCPNIFTY")) {
+            ticker = "NIFTY_MIDCAP_SELECT.NS"; // ✅ Naya: Midcap Select ka exact Yahoo Ticker
         } else if (upperSymbol.includes("NIFTY")) {
             ticker = "^NSEI";
         } else if (upperSymbol.includes("SENSEX")) {
@@ -223,7 +267,7 @@ const fetchLivePrice = async (symbol) => {
         
         const response = await axios.get(url, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' // Taki Yahoo block na kare
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' 
             }
         });
 
