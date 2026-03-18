@@ -806,7 +806,8 @@ const handleTradingViewAlert = async (req, res) => {
         let securityId = null;
         let exchangeSegment = null;
         let finalSymbolName = alertData.symbol;
-        let targetStrike = alertData.strike ? alertData.strike.toString().toUpperCase() : null;
+        // let targetStrike = alertData.strike ? alertData.strike.toString().toUpperCase() : null;
+        let targetStrike = alertData.strike ? alertData.strike.toString().toUpperCase().trim() : null;
 
         // 🎯 THE ATM MAGIC LOGIC
         if (targetStrike === "ATM") {
