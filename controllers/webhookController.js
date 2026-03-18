@@ -608,12 +608,29 @@ const handleTradingViewAlert = async (req, res) => {
             
             if (!optionData) {
                 console.log(`❌ Option Contract [${alertData.symbol} ${targetStrike} ${alertData.option_type}] not found!`);
+                
+                // 🔥 NAYA FIX: Agar Option Contract nahi mila, toh Frontend par error log bhejo 🔥
+                for (const broker of activeBrokers) {
+                    const failedLog = await AlgoTradeLog.create({
+                        brokerId: broker._id,
+                        brokerName: broker.name,
+                        // Symbol me calculated strike dikhayenge taaki aapko pata chale ki kya calculate hua tha
+                        symbol: `${alertData.symbol} ${targetStrike} ${alertData.option_type}`, 
+                        action: alertData.action,
+                        quantity: alertData.quantity || 1,
+                        status: 'FAILED',
+                        message: `Trade Aborted: Option contract not found for calculated strike ${targetStrike}. Please update master data.`
+                    });
+                    const io = req.app.get('io');
+                    if (io) io.emit('new-trade-log', failedLog);
+                }
+
                 return res.status(400).json({ error: "Option contract not found for current expiry." });
             }
             
             securityId = optionData.id;
             exchangeSegment = optionData.exchange;
-            finalSymbolName = optionData.tradingSymbol; 
+            finalSymbolName = optionData.tradingSymbol;
             
             drvExpiryDate = optionData.expiry; 
             drvOptionType = optionData.optionType; 
