@@ -129,15 +129,13 @@
 
 // module.exports = { runBacktestSimulator };
 
-
 const Strategy = require('../models/Strategy');
 
 // 🔥 THE SIMULATOR ENGINE 🔥
-// Ye function pichle 6 mahine ka realistic dummy data generate karega
 const runBacktestSimulator = async (req, res) => {
     try {
         const { strategyId } = req.params;
-        const { period } = req.query; // ✅ Naya: Frontend se period receive karo
+        const { period } = req.query; // Frontend se period receive karo
         
         const strategy = await Strategy.findById(strategyId);
         if (!strategy) {
@@ -146,15 +144,34 @@ const runBacktestSimulator = async (req, res) => {
 
         console.log(`🚀 Running Backtest for: ${strategy.name} | Period: ${period || '6M'}`);
 
-        // ✅ NAYA LOGIC: Period ke hisab se Trading Days set karo
-        let totalTradingDays = 120; // Default 6 Months (Approx 20 days/month)
-        
-        if (period === '1M') totalTradingDays = 22;
-        else if (period === '3M') totalTradingDays = 65;
-        else if (period === '6M') totalTradingDays = 130;
-        else if (period === '1Y') totalTradingDays = 250;
-        else if (period === '2Y') totalTradingDays = 500;
-        else if (period === 'Custom') totalTradingDays = 45; // Default for custom if no dates
+        // ✅ NAYA LOGIC: Period ke hisab se Trading Days aur Start Date set karo
+        let totalTradingDays = 120; 
+        let currentDate = new Date(); // Aaj ki date (Isko dobara declare nahi karna hai)
+
+        if (period === '1M') {
+            totalTradingDays = 22;
+            currentDate.setMonth(currentDate.getMonth() - 1); 
+        } 
+        else if (period === '3M') {
+            totalTradingDays = 65;
+            currentDate.setMonth(currentDate.getMonth() - 3); 
+        } 
+        else if (period === '6M') {
+            totalTradingDays = 130;
+            currentDate.setMonth(currentDate.getMonth() - 6); 
+        } 
+        else if (period === '1Y') {
+            totalTradingDays = 250;
+            currentDate.setFullYear(currentDate.getFullYear() - 1); 
+        } 
+        else if (period === '2Y') {
+            totalTradingDays = 500;
+            currentDate.setFullYear(currentDate.getFullYear() - 2); 
+        } 
+        else { 
+            totalTradingDays = 130; // Default 6M
+            currentDate.setMonth(currentDate.getMonth() - 6);
+        }
 
         let currentEquity = 0;
         let peakEquity = 0;
@@ -169,14 +186,13 @@ const runBacktestSimulator = async (req, res) => {
         const equityCurve = [];
         const daywiseBreakdown = [];
 
-        // 3. Risk Management & Logic (Strategy data se uthaya hua ya default)
+        // 3. Risk Management & Logic
         const riskData = strategy.data?.riskManagement || {};
         const dailyMaxProfitLimit = riskData.maxProfit > 0 ? riskData.maxProfit : 2500;
         const dailyMaxLossLimit = riskData.maxLoss > 0 ? -riskData.maxLoss : -1500;
 
         // 4. Daily Loop (Generate Dummy Data)
-        let currentDate = new Date();
-        currentDate.setMonth(currentDate.getMonth() - 6); // 6 mahine pichhe jao
+        // ❌ Yahan se purana 'let currentDate' hata diya gaya hai!
 
         for (let i = 0; i < totalTradingDays; i++) {
             // Skip Weekends (Saturday=6, Sunday=0)
@@ -184,34 +200,31 @@ const runBacktestSimulator = async (req, res) => {
                 currentDate.setDate(currentDate.getDate() + 1);
             }
 
-            // Ek din me 1 se 5 trades random lenge (Re-entry logic mimic karne ke liye)
+            // Ek din me 1 se 5 trades random lenge
             const tradesToday = Math.floor(Math.random() * 5) + 1; 
             let dailyPnL = 0;
 
             for (let t = 0; t < tradesToday; t++) {
-                // 30% chance Win ka, 70% chance Loss ka (Options Buying reality)
                 const isWin = Math.random() > 0.70; 
                 
                 let tradePnL = 0;
                 if (isWin) {
-                    tradePnL = Math.floor(Math.random() * 1500) + 500; // Profit between 500 to 2000
+                    tradePnL = Math.floor(Math.random() * 1500) + 500; 
                     winTrades++;
                     if (tradePnL > maxProfitTrade) maxProfitTrade = tradePnL;
                 } else {
-                    tradePnL = -(Math.floor(Math.random() * 500) + 200); // Loss between -200 to -700 (Small SL)
+                    tradePnL = -(Math.floor(Math.random() * 500) + 200); 
                     lossTrades++;
                     if (tradePnL < maxLossTrade) maxLossTrade = tradePnL;
                 }
                 
                 dailyPnL += tradePnL;
 
-                // Daily Risk Limit Check (Max Profit/Max Loss hit ho gaya toh trade band)
                 if (dailyPnL >= dailyMaxProfitLimit || dailyPnL <= dailyMaxLossLimit) {
                     break; 
                 }
             }
 
-            // Streak & Win/Loss Day Logic
             if (dailyPnL > 0) {
                 winDays++;
                 currentWinStreak++;
@@ -224,7 +237,6 @@ const runBacktestSimulator = async (req, res) => {
                 if (currentLossStreak > maxLossStreak) maxLossStreak = currentLossStreak;
             }
 
-            // Equity & Drawdown Logic
             currentEquity += dailyPnL;
             if (currentEquity > peakEquity) peakEquity = currentEquity;
             const drawdown = currentEquity - peakEquity;
@@ -239,7 +251,7 @@ const runBacktestSimulator = async (req, res) => {
             currentDate.setDate(currentDate.getDate() + 1);
         }
 
-        // 5. Final JSON Response Format (Algorooms Style)
+        // 5. Final JSON Response Format
         const backtestResult = {
             summary: {
                 totalPnL: currentEquity,
