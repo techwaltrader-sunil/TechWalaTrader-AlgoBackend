@@ -7,11 +7,14 @@ const { Server } = require('socket.io'); // ✅ Import Socket.io
 const connectDB = require('./config/db');
 const colors = require('colors');
 
+
 const webhookRoutes = require('./routes/webhookRoutes');
 
 const algoLogRoutes = require('./routes/algoLogRoutes');
 
 const { downloadAndParseInstruments } = require('./services/instrumentService');
+
+const backtestRoutes = require('./routes/backtestRoutes');
 
 // Config
 dotenv.config();
@@ -78,6 +81,8 @@ app.use('/api/webhook', webhookRoutes);
 
 
 app.use('/api/algo-logs', algoLogRoutes);
+
+app.use('/api/backtest', backtestRoutes);
 
 const PORT = process.env.PORT || 6000;
 
