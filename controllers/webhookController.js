@@ -724,6 +724,210 @@
 
 
 
+// const Broker = require('../models/Broker');
+// const AlgoTradeLog = require('../models/AlgoTradeLog');
+// const axios = require('axios');
+// const { getOptionSecurityId } = require('../services/instrumentService'); 
+
+// const DHAN_API_URL = "https://api.dhan.co/orders";
+
+// const symbolMapper = {
+//     "HDFCBANK": { id: "1333", exchange: "NSE_EQ" },
+//     "YESBANK": { id: "11915", exchange: "NSE_EQ" },
+//     "TATASTEEL": { id: "3499", exchange: "NSE_EQ" }
+// };
+
+// // 🔥 HELPER 1: Strike Price Gap Calculator
+// const getStrikeStep = (symbol) => {
+//     const sym = symbol.toUpperCase();
+//     if (sym.includes("BANKNIFTY")) return 100;
+//     if (sym.includes("FINNIFTY")) return 50;
+//     if (sym.includes("MIDCPNIFTY")) return 25; 
+//     if (sym.includes("NIFTY")) return 50;
+//     if (sym.includes("SENSEX")) return 100;
+//     return 50; 
+// };
+
+// // 🔥 HELPER 2: Real Live Price Fetcher 
+// const fetchLivePrice = async (symbol) => {
+//     try {
+//         console.log(`📡 Fetching Live Price for ${symbol} from Global Market...`);
+//         let ticker = "";
+//         const upperSymbol = symbol.toUpperCase();
+
+//         if (upperSymbol.includes("BANKNIFTY")) ticker = "^NSEBANK";
+//         else if (upperSymbol.includes("FINNIFTY")) ticker = "NIFTY_FIN_SERVICE.NS"; 
+//         else if (upperSymbol.includes("MIDCPNIFTY")) ticker = "NIFTY_MIDCAP_SELECT.NS"; 
+//         else if (upperSymbol.includes("NIFTY")) ticker = "^NSEI";
+//         else if (upperSymbol.includes("SENSEX")) ticker = "^BSESN";
+//         else return null;
+
+//         const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1m`;
+//         const response = await axios.get(url, {
+//             headers: { 'User-Agent': 'Mozilla/5.0' }
+//         });
+
+//         if (!response.data.chart.result) return null;
+
+//         const ltp = response.data.chart.result[0].meta.regularMarketPrice;
+//         return ltp;
+//     } catch (error) {
+//         console.error("❌ Error fetching Real-time LTP:", error.message);
+//         return null; 
+//     }
+// };
+
+// const handleTradingViewAlert = async (req, res) => {
+//     try {
+//         const alertData = req.body;
+//         console.log("\n=========================================");
+//         console.log("🔔 NEW WEBHOOK RECEIVED FROM TRADINGVIEW!");
+
+//         const expectedSecret = process.env.WEBHOOK_SECRET;
+
+//         if (!alertData.secret_token || alertData.secret_token !== expectedSecret) {
+//             return res.status(401).json({ error: "Unauthorized: Invalid Secret Token" });
+//         }
+
+//         if (!alertData.action || !alertData.transaction_type || !alertData.symbol) {
+//             return res.status(400).json({ error: "Invalid webhook payload format" });
+//         }
+
+//         const activeBrokers = await Broker.find({ terminalOn: true, engineOn: true, name: "Dhan" });
+//         if (activeBrokers.length === 0) {
+//             return res.status(200).json({ message: "No active broker engine found." });
+//         }
+
+//         let tradeAction = "BUY";
+//         if (alertData.transaction_type === "LONG" && alertData.action === "EXIT") tradeAction = "SELL";
+//         if (alertData.transaction_type === "SHORT" && alertData.action === "ENTRY") tradeAction = "SELL";
+//         if (alertData.transaction_type === "SHORT" && alertData.action === "EXIT") tradeAction = "BUY";
+
+//         let securityId = null;
+//         let exchangeSegment = null;
+//         let finalSymbolName = alertData.symbol;
+//         // let targetStrike = alertData.strike ? alertData.strike.toString().toUpperCase() : null;
+//         let targetStrike = alertData.strike ? alertData.strike.toString().toUpperCase().trim() : null;
+
+//         // 🎯 THE ATM MAGIC LOGIC
+//         if (targetStrike === "ATM") {
+//             const ltp = await fetchLivePrice(alertData.symbol);
+            
+//             if (!ltp) {
+//                 console.log(`🚨 TRADE ABORTED: Missing Live Price for ATM.`);
+//                 for (const broker of activeBrokers) {
+//                     try {
+//                         const failedLog = await AlgoTradeLog.create({
+//                             brokerId: broker._id, brokerName: broker.name,
+//                             symbol: alertData.symbol, action: tradeAction, quantity: alertData.quantity || 1,
+//                             status: 'FAILED', orderId: "N/A", // ✅ N/A orderId added
+//                             message: "Trade Aborted: Live market price not available for ATM calculation." 
+//                         });
+//                         const io = req.app.get('io');
+//                         if (io) io.emit('new-trade-log', failedLog);
+//                     } catch(e) { console.error("DB Log Error:", e) }
+//                 }
+//                 return res.status(400).json({ error: "Trade Aborted due to missing LTP." });
+//             }
+
+//             const step = getStrikeStep(alertData.symbol);
+//             targetStrike = (Math.round(ltp / step) * step).toString();
+//         }
+
+//         if (targetStrike && alertData.option_type) {
+            
+//             // 🔥 THE FIX: try-catch ke andar contract dhundho taaki crash na ho 🔥
+//             let optionData = null;
+//             try {
+//                 optionData = getOptionSecurityId(alertData.symbol, targetStrike, alertData.option_type);
+//             } catch (err) {
+//                 console.error("Option Security ID fetch failed safely:", err.message);
+//                 optionData = null;
+//             }
+            
+//             if (!optionData) {
+//                 console.log(`❌ Option Contract [${alertData.symbol} ${targetStrike} ${alertData.option_type}] not found!`);
+                
+//                 for (const broker of activeBrokers) {
+//                     try {
+//                         const failedLog = await AlgoTradeLog.create({
+//                             brokerId: broker._id, brokerName: broker.name,
+//                             symbol: `${alertData.symbol} ${targetStrike} ${alertData.option_type}`, 
+//                             action: tradeAction, quantity: alertData.quantity || 1,
+//                             status: 'FAILED', orderId: "N/A", // ✅ N/A orderId added
+//                             message: `Trade Aborted: Option contract not found for calculated strike ${targetStrike}.`
+//                         });
+//                         const io = req.app.get('io');
+//                         if (io) io.emit('new-trade-log', failedLog);
+//                     } catch(e) { console.error("DB Log Error:", e.message) }
+//                 }
+//                 return res.status(400).json({ error: "Option contract not found." });
+//             }
+            
+//             securityId = optionData.id;
+//             exchangeSegment = optionData.exchange;
+//             finalSymbolName = optionData.tradingSymbol; 
+            
+//         } else {
+//             const instrumentInfo = symbolMapper[alertData.symbol];
+//             if (!instrumentInfo) return res.status(400).json({ error: "Equity Security ID not found." });
+//             securityId = instrumentInfo.id;
+//             exchangeSegment = instrumentInfo.exchange;
+//         }
+
+//         const dhanProductType = alertData.product_type === "MIS" ? "INTRADAY" : "MARGIN";
+
+//         for (const broker of activeBrokers) {
+//             const actualToken = broker.apiSecret || broker.accessToken || broker.apiKey || broker.token;
+//             if (!actualToken || !broker.clientId) continue;
+
+//             const dhanOrderPayload = {
+//                 dhanClientId: String(broker.clientId), correlationId: String(`TM_${Date.now()}`),
+//                 transactionType: tradeAction, exchangeSegment: exchangeSegment, productType: dhanProductType,
+//                 orderType: "MARKET", validity: "DAY", tradingSymbol: "", securityId: String(securityId),
+//                 quantity: parseInt(alertData.quantity, 10) || 1, disclosedQuantity: 0, price: 0, triggerPrice: 0,
+//                 afterMarketOrder: false, amoTime: "OPEN", boProfitValue: 0, boStopLossValue: 0
+//             };
+
+//             try {
+//                 const response = await axios.post(DHAN_API_URL, dhanOrderPayload, {
+//                     headers: { 'access-token': actualToken, 'client-id': broker.clientId, 'Content-Type': 'application/json', 'Accept': 'application/json' }
+//                 });
+                
+//                 const savedLog = await AlgoTradeLog.create({
+//                     brokerId: broker._id, brokerName: broker.name, symbol: finalSymbolName, 
+//                     action: tradeAction, quantity: alertData.quantity || 1, status: 'SUCCESS',
+//                     message: "Order placed successfully", orderId: response.data.orderId || "N/A"
+//                 });
+
+//                 const io = req.app.get('io');
+//                 if (io) io.emit('new-trade-log', savedLog);
+
+//             } catch (error) {
+//                 const errorMessage = error.response ? JSON.stringify(error.response.data) : error.message;
+
+//                 const failedLog = await AlgoTradeLog.create({
+//                     brokerId: broker._id, brokerName: broker.name, symbol: finalSymbolName,
+//                     action: tradeAction, quantity: alertData.quantity || 1, status: 'FAILED',
+//                     message: errorMessage, orderId: "N/A"
+//                 });
+
+//                 const io = req.app.get('io');
+//                 if (io) io.emit('new-trade-log', failedLog);
+//             }
+//         }
+
+//         res.status(200).json({ success: true, message: "Real Webhook processed & Logged" });
+
+//     } catch (error) {
+//         console.error("Webhook Error:", error);
+//         res.status(500).json({ error: "Internal Server Error" });
+//     }
+// };
+
+// module.exports = { handleTradingViewAlert };
+
+
 const Broker = require('../models/Broker');
 const AlgoTradeLog = require('../models/AlgoTradeLog');
 const axios = require('axios');
@@ -894,17 +1098,42 @@ const handleTradingViewAlert = async (req, res) => {
                     headers: { 'access-token': actualToken, 'client-id': broker.clientId, 'Content-Type': 'application/json', 'Accept': 'application/json' }
                 });
                 
-                const savedLog = await AlgoTradeLog.create({
-                    brokerId: broker._id, brokerName: broker.name, symbol: finalSymbolName, 
-                    action: tradeAction, quantity: alertData.quantity || 1, status: 'SUCCESS',
-                    message: "Order placed successfully", orderId: response.data.orderId || "N/A"
-                });
+                const respData = response.data;
+                const orderStatus = respData.orderStatus ? respData.orderStatus.toUpperCase() : "UNKNOWN";
 
-                const io = req.app.get('io');
-                if (io) io.emit('new-trade-log', savedLog);
+                // 🔥 THE FIX: Broker ne API accept kar li, par RMS ne reject kar di (E.g., Insufficient Funds)
+                if (orderStatus === "REJECTED") {
+                    console.log("🔴 ORDER REJECTED BY BROKER RMS:", respData.remarks);
+                    
+                    const rejectReason = respData.remarks || "Order rejected by broker (Insufficient Funds / RMS Rule).";
+                    
+                    const failedLog = await AlgoTradeLog.create({
+                        brokerId: broker._id, brokerName: broker.name, symbol: finalSymbolName, 
+                        action: tradeAction, quantity: alertData.quantity || 1, status: 'FAILED',
+                        message: rejectReason, orderId: respData.orderId || "N/A"
+                    });
+
+                    const io = req.app.get('io');
+                    if (io) io.emit('new-trade-log', failedLog);
+
+                } else {
+                    // ✅ Asli Success
+                    console.log(`🟢 ORDER SUCCESS (${orderStatus}):`, respData.orderId);
+
+                    const savedLog = await AlgoTradeLog.create({
+                        brokerId: broker._id, brokerName: broker.name, symbol: finalSymbolName, 
+                        action: tradeAction, quantity: alertData.quantity || 1, status: 'SUCCESS',
+                        message: `Order placed successfully (${orderStatus})`, orderId: respData.orderId || "N/A"
+                    });
+
+                    const io = req.app.get('io');
+                    if (io) io.emit('new-trade-log', savedLog);
+                }
 
             } catch (error) {
+                // 🔴 System ya API Error (e.g. Invalid Token, Network Issue)
                 const errorMessage = error.response ? JSON.stringify(error.response.data) : error.message;
+                console.error("🔴 API CRASH FAILED!", errorMessage);
 
                 const failedLog = await AlgoTradeLog.create({
                     brokerId: broker._id, brokerName: broker.name, symbol: finalSymbolName,
