@@ -7,6 +7,8 @@ const { Server } = require('socket.io'); // ✅ Import Socket.io
 const connectDB = require('./config/db');
 const colors = require('colors');
 
+require('./engine/tradingEngine');
+
 
 const webhookRoutes = require('./routes/webhookRoutes');
 
