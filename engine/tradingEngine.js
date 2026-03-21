@@ -83,7 +83,7 @@ const Deployment = require('../models/Deployment');
 const Broker = require('../models/Broker');
 const { placeDhanOrder } = require('../services/dhanService');
 // ✅ NAYA: Instrument service ko import kiya
-const { getOptionSecurityId } = require('../services/InstrumentService'); 
+const { getOptionSecurityId } = require('../services/instrumentService'); 
 
 console.log("🚀 Trading Engine Initialized...");
 
