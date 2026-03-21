@@ -47,6 +47,8 @@ app.set('io', io);
 app.use('/api/brokers', require('./routes/brokerRoutes'));
 app.use('/api/strategies', require('./routes/strategyRoutes')); // ✅ NEW LINE ADDED
 
+app.use('/api/deployments', require('./routes/deploymentRoutes'));
+
 
 
 // ✅ 3. Real-time Connection Logic
@@ -83,6 +85,8 @@ app.use('/api/webhook', webhookRoutes);
 app.use('/api/algo-logs', algoLogRoutes);
 
 app.use('/api/backtest', backtestRoutes);
+
+
 
 const PORT = process.env.PORT || 6000;
 
