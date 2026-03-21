@@ -51,7 +51,32 @@ const getActiveDeployments = async (req, res) => {
     }
 };
 
+const stopDeployment = async (req, res) => {
+    try {
+        const deploymentId = req.params.id;
+        
+        // Deployment ko database me dhundo aur status 'STOPPED' kardo
+        const deployment = await Deployment.findByIdAndUpdate(
+            deploymentId,
+            { status: 'STOPPED' },
+            { new: true }
+        );
+
+        if (!deployment) {
+            return res.status(404).json({ success: false, message: "Deployment not found" });
+        }
+
+        // Future Idea: Yahan aap Broker API ko "Square Off" ka command bhi bhej sakte hain
+
+        res.json({ success: true, message: "Algo stopped successfully!", data: deployment });
+    } catch (error) {
+        console.error("Stop Deployment Error:", error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 module.exports = {
     deployStrategy,
-    getActiveDeployments
+    getActiveDeployments,
+    stopDeployment
 };
