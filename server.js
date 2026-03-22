@@ -139,34 +139,94 @@ global.io = io;
 app.set('io', io);
 
 
+// // ==========================================
+// // 🔥 PHASE 1: DUMMY LIVE P&L SIMULATOR 🔥
+// // ==========================================
+// const Deployment = require('./models/Deployment'); // Model ka path check kar lijiyega
+
+// setInterval(async () => {
+//     if (global.io) {
+//         try {
+//             // Sirf ACTIVE strategies ko dhundho
+//             const activeDeployments = await Deployment.find({ status: 'ACTIVE' });
+            
+//             if (activeDeployments.length > 0) {
+//                 const pnlData = {};
+                
+//                 activeDeployments.forEach(dep => {
+//                     // Har active strategy ke liye -500 se +1500 ke beech ka random P&L
+//                     const randomPnl = (Math.random() * 2000 - 500).toFixed(2); 
+//                     pnlData[dep._id.toString()] = parseFloat(randomPnl);
+//                 });
+
+//                 // Frontend ko saare active algos ka P&L ek sath bhej do
+//                 global.io.emit('live-pnl-update', pnlData);
+//             }
+//         } catch (error) {
+//             console.log("Dummy P&L Error:", error.message);
+//         }
+//     }
+// }, 2000); // Har 2 second me update hoga
+
+
 // ==========================================
-// 🔥 PHASE 1: DUMMY LIVE P&L SIMULATOR 🔥
+// 🔥 PHASE 2: REAL LIVE P&L CALCULATOR 🔥
 // ==========================================
-const Deployment = require('./models/Deployment'); // Model ka path check kar lijiyega
+const Deployment = require('./models/Deployment'); 
+const Broker = require('./models/Broker'); 
+const { fetchLiveLTP } = require('./services/dhanService'); // Dhan feed API
 
 setInterval(async () => {
     if (global.io) {
         try {
-            // Sirf ACTIVE strategies ko dhundho
-            const activeDeployments = await Deployment.find({ status: 'ACTIVE' });
+            // Sirf wahi ACTIVE strategies uthao jinka order lag chuka hai (yani tradedSecurityId mojood hai)
+            const activeDeployments = await Deployment.find({ status: 'ACTIVE', tradedSecurityId: { $ne: null } });
             
             if (activeDeployments.length > 0) {
                 const pnlData = {};
                 
-                activeDeployments.forEach(dep => {
-                    // Har active strategy ke liye -500 se +1500 ke beech ka random P&L
-                    const randomPnl = (Math.random() * 2000 - 500).toFixed(2); 
-                    pnlData[dep._id.toString()] = parseFloat(randomPnl);
-                });
+                for (const dep of activeDeployments) {
+                    try {
+                        // Broker ki details nikalo (Dhan API token ke liye)
+                        const broker = await Broker.findById(dep.brokers[0]);
+                        if (!broker) continue;
 
-                // Frontend ko saare active algos ka P&L ek sath bhej do
-                global.io.emit('live-pnl-update', pnlData);
+                        // 🎯 Dhan API se Live Premium (LTP) fetch karo
+                        const liveLtp = await fetchLiveLTP(broker.clientId, broker.apiSecret, dep.tradedExchange, dep.tradedSecurityId);
+
+                        // Agar LTP mil gaya aur Entry Price save hai
+                        if (liveLtp && dep.entryPrice > 0) {
+                            let currentPnl = 0;
+                            
+                            // 🧠 THE REAL MATH
+                            if (dep.tradeAction === 'BUY') {
+                                currentPnl = (liveLtp - dep.entryPrice) * dep.tradedQty;
+                            } else if (dep.tradeAction === 'SELL') {
+                                currentPnl = (dep.entryPrice - liveLtp) * dep.tradedQty;
+                            }
+                            
+                            // DB me save kar do taaki page refresh hone par zero na ho jaye
+                            dep.pnl = parseFloat(currentPnl.toFixed(2));
+                            await dep.save(); 
+
+                            pnlData[dep._id.toString()] = dep.pnl;
+                        }
+                    } catch(err) {
+                        console.log(`P&L Calc Error for ${dep._id}:`, err.message);
+                    }
+                }
+
+                // Frontend ko saare active algos ka REAL P&L ek sath bhej do
+                if (Object.keys(pnlData).length > 0) {
+                    global.io.emit('live-pnl-update', pnlData);
+                }
             }
         } catch (error) {
-            console.log("Dummy P&L Error:", error.message);
+            console.log("Real P&L Loop Error:", error.message);
         }
     }
-}, 2000); // Har 2 second me update hoga
+}, 2500); // 2.5 second delay (Taaki Dhan API par Rate Limit/Blockage ka issue na aaye)
+// ==========================================
 
 
 // ==========================================
