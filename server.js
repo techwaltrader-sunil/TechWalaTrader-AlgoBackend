@@ -138,6 +138,37 @@ const io = new Server(server, {
 global.io = io;
 app.set('io', io);
 
+
+// ==========================================
+// 🔥 PHASE 1: DUMMY LIVE P&L SIMULATOR 🔥
+// ==========================================
+const Deployment = require('./models/Deployment'); // Model ka path check kar lijiyega
+
+setInterval(async () => {
+    if (global.io) {
+        try {
+            // Sirf ACTIVE strategies ko dhundho
+            const activeDeployments = await Deployment.find({ status: 'ACTIVE' });
+            
+            if (activeDeployments.length > 0) {
+                const pnlData = {};
+                
+                activeDeployments.forEach(dep => {
+                    // Har active strategy ke liye -500 se +1500 ke beech ka random P&L
+                    const randomPnl = (Math.random() * 2000 - 500).toFixed(2); 
+                    pnlData[dep._id.toString()] = parseFloat(randomPnl);
+                });
+
+                // Frontend ko saare active algos ka P&L ek sath bhej do
+                global.io.emit('live-pnl-update', pnlData);
+            }
+        } catch (error) {
+            console.log("Dummy P&L Error:", error.message);
+        }
+    }
+}, 2000); // Har 2 second me update hoga
+
+
 // ==========================================
 // ✅ ROUTES DEFINITION
 // ==========================================
