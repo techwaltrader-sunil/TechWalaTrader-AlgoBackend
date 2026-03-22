@@ -291,13 +291,17 @@ cron.schedule('*/10 * * * * *', async () => {
                                 securityId: instrument.id, segment: instrument.exchange
                             };
 
+                            // 🔥 REAL DHAN API CALL
                             const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
                             
                             if(orderResponse.success) {
                                 const respData = orderResponse.data || {};
                                 const orderStatus = respData.orderStatus ? respData.orderStatus.toUpperCase() : "UNKNOWN";
 
-                                if (orderStatus !== "REJECTED") {
+                                if (orderStatus === "REJECTED") {
+                                    console.log("⚠️ BROKER RMS REJECTED ORDER:", respData.remarks);
+                                    await createAndEmitLog(broker, finalSymbolName, tradeAction, tradeQty, 'FAILED', respData.remarks || "Order rejected by broker RMS.", respData.orderId);
+                                } else {
                                     console.log("🚀 ORDER SUCCESSFULLY PLACED AT BROKER!");
                                     
                                     // 🔥 PHASE 2: REAL P&L DATA SAVING
@@ -314,6 +318,13 @@ cron.schedule('*/10 * * * * *', async () => {
 
                                     await createAndEmitLog(broker, finalSymbolName, tradeAction, tradeQty, 'SUCCESS', `Order placed successfully`, respData.orderId);
                                 }
+                            } else {
+                                // 🔥 YAHI MISSING THA! Agar API fail ho jaye (e.g. Market Closed)
+                                console.log("⚠️ BROKER API REJECTED ORDER:", orderResponse.error);
+                                const errorObj = orderResponse.error || {};
+                                const errorMsg = errorObj.internalErrorMessage || errorObj.errorMessage || JSON.stringify(errorObj);
+                                
+                                await createAndEmitLog(broker, finalSymbolName, tradeAction, tradeQty, 'FAILED', errorMsg);
                             }
                         }
                     }
