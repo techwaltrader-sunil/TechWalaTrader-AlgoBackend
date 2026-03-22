@@ -135,6 +135,7 @@ const io = new Server(server, {
 });
 
 // 🔥 io ko app me save kar rahe hain taaki dusri files isko use kar sakein
+global.io = io;
 app.set('io', io);
 
 // ==========================================

@@ -345,17 +345,152 @@
 
 
 
+// const cron = require('node-cron');
+// const moment = require('moment-timezone');
+// const axios = require('axios'); // 🔥 NAYA: Yahoo API call ke liye
+// const Deployment = require('../models/Deployment');
+// const Broker = require('../models/Broker');
+// const { placeDhanOrder } = require('../services/dhanService');
+// const { getOptionSecurityId } = require('../services/instrumentService');
+
+// console.log("🚀 Trading Engine Initialized...");
+
+// // 🔥 HELPER 1: Strike Price Gap Calculator
+// const getStrikeStep = (symbol) => {
+//     const sym = symbol.toUpperCase();
+//     if (sym.includes("BANKNIFTY")) return 100;
+//     if (sym.includes("FINNIFTY")) return 50;
+//     if (sym.includes("MIDCPNIFTY")) return 25; 
+//     if (sym.includes("NIFTY")) return 50;
+//     if (sym.includes("SENSEX")) return 100;
+//     return 50; 
+// };
+
+// // 🔥 HELPER 2: Real Live Price Fetcher (Yahoo Finance)
+// const fetchLivePrice = async (symbol) => {
+//     try {
+//         let ticker = "";
+//         const upperSymbol = symbol.toUpperCase();
+
+//         if (upperSymbol.includes("BANKNIFTY")) ticker = "^NSEBANK";
+//         else if (upperSymbol.includes("FINNIFTY")) ticker = "NIFTY_FIN_SERVICE.NS"; 
+//         else if (upperSymbol.includes("MIDCPNIFTY")) ticker = "NIFTY_MIDCAP_SELECT.NS"; 
+//         else if (upperSymbol.includes("NIFTY")) ticker = "^NSEI";
+//         else if (upperSymbol.includes("SENSEX")) ticker = "^BSESN";
+//         else return null;
+
+//         const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1m`;
+//         const response = await axios.get(url, {
+//             headers: { 'User-Agent': 'Mozilla/5.0' }
+//         });
+
+//         if (!response.data.chart.result) return null;
+
+//         return response.data.chart.result[0].meta.regularMarketPrice;
+//     } catch (error) {
+//         console.error("❌ Error fetching Real-time LTP:", error.message);
+//         return null; 
+//     }
+// };
+
+// cron.schedule('*/10 * * * * *', async () => {
+//     try {
+//         const currentTime = moment().tz("Asia/Kolkata").format("HH:mm"); 
+//         const activeDeployments = await Deployment.find({ status: 'ACTIVE' }).populate('strategyId');
+        
+//         console.log(`⏱️ Engine Tick -> Server Time: ${currentTime} | Active Algos Found: ${activeDeployments.length}`);
+
+//         if (activeDeployments.length === 0) return;
+
+//         for (const deployment of activeDeployments) {
+//             const strategy = deployment.strategyId;
+//             if (!strategy) continue;
+
+//             const config = strategy.data?.config || {};
+            
+//             if (config.startTime === currentTime && !deployment.orderPlacedToday) {
+//                 console.log(`⚡ ENTRY TRIGGERED! Strategy: ${strategy.name}`);
+
+//                 for (const brokerId of deployment.brokers) {
+//                     const broker = await Broker.findById(brokerId);
+                    
+//                     if (broker && broker.engineOn) {
+                        
+//                         const instrumentData = strategy.data.instruments[0]; 
+//                         let rawSymbol = instrumentData ? instrumentData.name : "";
+//                         let baseSymbol = "NIFTY"; // Default
+//                         if (rawSymbol.toUpperCase().includes("BANK")) baseSymbol = "BANKNIFTY";
+//                         else if (rawSymbol.toUpperCase().includes("FIN")) baseSymbol = "FINNIFTY";
+
+//                         for (const leg of strategy.data.legs) {
+                            
+//                             let optType = leg.optionType === "Call" ? "CE" : "PE";
+
+//                             // 🔥 THE FIX: Yahan aapka Yahoo API wala code lag gaya!
+//                             console.log(`📡 Fetching Live Price for ${baseSymbol}...`);
+//                             let currentSpotPrice = await fetchLivePrice(baseSymbol);
+
+//                             // Agar live price nahi mila toh trade rok do
+//                             if (!currentSpotPrice) {
+//                                 console.error(`🚨 TRADE ABORTED: Missing Live Price for ${baseSymbol}`);
+//                                 continue; 
+//                             }
+
+//                             console.log(`✅ Real LTP Received: ${currentSpotPrice}`);
+
+//                             let stepValue = getStrikeStep(baseSymbol); 
+//                             let targetStrikePrice = Math.round(currentSpotPrice / stepValue) * stepValue;
+
+//                             console.log(`🎯 Searching Security ID for: ${baseSymbol} ${targetStrikePrice} ${optType}`);
+
+//                             const instrument = getOptionSecurityId(baseSymbol, targetStrikePrice, optType);
+
+//                             if (!instrument) {
+//                                 console.error(`❌ Strike not found in CSV: ${baseSymbol} ${targetStrikePrice} ${optType}`);
+//                                 continue; 
+//                             }
+
+//                             console.log(`✅ Found Instrument: ${instrument.tradingSymbol} (ID: ${instrument.id})`);
+
+//                             const orderData = {
+//                                 action: leg.action.toUpperCase(), 
+//                                 quantity: (leg.quantity || 1) * deployment.multiplier,
+//                                 securityId: instrument.id,
+//                                 segment: instrument.exchange
+//                             };
+
+//                             // 🔥 REAL DHAN API CALL
+//                             const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
+                            
+//                             if(orderResponse.success) {
+//                                 console.log("🚀 ORDER SUCCESSFULLY PLACED AT BROKER!");
+//                                 deployment.orderPlacedToday = true; 
+//                                 await deployment.save();
+//                             } else {
+//                                 console.log("⚠️ BROKER REJECTED ORDER:", orderResponse.error);
+//                             }
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//     } catch (error) {
+//         console.error("❌ Trading Engine Error:", error);
+//     }
+// });
+
+
 const cron = require('node-cron');
 const moment = require('moment-timezone');
-const axios = require('axios'); // 🔥 NAYA: Yahoo API call ke liye
+const axios = require('axios'); 
 const Deployment = require('../models/Deployment');
 const Broker = require('../models/Broker');
+const AlgoTradeLog = require('../models/AlgoTradeLog'); // ✅ NAYA: Log Model Import kiya
 const { placeDhanOrder } = require('../services/dhanService');
 const { getOptionSecurityId } = require('../services/instrumentService');
 
 console.log("🚀 Trading Engine Initialized...");
 
-// 🔥 HELPER 1: Strike Price Gap Calculator
 const getStrikeStep = (symbol) => {
     const sym = symbol.toUpperCase();
     if (sym.includes("BANKNIFTY")) return 100;
@@ -366,7 +501,6 @@ const getStrikeStep = (symbol) => {
     return 50; 
 };
 
-// 🔥 HELPER 2: Real Live Price Fetcher (Yahoo Finance)
 const fetchLivePrice = async (symbol) => {
     try {
         let ticker = "";
@@ -385,11 +519,33 @@ const fetchLivePrice = async (symbol) => {
         });
 
         if (!response.data.chart.result) return null;
-
         return response.data.chart.result[0].meta.regularMarketPrice;
     } catch (error) {
         console.error("❌ Error fetching Real-time LTP:", error.message);
         return null; 
+    }
+};
+
+// 🔥 HELPER FUNCTION: Log database me save karne aur frontend ko bhejane ke liye
+const createAndEmitLog = async (broker, symbol, action, quantity, status, message, orderId = "N/A") => {
+    try {
+        const AlgoTradeLog = await AlgoTradeLog.create({
+            brokerId: broker._id,
+            brokerName: broker.name,
+            symbol: symbol,
+            action: action,
+            quantity: quantity,
+            status: status,
+            message: message,
+            orderId: orderId
+        });
+
+        // Agar socket server ready hai, to frontend ko turant bhej do!
+        if (global.io) {
+            global.io.emit('new-trade-log', newLog);
+        }
+    } catch (err) {
+        console.error("❌ Failed to save Log in DB:", err.message);
     }
 };
 
@@ -398,8 +554,6 @@ cron.schedule('*/10 * * * * *', async () => {
         const currentTime = moment().tz("Asia/Kolkata").format("HH:mm"); 
         const activeDeployments = await Deployment.find({ status: 'ACTIVE' }).populate('strategyId');
         
-        console.log(`⏱️ Engine Tick -> Server Time: ${currentTime} | Active Algos Found: ${activeDeployments.length}`);
-
         if (activeDeployments.length === 0) return;
 
         for (const deployment of activeDeployments) {
@@ -418,43 +572,46 @@ cron.schedule('*/10 * * * * *', async () => {
                         
                         const instrumentData = strategy.data.instruments[0]; 
                         let rawSymbol = instrumentData ? instrumentData.name : "";
-                        let baseSymbol = "NIFTY"; // Default
+                        let baseSymbol = "NIFTY"; 
                         if (rawSymbol.toUpperCase().includes("BANK")) baseSymbol = "BANKNIFTY";
                         else if (rawSymbol.toUpperCase().includes("FIN")) baseSymbol = "FINNIFTY";
 
                         for (const leg of strategy.data.legs) {
                             
                             let optType = leg.optionType === "Call" ? "CE" : "PE";
+                            let tradeAction = leg.action.toUpperCase();
+                            let tradeQty = (leg.quantity || 1) * deployment.multiplier;
 
-                            // 🔥 THE FIX: Yahan aapka Yahoo API wala code lag gaya!
                             console.log(`📡 Fetching Live Price for ${baseSymbol}...`);
                             let currentSpotPrice = await fetchLivePrice(baseSymbol);
 
-                            // Agar live price nahi mila toh trade rok do
                             if (!currentSpotPrice) {
                                 console.error(`🚨 TRADE ABORTED: Missing Live Price for ${baseSymbol}`);
+                                await createAndEmitLog(broker, baseSymbol, tradeAction, tradeQty, 'FAILED', "Trade Aborted: Live market price not available for ATM calculation.");
                                 continue; 
                             }
 
-                            console.log(`✅ Real LTP Received: ${currentSpotPrice}`);
-
                             let stepValue = getStrikeStep(baseSymbol); 
                             let targetStrikePrice = Math.round(currentSpotPrice / stepValue) * stepValue;
-
-                            console.log(`🎯 Searching Security ID for: ${baseSymbol} ${targetStrikePrice} ${optType}`);
+                            
+                            // Ye wo naam hai jo UI me dikhega agar CSV se id na mile
+                            let fallbackSymbolName = `${baseSymbol} ${targetStrikePrice} ${optType}`; 
 
                             const instrument = getOptionSecurityId(baseSymbol, targetStrikePrice, optType);
 
                             if (!instrument) {
-                                console.error(`❌ Strike not found in CSV: ${baseSymbol} ${targetStrikePrice} ${optType}`);
+                                console.error(`❌ Strike not found in CSV: ${fallbackSymbolName}`);
+                                await createAndEmitLog(broker, fallbackSymbolName, tradeAction, tradeQty, 'FAILED', `Option contract not found for calculated strike ${targetStrikePrice}.`);
                                 continue; 
                             }
 
-                            console.log(`✅ Found Instrument: ${instrument.tradingSymbol} (ID: ${instrument.id})`);
+                            // Asli lamba wala naam jo Dhan ne diya (e.g., BANKNIFTY-Mar2026-53400-CE)
+                            let finalSymbolName = instrument.tradingSymbol; 
+                            console.log(`✅ Found Instrument: ${finalSymbolName} (ID: ${instrument.id})`);
 
                             const orderData = {
-                                action: leg.action.toUpperCase(), 
-                                quantity: (leg.quantity || 1) * deployment.multiplier,
+                                action: tradeAction, 
+                                quantity: tradeQty,
                                 securityId: instrument.id,
                                 segment: instrument.exchange
                             };
@@ -463,11 +620,25 @@ cron.schedule('*/10 * * * * *', async () => {
                             const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
                             
                             if(orderResponse.success) {
-                                console.log("🚀 ORDER SUCCESSFULLY PLACED AT BROKER!");
-                                deployment.orderPlacedToday = true; 
-                                await deployment.save();
+                                const respData = orderResponse.data || {};
+                                const orderStatus = respData.orderStatus ? respData.orderStatus.toUpperCase() : "UNKNOWN";
+
+                                if (orderStatus === "REJECTED") {
+                                    // Broker API ok, but RMS ne reject kiya (No Funds etc)
+                                    console.log("⚠️ BROKER RMS REJECTED ORDER:", respData.remarks);
+                                    await createAndEmitLog(broker, finalSymbolName, tradeAction, tradeQty, 'FAILED', respData.remarks || "Order rejected by broker RMS.", respData.orderId);
+                                } else {
+                                    // 100% SUCCESS
+                                    console.log("🚀 ORDER SUCCESSFULLY PLACED AT BROKER!");
+                                    deployment.orderPlacedToday = true; 
+                                    await deployment.save();
+                                    await createAndEmitLog(broker, finalSymbolName, tradeAction, tradeQty, 'SUCCESS', `Order placed successfully (${orderStatus})`, respData.orderId);
+                                }
                             } else {
+                                // API Failed (Market Closed, Invalid Token, etc.)
                                 console.log("⚠️ BROKER REJECTED ORDER:", orderResponse.error);
+                                const errorMsg = typeof orderResponse.error === 'object' ? JSON.stringify(orderResponse.error) : orderResponse.error;
+                                await createAndEmitLog(broker, finalSymbolName, tradeAction, tradeQty, 'FAILED', errorMsg);
                             }
                         }
                     }
