@@ -172,42 +172,116 @@
 // });
 
 
+// const cron = require('node-cron');
+// const moment = require('moment-timezone');
+// const Deployment = require('../models/Deployment'); // Path check kar lein
+// const Broker = require('../models/Broker'); // Path check kar lein
+// const { placeDhanOrder } = require('../services/dhanService');
+// const { getOptionSecurityId } = require('../services/instrumentService');
+
+// console.log("🚀 Trading Engine Initialized...");
+
+// // Har 10 second me engine chalega
+// cron.schedule('*/10 * * * * *', async () => {
+//     try {
+//         // Indian Standard Time (IST) nikal rahe hain
+//         const currentTime = moment().tz("Asia/Kolkata").format("HH:mm"); 
+        
+//         const activeDeployments = await Deployment.find({ status: 'ACTIVE' }).populate('strategyId');
+        
+//         // ----------------------------------------------------
+//         // 🔎 X-RAY LOG 1: Engine zinda hai aur time kya ho raha hai?
+//         // ----------------------------------------------------
+//         console.log(`⏱️ Engine Tick -> Server Time: ${currentTime} | Active Algos Found: ${activeDeployments.length}`);
+
+//         if (activeDeployments.length === 0) return;
+
+//         for (const deployment of activeDeployments) {
+//             const strategy = deployment.strategyId;
+//             if (!strategy) continue; // Agar strategy delete ho gayi ho to skip
+
+//             const config = strategy.data?.config || {};
+            
+//             // ----------------------------------------------------
+//             // 🔎 X-RAY LOG 2: Strategy me kya time set hai?
+//             // ----------------------------------------------------
+//             console.log(`   👉 Checking Algo: [${strategy.name}] | Set Time: ${config.startTime} | Matching?: ${config.startTime === currentTime}`);
+
+//             // ENTRY LOGIC
+//             if (config.startTime === currentTime && !deployment.orderPlacedToday) {
+//                 console.log(`⚡ ENTRY TRIGGERED! Strategy: ${strategy.name}`);
+
+//                 for (const brokerId of deployment.brokers) {
+//                     const broker = await Broker.findById(brokerId);
+                    
+//                     if (broker && broker.engineOn) {
+//                         for (const leg of strategy.data.legs) {
+                            
+//                             let currentSpotPrice = 22020; 
+//                             let stepValue = leg.symbol === "BANKNIFTY" ? 100 : 50; 
+//                             let targetStrikePrice = Math.round(currentSpotPrice / stepValue) * stepValue;
+
+//                             console.log(`🎯 Searching Security ID for: ${leg.symbol} ${targetStrikePrice} ${leg.type}`);
+
+//                             const instrument = getOptionSecurityId(leg.symbol, targetStrikePrice, leg.type);
+
+//                             if (!instrument) {
+//                                 console.error(`❌ Strike not found in CSV: ${leg.symbol} ${targetStrikePrice} ${leg.type}`);
+//                                 continue; 
+//                             }
+
+//                             console.log(`✅ Found Instrument: ${instrument.tradingSymbol} (ID: ${instrument.id})`);
+
+//                             const orderData = {
+//                                 action: leg.action,
+//                                 quantity: (leg.qty || 1) * deployment.multiplier,
+//                                 securityId: instrument.id,
+//                                 segment: instrument.exchange
+//                             };
+
+//                             const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
+                            
+//                             if(orderResponse.success) {
+//                                 console.log("🚀 ORDER SUCCESSFULLY PLACED AT BROKER!");
+//                                 deployment.orderPlacedToday = true; 
+//                                 await deployment.save();
+//                             }
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//     } catch (error) {
+//         console.error("❌ Trading Engine Error:", error);
+//     }
+// });
+
+
 const cron = require('node-cron');
 const moment = require('moment-timezone');
-const Deployment = require('../models/Deployment'); // Path check kar lein
-const Broker = require('../models/Broker'); // Path check kar lein
+const Deployment = require('../models/Deployment');
+const Broker = require('../models/Broker');
 const { placeDhanOrder } = require('../services/dhanService');
 const { getOptionSecurityId } = require('../services/instrumentService');
 
 console.log("🚀 Trading Engine Initialized...");
 
-// Har 10 second me engine chalega
 cron.schedule('*/10 * * * * *', async () => {
     try {
-        // Indian Standard Time (IST) nikal rahe hain
         const currentTime = moment().tz("Asia/Kolkata").format("HH:mm"); 
-        
         const activeDeployments = await Deployment.find({ status: 'ACTIVE' }).populate('strategyId');
         
-        // ----------------------------------------------------
-        // 🔎 X-RAY LOG 1: Engine zinda hai aur time kya ho raha hai?
-        // ----------------------------------------------------
         console.log(`⏱️ Engine Tick -> Server Time: ${currentTime} | Active Algos Found: ${activeDeployments.length}`);
 
         if (activeDeployments.length === 0) return;
 
         for (const deployment of activeDeployments) {
             const strategy = deployment.strategyId;
-            if (!strategy) continue; // Agar strategy delete ho gayi ho to skip
+            if (!strategy) continue;
 
             const config = strategy.data?.config || {};
-            
-            // ----------------------------------------------------
-            // 🔎 X-RAY LOG 2: Strategy me kya time set hai?
-            // ----------------------------------------------------
             console.log(`   👉 Checking Algo: [${strategy.name}] | Set Time: ${config.startTime} | Matching?: ${config.startTime === currentTime}`);
 
-            // ENTRY LOGIC
             if (config.startTime === currentTime && !deployment.orderPlacedToday) {
                 console.log(`⚡ ENTRY TRIGGERED! Strategy: ${strategy.name}`);
 
@@ -215,30 +289,43 @@ cron.schedule('*/10 * * * * *', async () => {
                     const broker = await Broker.findById(brokerId);
                     
                     if (broker && broker.engineOn) {
+                        
+                        // 🔥 FIX 1: Instrument se Symbol nikalo (Nifty 50 ko NIFTY banao)
+                        const instrumentData = strategy.data.instruments[0]; 
+                        let rawSymbol = instrumentData ? instrumentData.name : "";
+                        let baseSymbol = "NIFTY"; // Default
+                        if (rawSymbol.toUpperCase().includes("BANK")) baseSymbol = "BANKNIFTY";
+                        else if (rawSymbol.toUpperCase().includes("FIN")) baseSymbol = "FINNIFTY";
+
                         for (const leg of strategy.data.legs) {
                             
-                            let currentSpotPrice = 22020; 
-                            let stepValue = leg.symbol === "BANKNIFTY" ? 100 : 50; 
+                            // 🔥 FIX 2: Call/Put ko CE/PE banao
+                            let optType = leg.optionType === "Call" ? "CE" : "PE";
+
+                            let currentSpotPrice = 22020; // Dummy Live Price
+                            let stepValue = baseSymbol === "BANKNIFTY" ? 100 : 50; 
                             let targetStrikePrice = Math.round(currentSpotPrice / stepValue) * stepValue;
 
-                            console.log(`🎯 Searching Security ID for: ${leg.symbol} ${targetStrikePrice} ${leg.type}`);
+                            // Ab undefined nahi, NIFTY 22000 CE aayega!
+                            console.log(`🎯 Searching Security ID for: ${baseSymbol} ${targetStrikePrice} ${optType}`);
 
-                            const instrument = getOptionSecurityId(leg.symbol, targetStrikePrice, leg.type);
+                            const instrument = getOptionSecurityId(baseSymbol, targetStrikePrice, optType);
 
                             if (!instrument) {
-                                console.error(`❌ Strike not found in CSV: ${leg.symbol} ${targetStrikePrice} ${leg.type}`);
+                                console.error(`❌ Strike not found in CSV: ${baseSymbol} ${targetStrikePrice} ${optType}`);
                                 continue; 
                             }
 
                             console.log(`✅ Found Instrument: ${instrument.tradingSymbol} (ID: ${instrument.id})`);
 
                             const orderData = {
-                                action: leg.action,
-                                quantity: (leg.qty || 1) * deployment.multiplier,
+                                action: leg.action.toUpperCase(), // BUY ya SELL
+                                quantity: (leg.quantity || 1) * deployment.multiplier,
                                 securityId: instrument.id,
                                 segment: instrument.exchange
                             };
 
+                            // 🔥 REAL DHAN API CALL
                             const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
                             
                             if(orderResponse.success) {
