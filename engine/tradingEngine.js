@@ -1,23 +1,19 @@
 
 
-
 // const cron = require('node-cron');
 // const moment = require('moment-timezone');
 // const axios = require('axios'); 
 // const Deployment = require('../models/Deployment');
 // const Broker = require('../models/Broker');
 // const AlgoTradeLog = require('../models/AlgoTradeLog'); 
-// const { placeDhanOrder } = require('../services/dhanService');
+
+// // 🔥 NAYA: fetchLiveLTP ko import kiya
+// const { placeDhanOrder, fetchLiveLTP } = require('../services/dhanService');
 // const { getOptionSecurityId } = require('../services/instrumentService');
 
 // console.log("🚀 Trading Engine Initialized...");
 
-// // 🔥 THE MASTER LOCK (Ye array cron loop ko rokega)
 // const executionLocks = new Set();
-
-// // ==========================================
-// // 🛠️ HELPER FUNCTIONS
-// // ==========================================
 
 // const getStrikeStep = (symbol) => {
 //     const sym = symbol.toUpperCase();
@@ -33,7 +29,6 @@
 //     try {
 //         let ticker = "";
 //         const upperSymbol = symbol.toUpperCase();
-
 //         if (upperSymbol.includes("BANKNIFTY")) ticker = "^NSEBANK";
 //         else if (upperSymbol.includes("FINNIFTY")) ticker = "NIFTY_FIN_SERVICE.NS"; 
 //         else if (upperSymbol.includes("MIDCPNIFTY")) ticker = "NIFTY_MIDCAP_SELECT.NS"; 
@@ -46,72 +41,41 @@
 
 //         if (!response.data.chart.result) return null;
 //         return response.data.chart.result[0].meta.regularMarketPrice;
-//     } catch (error) {
-//         console.error("❌ Error fetching Real-time LTP:", error.message);
-//         return null; 
-//     }
+//     } catch (error) { return null; }
 // };
 
 // const createAndEmitLog = async (broker, symbol, action, quantity, status, message, orderId = "N/A") => {
 //     try {
-//         const newLog = await AlgoTradeLog.create({
-//             brokerId: broker._id,
-//             brokerName: broker.name,
-//             symbol: symbol,
-//             action: action,
-//             quantity: quantity,
-//             status: status,
-//             message: message,
-//             orderId: orderId
-//         });
-
-//         if (global.io) {
-//             global.io.emit('new-trade-log', newLog);
-//         }
-//     } catch (err) {
-//         console.error("❌ Failed to save Log in DB:", err.message);
-//     }
+//         const newLog = await AlgoTradeLog.create({ brokerId: broker._id, brokerName: broker.name, symbol, action, quantity, status, message, orderId });
+//         if (global.io) global.io.emit('new-trade-log', newLog);
+//     } catch (err) { console.error("❌ Log Error:", err.message); }
 // };
-
-// // ==========================================
-// // ⚙️ MAIN CRON JOB (Runs Every 10 Seconds)
-// // ==========================================
 
 // cron.schedule('*/10 * * * * *', async () => {
 //     try {
 //         const currentTime = moment().tz("Asia/Kolkata").format("HH:mm"); 
 //         const activeDeployments = await Deployment.find({ status: 'ACTIVE' }).populate('strategyId');
-        
+
 //         if (activeDeployments.length === 0) return;
 
-//         // Har raat 12:00 baje memory lock clean kar do (taaki agle din naye trades ho sakein)
-//         if (currentTime === "00:00" && executionLocks.size > 0) {
-//             executionLocks.clear();
-//             console.log("🧹 Execution Locks Cleared for the new day.");
-//         }
+//         if (currentTime === "00:00" && executionLocks.size > 0) executionLocks.clear();
 
 //         for (const deployment of activeDeployments) {
 //             const strategy = deployment.strategyId;
 //             if (!strategy) continue;
 
 //             const config = strategy.data?.config || {};
-            
-//             // 🔥 LOCK LOGIC: ID aur Time ko jodkar ek unique lock key banayi
-//             // Example: "65f3d_12:55"
 //             const lockKey = `${deployment._id.toString()}_${currentTime}`;
 
-//             // Check karo ki kya time ho gaya hai, aur kya yeh lock pehle se maujood to nahi hai?
 //             if (config.startTime === currentTime && !executionLocks.has(lockKey)) {
-                
-//                 // 🛑 IMMEDIATE LOCK: Agle loop se pehle hi isko set kar do
+
 //                 executionLocks.add(lockKey);
 //                 console.log(`⚡ ENTRY TRIGGERED! Strategy: ${strategy.name}`);
 
 //                 for (const brokerId of deployment.brokers) {
 //                     const broker = await Broker.findById(brokerId);
-                    
 //                     if (broker && broker.engineOn) {
-                        
+
 //                         const instrumentData = strategy.data.instruments[0]; 
 //                         let rawSymbol = instrumentData ? instrumentData.name : "";
 //                         let baseSymbol = "NIFTY"; 
@@ -119,46 +83,29 @@
 //                         else if (rawSymbol.toUpperCase().includes("FIN")) baseSymbol = "FINNIFTY";
 
 //                         for (const leg of strategy.data.legs) {
-                            
+
 //                             let optType = leg.optionType === "Call" ? "CE" : "PE";
 //                             let tradeAction = leg.action.toUpperCase();
 //                             let tradeQty = (leg.quantity || 1) * deployment.multiplier;
 
-//                             console.log(`📡 Fetching Live Price for ${baseSymbol}...`);
 //                             let currentSpotPrice = await fetchLivePrice(baseSymbol);
-
-//                             if (!currentSpotPrice) {
-//                                 console.error(`🚨 TRADE ABORTED: Missing Live Price for ${baseSymbol}`);
-//                                 await createAndEmitLog(broker, baseSymbol, tradeAction, tradeQty, 'FAILED', "Trade Aborted: Live market price not available for ATM calculation.");
-//                                 continue; 
-//                             }
+//                             if (!currentSpotPrice) continue; 
 
 //                             let stepValue = getStrikeStep(baseSymbol); 
 //                             let targetStrikePrice = Math.round(currentSpotPrice / stepValue) * stepValue;
-                            
-//                             let fallbackSymbolName = `${baseSymbol} ${targetStrikePrice} ${optType}`; 
-
 //                             const instrument = getOptionSecurityId(baseSymbol, targetStrikePrice, optType);
-
-//                             if (!instrument) {
-//                                 console.error(`❌ Strike not found in CSV: ${fallbackSymbolName}`);
-//                                 await createAndEmitLog(broker, fallbackSymbolName, tradeAction, tradeQty, 'FAILED', `Option contract not found for calculated strike ${targetStrikePrice}.`);
-//                                 continue; 
-//                             }
+//                             if (!instrument) continue;
 
 //                             let finalSymbolName = instrument.tradingSymbol; 
-//                             console.log(`✅ Found Instrument: ${finalSymbolName} (ID: ${instrument.id})`);
 
 //                             const orderData = {
-//                                 action: tradeAction, 
-//                                 quantity: tradeQty,
-//                                 securityId: instrument.id,
-//                                 segment: instrument.exchange
+//                                 action: tradeAction, quantity: tradeQty,
+//                                 securityId: instrument.id, segment: instrument.exchange
 //                             };
 
 //                             // 🔥 REAL DHAN API CALL
 //                             const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
-                            
+
 //                             if(orderResponse.success) {
 //                                 const respData = orderResponse.data || {};
 //                                 const orderStatus = respData.orderStatus ? respData.orderStatus.toUpperCase() : "UNKNOWN";
@@ -168,11 +115,27 @@
 //                                     await createAndEmitLog(broker, finalSymbolName, tradeAction, tradeQty, 'FAILED', respData.remarks || "Order rejected by broker RMS.", respData.orderId);
 //                                 } else {
 //                                     console.log("🚀 ORDER SUCCESSFULLY PLACED AT BROKER!");
-//                                     await createAndEmitLog(broker, finalSymbolName, tradeAction, tradeQty, 'SUCCESS', `Order placed successfully (${orderStatus})`, respData.orderId);
+
+//                                     // 🔥 PHASE 2: REAL P&L DATA SAVING
+//                                     deployment.tradedSecurityId = instrument.id;
+//                                     deployment.tradedExchange = instrument.exchange;
+//                                     deployment.tradedQty = tradeQty;
+//                                     deployment.tradeAction = tradeAction;
+
+//                                     // Execution ke turant baad Live Premium mangwa lo as Entry Price
+//                                     const entryPrice = await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id);
+//                                     deployment.entryPrice = entryPrice || 0; 
+
+//                                     await deployment.save(); // DB me update kar diya
+
+//                                     await createAndEmitLog(broker, finalSymbolName, tradeAction, tradeQty, 'SUCCESS', `Order placed successfully`, respData.orderId);
 //                                 }
 //                             } else {
-//                                 console.log("⚠️ BROKER REJECTED ORDER:", orderResponse.error);
-//                                 const errorMsg = typeof orderResponse.error === 'object' ? JSON.stringify(orderResponse.error) : orderResponse.error;
+//                                 // 🔥 YAHI MISSING THA! Agar API fail ho jaye (e.g. Market Closed)
+//                                 console.log("⚠️ BROKER API REJECTED ORDER:", orderResponse.error);
+//                                 const errorObj = orderResponse.error || {};
+//                                 const errorMsg = errorObj.internalErrorMessage || errorObj.errorMessage || JSON.stringify(errorObj);
+
 //                                 await createAndEmitLog(broker, finalSymbolName, tradeAction, tradeQty, 'FAILED', errorMsg);
 //                             }
 //                         }
@@ -180,22 +143,17 @@
 //                 }
 //             }
 //         }
-//     } catch (error) {
-//         console.error("❌ Trading Engine Error:", error);
-//     }
+//     } catch (error) { console.error("❌ Trading Engine Error:", error); }
 // });
-
 
 
 
 const cron = require('node-cron');
 const moment = require('moment-timezone');
-const axios = require('axios'); 
+const axios = require('axios');
 const Deployment = require('../models/Deployment');
 const Broker = require('../models/Broker');
-const AlgoTradeLog = require('../models/AlgoTradeLog'); 
-
-// 🔥 NAYA: fetchLiveLTP ko import kiya
+const AlgoTradeLog = require('../models/AlgoTradeLog');
 const { placeDhanOrder, fetchLiveLTP } = require('../services/dhanService');
 const { getOptionSecurityId } = require('../services/instrumentService');
 
@@ -207,10 +165,10 @@ const getStrikeStep = (symbol) => {
     const sym = symbol.toUpperCase();
     if (sym.includes("BANKNIFTY")) return 100;
     if (sym.includes("FINNIFTY")) return 50;
-    if (sym.includes("MIDCPNIFTY")) return 25; 
+    if (sym.includes("MIDCPNIFTY")) return 25;
     if (sym.includes("NIFTY")) return 50;
     if (sym.includes("SENSEX")) return 100;
-    return 50; 
+    return 50;
 };
 
 const fetchLivePrice = async (symbol) => {
@@ -218,8 +176,8 @@ const fetchLivePrice = async (symbol) => {
         let ticker = "";
         const upperSymbol = symbol.toUpperCase();
         if (upperSymbol.includes("BANKNIFTY")) ticker = "^NSEBANK";
-        else if (upperSymbol.includes("FINNIFTY")) ticker = "NIFTY_FIN_SERVICE.NS"; 
-        else if (upperSymbol.includes("MIDCPNIFTY")) ticker = "NIFTY_MIDCAP_SELECT.NS"; 
+        else if (upperSymbol.includes("FINNIFTY")) ticker = "NIFTY_FIN_SERVICE.NS";
+        else if (upperSymbol.includes("MIDCPNIFTY")) ticker = "NIFTY_MIDCAP_SELECT.NS";
         else if (upperSymbol.includes("NIFTY")) ticker = "^NSEI";
         else if (upperSymbol.includes("SENSEX")) ticker = "^BSESN";
         else return null;
@@ -239,13 +197,17 @@ const createAndEmitLog = async (broker, symbol, action, quantity, status, messag
     } catch (err) { console.error("❌ Log Error:", err.message); }
 };
 
+// ==========================================
+// ⚙️ MAIN CRON JOB (Runs Every 10 Seconds)
+// ==========================================
 cron.schedule('*/10 * * * * *', async () => {
     try {
-        const currentTime = moment().tz("Asia/Kolkata").format("HH:mm"); 
+        const currentTime = moment().tz("Asia/Kolkata").format("HH:mm");
         const activeDeployments = await Deployment.find({ status: 'ACTIVE' }).populate('strategyId');
-        
+
         if (activeDeployments.length === 0) return;
 
+        // Har raat memory clean karo
         if (currentTime === "00:00" && executionLocks.size > 0) executionLocks.clear();
 
         for (const deployment of activeDeployments) {
@@ -253,83 +215,131 @@ cron.schedule('*/10 * * * * *', async () => {
             if (!strategy) continue;
 
             const config = strategy.data?.config || {};
-            const lockKey = `${deployment._id.toString()}_${currentTime}`;
 
-            if (config.startTime === currentTime && !executionLocks.has(lockKey)) {
-                
-                executionLocks.add(lockKey);
+            // Entry aur Exit dono ke liye alag-alag Lock ID taaki conflict na ho
+            const entryLockKey = `ENTRY_${deployment._id.toString()}_${currentTime}`;
+            const exitLockKey = `EXIT_${deployment._id.toString()}_${currentTime}`;
+
+            // Target Square-Off Time
+            const squareOffTime = deployment.squareOffTime || config.squareOffTime;
+
+            // ==========================================
+            // 1. ENTRY LOGIC ⚡
+            // ==========================================
+            // Entry tabhi lo jab time match ho, lock na ho, aur pehle se koi trade na chal raha ho
+            if (config.startTime === currentTime && !executionLocks.has(entryLockKey) && !deployment.tradedSecurityId) {
+
+                executionLocks.add(entryLockKey);
                 console.log(`⚡ ENTRY TRIGGERED! Strategy: ${strategy.name}`);
 
                 for (const brokerId of deployment.brokers) {
                     const broker = await Broker.findById(brokerId);
                     if (broker && broker.engineOn) {
-                        
-                        const instrumentData = strategy.data.instruments[0]; 
+
+                        const instrumentData = strategy.data.instruments[0];
                         let rawSymbol = instrumentData ? instrumentData.name : "";
-                        let baseSymbol = "NIFTY"; 
+                        let baseSymbol = "NIFTY";
                         if (rawSymbol.toUpperCase().includes("BANK")) baseSymbol = "BANKNIFTY";
                         else if (rawSymbol.toUpperCase().includes("FIN")) baseSymbol = "FINNIFTY";
 
                         for (const leg of strategy.data.legs) {
-                            
                             let optType = leg.optionType === "Call" ? "CE" : "PE";
                             let tradeAction = leg.action.toUpperCase();
                             let tradeQty = (leg.quantity || 1) * deployment.multiplier;
 
                             let currentSpotPrice = await fetchLivePrice(baseSymbol);
-                            if (!currentSpotPrice) continue; 
+                            if (!currentSpotPrice) continue;
 
-                            let stepValue = getStrikeStep(baseSymbol); 
+                            let stepValue = getStrikeStep(baseSymbol);
                             let targetStrikePrice = Math.round(currentSpotPrice / stepValue) * stepValue;
                             const instrument = getOptionSecurityId(baseSymbol, targetStrikePrice, optType);
                             if (!instrument) continue;
 
-                            let finalSymbolName = instrument.tradingSymbol; 
+                            let finalSymbolName = instrument.tradingSymbol;
 
-                            const orderData = {
-                                action: tradeAction, quantity: tradeQty,
-                                securityId: instrument.id, segment: instrument.exchange
-                            };
-
-                            // 🔥 REAL DHAN API CALL
+                            const orderData = { action: tradeAction, quantity: tradeQty, securityId: instrument.id, segment: instrument.exchange };
                             const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
-                            
-                            if(orderResponse.success) {
+
+                            if (orderResponse.success) {
                                 const respData = orderResponse.data || {};
                                 const orderStatus = respData.orderStatus ? respData.orderStatus.toUpperCase() : "UNKNOWN";
 
-                                if (orderStatus === "REJECTED") {
-                                    console.log("⚠️ BROKER RMS REJECTED ORDER:", respData.remarks);
-                                    await createAndEmitLog(broker, finalSymbolName, tradeAction, tradeQty, 'FAILED', respData.remarks || "Order rejected by broker RMS.", respData.orderId);
-                                } else {
-                                    console.log("🚀 ORDER SUCCESSFULLY PLACED AT BROKER!");
-                                    
-                                    // 🔥 PHASE 2: REAL P&L DATA SAVING
+                                if (orderStatus !== "REJECTED") {
+                                    console.log("🚀 ENTRY ORDER SUCCESSFULLY PLACED AT BROKER!");
+
+                                    // Save real trade data
                                     deployment.tradedSecurityId = instrument.id;
                                     deployment.tradedExchange = instrument.exchange;
                                     deployment.tradedQty = tradeQty;
                                     deployment.tradeAction = tradeAction;
-
-                                    // Execution ke turant baad Live Premium mangwa lo as Entry Price
                                     const entryPrice = await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id);
-                                    deployment.entryPrice = entryPrice || 0; 
+                                    deployment.entryPrice = entryPrice || 0;
+                                    await deployment.save();
 
-                                    await deployment.save(); // DB me update kar diya
-
-                                    await createAndEmitLog(broker, finalSymbolName, tradeAction, tradeQty, 'SUCCESS', `Order placed successfully`, respData.orderId);
+                                    await createAndEmitLog(broker, finalSymbolName, tradeAction, tradeQty, 'SUCCESS', `Entry Order placed successfully`, respData.orderId);
+                                } else {
+                                    await createAndEmitLog(broker, finalSymbolName, tradeAction, tradeQty, 'FAILED', respData.remarks || "RMS Rejected", respData.orderId);
                                 }
                             } else {
-                                // 🔥 YAHI MISSING THA! Agar API fail ho jaye (e.g. Market Closed)
-                                console.log("⚠️ BROKER API REJECTED ORDER:", orderResponse.error);
                                 const errorObj = orderResponse.error || {};
                                 const errorMsg = errorObj.internalErrorMessage || errorObj.errorMessage || JSON.stringify(errorObj);
-                                
                                 await createAndEmitLog(broker, finalSymbolName, tradeAction, tradeQty, 'FAILED', errorMsg);
                             }
                         }
                     }
                 }
             }
+
+
+            // ==========================================
+            // 2. AUTO SQUARE-OFF LOGIC ⏰ (NEW)
+            // ==========================================
+            // Exit tabhi karo jab squareOff time ho jaye aur pehle se koi trade open ho
+            if (squareOffTime === currentTime && !executionLocks.has(exitLockKey) && deployment.tradedSecurityId) {
+
+                executionLocks.add(exitLockKey);
+                console.log(`⏰ SQUARE-OFF TRIGGERED! Strategy: ${strategy.name}`);
+
+                for (const brokerId of deployment.brokers) {
+                    const broker = await Broker.findById(brokerId);
+                    if (broker && broker.engineOn) {
+
+                        // 🔥 REVERSE ACTION: Agar BUY kiya tha to SELL karo, SELL kiya tha to BUY karo
+                        const exitAction = deployment.tradeAction === 'BUY' ? 'SELL' : 'BUY';
+
+                        const orderData = {
+                            action: exitAction,
+                            quantity: deployment.tradedQty,
+                            securityId: deployment.tradedSecurityId,
+                            segment: deployment.tradedExchange
+                        };
+
+                        const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
+
+                        if (orderResponse.success) {
+                            const respData = orderResponse.data || {};
+                            const orderStatus = respData.orderStatus ? respData.orderStatus.toUpperCase() : "UNKNOWN";
+
+                            if (orderStatus !== "REJECTED") {
+                                console.log("🏁 SQUARE-OFF ORDER SUCCESSFULLY PLACED!");
+
+                                // 🔥 THE CLIMAX: Status ko COMPLETED kar do taaki ye Algo permanently stop ho jaye
+                                deployment.status = 'COMPLETED';
+                                await deployment.save();
+
+                                await createAndEmitLog(broker, "Auto Square-Off", exitAction, deployment.tradedQty, 'SUCCESS', `Strategy Time-Based Square-Off Completed`, respData.orderId);
+                            } else {
+                                await createAndEmitLog(broker, "Auto Square-Off", exitAction, deployment.tradedQty, 'FAILED', respData.remarks || "RMS Rejected", respData.orderId);
+                            }
+                        } else {
+                            const errorObj = orderResponse.error || {};
+                            const errorMsg = errorObj.internalErrorMessage || errorObj.errorMessage || JSON.stringify(errorObj);
+                            await createAndEmitLog(broker, "Auto Square-Off", exitAction, deployment.tradedQty, 'FAILED', errorMsg);
+                        }
+                    }
+                }
+            }
+
         }
     } catch (error) { console.error("❌ Trading Engine Error:", error); }
 });
