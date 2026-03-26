@@ -562,11 +562,11 @@ const downloadAndParseInstruments = async () => {
 
                     tempData.push({
                         id: (row.SEM_SMST_SECURITY_ID || "").trim(),
-                        // 🔥 Ensure hum DASH wala symbol hi use kar rahe hain
-                        customSymbol: (row.SEM_CUSTOM_SYMBOL || "").trim(), 
+                        // 🔥 THE HERO FIX: Direct Base Symbol utha rahe hain (Bina Dash ke!)
+                        baseSymbol: (row.SEM_SYMBOL || "").trim().toUpperCase(), 
                         strike: parseFloat(row.SEM_STRIKE_PRICE),  
-                        optionType: (row.SEM_OPTION_TYPE || "").trim().toUpperCase(), // Yahan 'CE' ya 'PE' aayega
-                        expiry: (row.SEM_EXPIRY_DATE || "").trim(),               
+                        optionType: (row.SEM_OPTION_TYPE || "").trim().toUpperCase(),
+                        expiry: (row.SEM_EXPIRY_DATE || "").trim(),
                         exchange: mappedExchange 
                     });
                 }
@@ -585,22 +585,20 @@ const getOptionSecurityId = (baseSymbol, strike, optionType) => {
     const targetBase = baseSymbol.toUpperCase(); 
     const targetStrike = parseFloat(strike); 
     
-    // Engine se jo bhi aaye (CE ya CALL), use saaf kar lo
+    // Dhan kabhi CALL/PUT likhta hai, kabhi CE/PE. Dono ko cover kar liya.
     const isCall = ['CE', 'CALL'].includes(optionType.toUpperCase());
-    const symbolSuffix = isCall ? 'CE' : 'PE'; 
+    const validOptTypes = isCall ? ['CE', 'CALL'] : ['PE', 'PUT'];
 
-    // 🔥 THE FOOLPROOF FILTER
-    // Hum 'optionType' column ko check hi nahi karenge! 
-    // Sidha Custom Symbol ke aakhiri hisse (endsWith) ko match karenge
+    // 🔥 THE FOOLPROOF FILTER (Koi dash nahi, direct Exact Match)
     const matches = nfoInstruments.filter(inst => 
         inst.exchange === 'NSE_FNO' && 
-        inst.strike === targetStrike && 
-        inst.customSymbol.startsWith(targetBase + '-') && 
-        inst.customSymbol.endsWith(symbolSuffix) // Symbol ke aakhiri me 'CE' hona chahiye
+        inst.baseSymbol === targetBase && // Exact 'NIFTY'
+        inst.strike === targetStrike &&   // Exact 23300
+        validOptTypes.includes(inst.optionType) // Exact CE ya CALL
     );
 
     if (matches.length === 0) {
-        console.log(`⚠️ Instrument NOT FOUND for: ${targetBase} ${targetStrike} ${symbolSuffix}`);
+        console.log(`⚠️ Instrument NOT FOUND for: ${targetBase} ${targetStrike} ${optionType}`);
         return null;
     }
 
@@ -610,9 +608,10 @@ const getOptionSecurityId = (baseSymbol, strike, optionType) => {
     return {
         id: matches[0].id,
         exchange: matches[0].exchange, 
-        tradingSymbol: matches[0].customSymbol, 
+        // UI me dikhane ke liye ek saaf naam khud generate kar liya
+        tradingSymbol: `${targetBase} ${targetStrike} ${optionType.toUpperCase()}`, 
         expiry: matches[0].expiry.split(' ')[0],       
-        // Dhan Order API ko hamesha 'CALL' ya 'PUT' hi bhejenge taaki order fail na ho
+        // Dhan API ke liye CALL/PUT
         optionType: isCall ? 'CALL' : 'PUT', 
         strike: matches[0].strike  
     };
