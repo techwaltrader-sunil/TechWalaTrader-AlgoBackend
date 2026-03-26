@@ -644,23 +644,22 @@ const downloadAndParseInstruments = async () => {
                 const instName = (row.SEM_INSTRUMENT_NAME || "").trim();
                 const rawExch = (row.SEM_EXM_EXCH_ID || "").trim().toUpperCase();
                 
-                // 🔥 THE NUCLEAR OPTION: Main Gate Lock!
-                // Sirf aur sirf 'NFO' (NSE F&O) ko andar aane do. 
-                // BSE ka pura wajood yahin khatam!
-                if ((instName === 'OPTIDX' || instName === 'OPTSTK') && rawExch === 'NFO') {
+                // 🔥 THE FINAL MASTERSTROKE: Dhan F&O ke liye 'NFO' nahi, balki 'NSE' likhta hai!
+                // Ab sirf aur sirf NSE ke options load honge, BSE humesha ke liye bahar!
+                if ((instName === 'OPTIDX' || instName === 'OPTSTK') && rawExch === 'NSE') {
                     tempData.push({
-                        id: (row.SEM_SMST_SECURITY_ID || "").trim(), // Ye 100% 5-digit NSE ID hoga
+                        id: (row.SEM_SMST_SECURITY_ID || "").trim(),
                         baseSymbol: (row.SEM_SYMBOL || "").trim().toUpperCase(), 
                         strike: parseFloat(row.SEM_STRIKE_PRICE),  
                         optionType: (row.SEM_OPTION_TYPE || "").trim().toUpperCase(),
                         expiry: (row.SEM_EXPIRY_DATE || "").trim(),               
-                        tradingSymbol: (row.SEM_TRADING_SYMBOL || "").trim() 
+                        tradingSymbol: (row.SEM_TRADING_SYMBOL || "").trim().toUpperCase() 
                     });
                 }
             })
             .on('end', () => {
                 nfoInstruments = tempData;
-                console.log(`✅ Dhan CSV Parsed! Loaded ${nfoInstruments.length} STRICTLY NSE Options.`);
+                console.log(`✅ Dhan CSV Parsed! Loaded ${nfoInstruments.length} PERFECT NSE Options.`);
             });
 
     } catch (error) {
@@ -672,30 +671,37 @@ const getOptionSecurityId = (baseSymbol, strike, optionType) => {
     const targetBase = baseSymbol.toUpperCase(); 
     const targetStrike = parseFloat(strike); 
     
-    // Engine CE bhejega, hum CALL ya CE jo bhi file me ho, dono ko match kar lenge
     const isCall = ['CE', 'CALL'].includes(optionType.toUpperCase());
-    const validOptTypes = isCall ? ['CALL', 'CE'] : ['PUT', 'PE'];
+    const opt1 = isCall ? 'CE' : 'PE';
+    const opt2 = isCall ? 'CALL' : 'PUT';
 
-    const matches = nfoInstruments.filter(inst => 
-        inst.baseSymbol === targetBase && 
-        inst.strike === targetStrike && 
-        validOptTypes.includes(inst.optionType)
-    );
+    const matches = nfoInstruments.filter(inst => {
+        // 1. Strike Check
+        if (inst.strike !== targetStrike) return false;
+        
+        // 2. Base Symbol Check (Dhan SEM_SYMBOL ya TRADING_SYMBOL se match karega)
+        if (inst.baseSymbol !== targetBase && !inst.tradingSymbol.startsWith(targetBase)) return false;
+        
+        // 3. CE/PE match karega
+        if (inst.optionType !== opt1 && inst.optionType !== opt2 && !inst.tradingSymbol.endsWith(opt1)) return false;
+        
+        return true;
+    });
 
     if (matches.length === 0) {
         console.log(`⚠️ Instrument NOT FOUND for: ${targetBase} ${targetStrike} ${optionType}`);
         return null;
     }
 
-    // Sabse kareeb wali expiry nikal lo
+    // Sabse pass wali expiry
     matches.sort((a, b) => new Date(a.expiry) - new Date(b.expiry));
 
     return {
         id: matches[0].id,
-        exchange: "NSE_FNO", // Dhan Order API ko yahi shabd chahiye
-        tradingSymbol: matches[0].tradingSymbol, // Ab yahan NSE ka saaf naam dikhega
+        exchange: "NSE_FNO", // Order API ke liye exact string
+        tradingSymbol: matches[0].tradingSymbol, 
         expiry: matches[0].expiry.split(' ')[0],       
-        optionType: isCall ? 'CALL' : 'PUT', // Order payload me CALL/PUT jayega
+        optionType: isCall ? 'CALL' : 'PUT', // Payload me CALL ya PUT hi jayega
         strike: matches[0].strike  
     };
 };
