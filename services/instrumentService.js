@@ -442,6 +442,92 @@
 
 
 
+// const axios = require('axios');
+// const csv = require('csv-parser');
+
+// const DHAN_CSV_URL = "https://images.dhan.co/api-data/api-scrip-master.csv";
+
+// let nfoInstruments = [];
+
+// const downloadAndParseInstruments = async () => {
+//     console.log("📥 Downloading Dhan Scrip Master CSV... Please wait.");
+    
+//     try {
+//         const response = await axios({
+//             method: 'get',
+//             url: DHAN_CSV_URL,
+//             responseType: 'stream'
+//         });
+
+//         const tempData = [];
+
+//         response.data
+//             .pipe(csv({ mapHeaders: ({ header }) => header.trim() })) 
+//             .on('data', (row) => {
+//                 const instName = (row.SEM_INSTRUMENT_NAME || "").trim();
+                
+//                 if (instName === 'OPTIDX' || instName === 'OPTSTK') {
+                    
+//                     let rawExchange = (row.SEM_EXM_EXCH_ID || "").trim().toUpperCase();
+//                     let mappedExchange = "NSE_FNO"; 
+                    
+//                     if (rawExchange.includes('BSE') || rawExchange === 'BFO') {
+//                         mappedExchange = 'BSE_FNO'; 
+//                     }
+
+//                     tempData.push({
+//                         id: (row.SEM_SMST_SECURITY_ID || "").trim(),              
+//                         symbol: (row.SEM_CUSTOM_SYMBOL || "").trim(),             
+//                         strike: parseFloat(row.SEM_STRIKE_PRICE),  
+//                         optionType: (row.SEM_OPTION_TYPE || "").trim(),           
+//                         expiry: (row.SEM_EXPIRY_DATE || "").trim(),               
+//                         tradingSymbol: (row.SEM_TRADING_SYMBOL || "").trim(),
+//                         exchange: mappedExchange 
+//                     });
+//                 }
+//             })
+//             .on('end', () => {
+//                 nfoInstruments = tempData;
+//                 console.log(`✅ Dhan CSV Parsed Successfully! Loaded ${nfoInstruments.length} Options contracts.`);
+//             });
+
+//     } catch (error) {
+//         console.error("❌ Failed to download CSV:", error.message);
+//     }
+// };
+
+// const getOptionSecurityId = (baseSymbol, strike, optionType) => {
+    
+//     // 🔥 THE FIX: Aapka Webhook wala solid logic wapas aa gaya!
+//     // Ye Dhan ke naye format (e.g., BANKNIFTY-Mar2026-53400-CE) ko correctly pakad lega
+//     const matches = nfoInstruments.filter(inst => 
+//         inst.tradingSymbol.startsWith(baseSymbol + '-') && 
+//         inst.strike === parseFloat(strike) && 
+//         inst.optionType === optionType
+//     );
+
+//     if (matches.length === 0) return null;
+
+//     matches.sort((a, b) => new Date(a.expiry) - new Date(b.expiry));
+
+//     const apiOptionType = matches[0].optionType === 'CE' ? 'CALL' : 'PUT';
+//     const apiExpiry = matches[0].expiry.split(' ')[0]; 
+
+//     return {
+//         id: matches[0].id,
+//         exchange: matches[0].exchange, 
+//         tradingSymbol: matches[0].tradingSymbol,
+//         expiry: apiExpiry,       
+//         optionType: apiOptionType, 
+//         strike: matches[0].strike  
+//     };
+// };
+
+// module.exports = { downloadAndParseInstruments, getOptionSecurityId };
+
+
+
+
 const axios = require('axios');
 const csv = require('csv-parser');
 
@@ -476,12 +562,13 @@ const downloadAndParseInstruments = async () => {
                     }
 
                     tempData.push({
-                        id: (row.SEM_SMST_SECURITY_ID || "").trim(),              
-                        symbol: (row.SEM_CUSTOM_SYMBOL || "").trim(),             
-                        strike: parseFloat(row.SEM_STRIKE_PRICE),  
-                        optionType: (row.SEM_OPTION_TYPE || "").trim(),           
-                        expiry: (row.SEM_EXPIRY_DATE || "").trim(),               
+                        id: (row.SEM_SMST_SECURITY_ID || "").trim(),
+                        // 🔥 Dono symbol save karenge (Dhan dash wala naam Custom me deta hai)
+                        customSymbol: (row.SEM_CUSTOM_SYMBOL || "").trim(), 
                         tradingSymbol: (row.SEM_TRADING_SYMBOL || "").trim(),
+                        strike: parseFloat(row.SEM_STRIKE_PRICE),  
+                        optionType: (row.SEM_OPTION_TYPE || "").trim().toUpperCase(), 
+                        expiry: (row.SEM_EXPIRY_DATE || "").trim(),               
                         exchange: mappedExchange 
                     });
                 }
@@ -498,29 +585,31 @@ const downloadAndParseInstruments = async () => {
 
 const getOptionSecurityId = (baseSymbol, strike, optionType) => {
     
-    // 🔥 THE FIX: Aapka Webhook wala solid logic wapas aa gaya!
-    // Ye Dhan ke naye format (e.g., BANKNIFTY-Mar2026-53400-CE) ko correctly pakad lega
+    // 🔥 THE MASTERSTROKE: Engine CE bhejega, hum CSV me CALL dhundhenge!
+    let mappedOptionType = optionType.toUpperCase();
+    if (mappedOptionType === 'CE') mappedOptionType = 'CALL';
+    if (mappedOptionType === 'PE') mappedOptionType = 'PUT';
+
     const matches = nfoInstruments.filter(inst => 
-        inst.exchange === 'NSE_FNO' && // 👈 LOCK 1: Sirf NSE ka data, BSE fail!
-        inst.symbol.startsWith(baseSymbol + '-') && // 👈 LOCK 2: 'tradingSymbol' ki jagah 'symbol' use kiya    
-        // inst.tradingSymbol.startsWith(baseSymbol + '-') && 
+        inst.exchange === 'NSE_FNO' && // LOCK 1: Sirf NSE
+        inst.customSymbol.startsWith(baseSymbol.toUpperCase() + '-') && // LOCK 2: Dash wala naam
         inst.strike === parseFloat(strike) && 
-        inst.optionType === optionType
+        inst.optionType === mappedOptionType // LOCK 3: CE ko CALL me map kiya
     );
 
-    if (matches.length === 0) return null;
+    if (matches.length === 0) {
+        console.log(`⚠️ Instrument NOT FOUND for: ${baseSymbol} ${strike} ${optionType}`);
+        return null;
+    }
 
     matches.sort((a, b) => new Date(a.expiry) - new Date(b.expiry));
-
-    const apiOptionType = matches[0].optionType === 'CE' ? 'CALL' : 'PUT';
-    const apiExpiry = matches[0].expiry.split(' ')[0]; 
 
     return {
         id: matches[0].id,
         exchange: matches[0].exchange, 
-        tradingSymbol: matches[0].tradingSymbol,
-        expiry: apiExpiry,       
-        optionType: apiOptionType, 
+        tradingSymbol: matches[0].customSymbol, // UI me wahi dash wala naam dikhega
+        expiry: matches[0].expiry.split(' ')[0],       
+        optionType: optionType, // Engine ko CE hi wapas do
         strike: matches[0].strike  
     };
 };
