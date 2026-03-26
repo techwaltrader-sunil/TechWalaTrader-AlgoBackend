@@ -585,36 +585,35 @@ const getOptionSecurityId = (baseSymbol, strike, optionType) => {
     const targetBase = baseSymbol.toUpperCase(); 
     const targetStrike = parseFloat(strike); 
     
-    // Safety Fallback: Engine hamesha 'CE' ya 'PE' bhejega
-    let targetOpt = optionType.toUpperCase();
-    if (targetOpt === 'CALL') targetOpt = 'CE'; 
-    if (targetOpt === 'PUT') targetOpt = 'PE';  
+    // Engine se jo bhi aaye (CE ya CALL), use saaf kar lo
+    const isCall = ['CE', 'CALL'].includes(optionType.toUpperCase());
+    const symbolSuffix = isCall ? 'CE' : 'PE'; 
 
-    // 🔥 THE PERFECT FILTER: CSV me 'CE' aur 'NSE_FNO' dhundho
+    // 🔥 THE FOOLPROOF FILTER
+    // Hum 'optionType' column ko check hi nahi karenge! 
+    // Sidha Custom Symbol ke aakhiri hisse (endsWith) ko match karenge
     const matches = nfoInstruments.filter(inst => 
         inst.exchange === 'NSE_FNO' && 
-        inst.customSymbol.startsWith(targetBase + '-') && 
         inst.strike === targetStrike && 
-        inst.optionType === targetOpt // CE match karega
+        inst.customSymbol.startsWith(targetBase + '-') && 
+        inst.customSymbol.endsWith(symbolSuffix) // Symbol ke aakhiri me 'CE' hona chahiye
     );
 
     if (matches.length === 0) {
-        console.log(`⚠️ Instrument NOT FOUND for: ${targetBase} ${targetStrike} ${targetOpt}`);
+        console.log(`⚠️ Instrument NOT FOUND for: ${targetBase} ${targetStrike} ${symbolSuffix}`);
         return null;
     }
 
     // Sabse kareeb wali expiry ko top par laao
     matches.sort((a, b) => new Date(a.expiry) - new Date(b.expiry));
 
-    // 🔥 THE MAGIC TRICK: Dhan API order ke liye wapas CE ko CALL me convert karo
-    const apiOptionType = matches[0].optionType === 'CE' ? 'CALL' : 'PUT';
-
     return {
-        id: matches[0].id, // 100% genuine 5-digit NSE ID
+        id: matches[0].id,
         exchange: matches[0].exchange, 
         tradingSymbol: matches[0].customSymbol, 
         expiry: matches[0].expiry.split(' ')[0],       
-        optionType: apiOptionType, // Engine API ko CALL/PUT bhejega
+        // Dhan Order API ko hamesha 'CALL' ya 'PUT' hi bhejenge taaki order fail na ho
+        optionType: isCall ? 'CALL' : 'PUT', 
         strike: matches[0].strike  
     };
 };
