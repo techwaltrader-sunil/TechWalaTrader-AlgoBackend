@@ -501,7 +501,9 @@ const getOptionSecurityId = (baseSymbol, strike, optionType) => {
     // 🔥 THE FIX: Aapka Webhook wala solid logic wapas aa gaya!
     // Ye Dhan ke naye format (e.g., BANKNIFTY-Mar2026-53400-CE) ko correctly pakad lega
     const matches = nfoInstruments.filter(inst => 
-        inst.tradingSymbol.startsWith(baseSymbol + '-') && 
+        inst.exchange === 'NSE_FNO' && // 👈 LOCK 1: Sirf NSE ka data, BSE fail!
+        inst.symbol.startsWith(baseSymbol + '-') && // 👈 LOCK 2: 'tradingSymbol' ki jagah 'symbol' use kiya    
+        // inst.tradingSymbol.startsWith(baseSymbol + '-') && 
         inst.strike === parseFloat(strike) && 
         inst.optionType === optionType
     );
