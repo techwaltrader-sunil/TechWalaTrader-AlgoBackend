@@ -642,13 +642,14 @@ const downloadAndParseInstruments = async () => {
             .pipe(csv({ mapHeaders: ({ header }) => header.trim() })) 
             .on('data', (row) => {
                 const instName = (row.SEM_INSTRUMENT_NAME || "").trim();
-                const rawExch = (row.SEM_EXM_EXCH_ID || "").trim().toUpperCase();
+                const secId = (row.SEM_SMST_SECURITY_ID || "").trim();
                 
-                // 🔥 THE FINAL MASTERSTROKE: Dhan F&O ke liye 'NFO' nahi, balki 'NSE' likhta hai!
-                // Ab sirf aur sirf NSE ke options load honge, BSE humesha ke liye bahar!
-                if ((instName === 'OPTIDX' || instName === 'OPTSTK') && rawExch === 'NSE') {
+                // 🔥 THE IRON-CLAD GATEKEEPER 🔥
+                // 1. Sirf Options hone chahiye
+                // 2. ID ki lambai 7 anko se kam honi chahiye (BSE 10 digit ka hota hai, wo yahin block ho jayega!)
+                if ((instName === 'OPTIDX' || instName === 'OPTSTK') && secId.length > 0 && secId.length <= 7) {
                     tempData.push({
-                        id: (row.SEM_SMST_SECURITY_ID || "").trim(),
+                        id: secId, // Ye ab 100% NSE ka 5/6 digit ID hoga
                         baseSymbol: (row.SEM_SYMBOL || "").trim().toUpperCase(), 
                         strike: parseFloat(row.SEM_STRIKE_PRICE),  
                         optionType: (row.SEM_OPTION_TYPE || "").trim().toUpperCase(),
@@ -659,7 +660,8 @@ const downloadAndParseInstruments = async () => {
             })
             .on('end', () => {
                 nfoInstruments = tempData;
-                console.log(`✅ Dhan CSV Parsed! Loaded ${nfoInstruments.length} PERFECT NSE Options.`);
+                // Ab ye apko exact sahi number dikhayega (BSE ka kachra hatne ke baad)
+                console.log(`✅ Dhan CSV Parsed! Loaded ${nfoInstruments.length} TRUE NSE Options (BSE Blocked by ID Length).`);
             });
 
     } catch (error) {
@@ -671,19 +673,22 @@ const getOptionSecurityId = (baseSymbol, strike, optionType) => {
     const targetBase = baseSymbol.toUpperCase(); 
     const targetStrike = parseFloat(strike); 
     
+    // Engine se jo aaye, use CALL/PUT aur CE/PE dono format me ready rakho
     const isCall = ['CE', 'CALL'].includes(optionType.toUpperCase());
     const opt1 = isCall ? 'CE' : 'PE';
     const opt2 = isCall ? 'CALL' : 'PUT';
 
     const matches = nfoInstruments.filter(inst => {
-        // 1. Strike Check
+        // 1. Exact Strike match
         if (inst.strike !== targetStrike) return false;
         
-        // 2. Base Symbol Check (Dhan SEM_SYMBOL ya TRADING_SYMBOL se match karega)
-        if (inst.baseSymbol !== targetBase && !inst.tradingSymbol.startsWith(targetBase)) return false;
+        // 2. Symbol match (Dhan ke kisi bhi column me ho)
+        const matchBase = inst.baseSymbol === targetBase || inst.tradingSymbol.startsWith(targetBase);
+        if (!matchBase) return false;
         
-        // 3. CE/PE match karega
-        if (inst.optionType !== opt1 && inst.optionType !== opt2 && !inst.tradingSymbol.endsWith(opt1)) return false;
+        // 3. Option Type match
+        const matchOpt = inst.optionType === opt1 || inst.optionType === opt2 || inst.tradingSymbol.endsWith(opt1);
+        if (!matchOpt) return false;
         
         return true;
     });
@@ -693,15 +698,15 @@ const getOptionSecurityId = (baseSymbol, strike, optionType) => {
         return null;
     }
 
-    // Sabse pass wali expiry
+    // Sabse kareeb wali expiry nikalo
     matches.sort((a, b) => new Date(a.expiry) - new Date(b.expiry));
 
     return {
         id: matches[0].id,
-        exchange: "NSE_FNO", // Order API ke liye exact string
+        exchange: "NSE_FNO", // Dhan API ke liye
         tradingSymbol: matches[0].tradingSymbol, 
         expiry: matches[0].expiry.split(' ')[0],       
-        optionType: isCall ? 'CALL' : 'PUT', // Payload me CALL ya PUT hi jayega
+        optionType: isCall ? 'CALL' : 'PUT', // Order payload me CALL/PUT jayega
         strike: matches[0].strike  
     };
 };
