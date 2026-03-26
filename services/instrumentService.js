@@ -9,7 +9,7 @@
 
 // // const downloadAndParseInstruments = async () => {
 // //     console.log("📥 Downloading Dhan Scrip Master CSV... Please wait.");
-    
+
 // //     try {
 // //         const response = await axios({
 // //             method: 'get',
@@ -76,7 +76,7 @@
 
 // // const downloadAndParseInstruments = async () => {
 // //     console.log("📥 Downloading Dhan Scrip Master CSV... Please wait.");
-    
+
 // //     try {
 // //         const response = await axios({
 // //             method: 'get',
@@ -105,7 +105,7 @@
 // //             .on('end', () => {
 // //                 nfoInstruments = tempData;
 // //                 console.log(`✅ Dhan CSV Parsed Successfully! Loaded ${nfoInstruments.length} Options contracts.`);
-                
+
 // //                 // Debugging ke liye ek sample print kar lete hain (Baad me hata denge)
 // //                 if(nfoInstruments.length > 0) {
 // //                     console.log("🔍 Sample Option Data:", nfoInstruments[0]);
@@ -146,7 +146,7 @@
 
 // const downloadAndParseInstruments = async () => {
 //     console.log("📥 Downloading Dhan Scrip Master CSV... Please wait.");
-    
+
 //     try {
 //         const response = await axios({
 //             method: 'get',
@@ -160,12 +160,12 @@
 //             .pipe(csv({ mapHeaders: ({ header }) => header.trim() })) 
 //             .on('data', (row) => {
 //                 const instName = (row.SEM_INSTRUMENT_NAME || "").trim();
-                
+
 //                 if (instName === 'OPTIDX' || instName === 'OPTSTK') {
-                    
+
 //                     let rawExchange = (row.SEM_EXM_EXCH_ID || "").trim().toUpperCase();
 //                     let mappedExchange = "NSE_FNO"; 
-                    
+
 //                     if (rawExchange.includes('BSE') || rawExchange === 'BFO') {
 //                         mappedExchange = 'BSE_FNO'; 
 //                     }
@@ -232,7 +232,7 @@
 
 // const downloadAndParseInstruments = async () => {
 //     console.log("📥 Downloading Dhan Scrip Master CSV... Please wait.");
-    
+
 //     try {
 //         const response = await axios({
 //             method: 'get',
@@ -299,7 +299,7 @@
 
 // const downloadAndParseInstruments = async () => {
 //     console.log("📥 Downloading Dhan Scrip Master CSV... Please wait.");
-    
+
 //     try {
 //         const response = await axios({
 //             method: 'get',
@@ -328,7 +328,7 @@
 //             .on('end', () => {
 //                 nfoInstruments = tempData;
 //                 console.log(`✅ Dhan CSV Parsed Successfully! Loaded ${nfoInstruments.length} Options contracts.`);
-                
+
 //                 // Debugging ke liye ek sample print kar lete hain (Baad me hata denge)
 //                 if(nfoInstruments.length > 0) {
 //                     console.log("🔍 Sample Option Data:", nfoInstruments[0]);
@@ -369,7 +369,7 @@
 
 // const downloadAndParseInstruments = async () => {
 //     console.log("📥 Downloading Dhan Scrip Master CSV... Please wait.");
-    
+
 //     try {
 //         const response = await axios({
 //             method: 'get',
@@ -383,12 +383,12 @@
 //             .pipe(csv({ mapHeaders: ({ header }) => header.trim() })) 
 //             .on('data', (row) => {
 //                 const instName = (row.SEM_INSTRUMENT_NAME || "").trim();
-                
+
 //                 if (instName === 'OPTIDX' || instName === 'OPTSTK') {
-                    
+
 //                     let rawExchange = (row.SEM_EXM_EXCH_ID || "").trim().toUpperCase();
 //                     let mappedExchange = "NSE_FNO"; 
-                    
+
 //                     if (rawExchange.includes('BSE') || rawExchange === 'BFO') {
 //                         mappedExchange = 'BSE_FNO'; 
 //                     }
@@ -451,7 +451,7 @@
 
 // const downloadAndParseInstruments = async () => {
 //     console.log("📥 Downloading Dhan Scrip Master CSV... Please wait.");
-    
+
 //     try {
 //         const response = await axios({
 //             method: 'get',
@@ -465,12 +465,12 @@
 //             .pipe(csv({ mapHeaders: ({ header }) => header.trim() })) 
 //             .on('data', (row) => {
 //                 const instName = (row.SEM_INSTRUMENT_NAME || "").trim();
-                
+
 //                 if (instName === 'OPTIDX' || instName === 'OPTSTK') {
-                    
+
 //                     let rawExchange = (row.SEM_EXM_EXCH_ID || "").trim().toUpperCase();
 //                     let mappedExchange = "NSE_FNO"; 
-                    
+
 //                     if (rawExchange.includes('BSE') || rawExchange === 'BFO') {
 //                         mappedExchange = 'BSE_FNO'; 
 //                     }
@@ -497,7 +497,7 @@
 // };
 
 // const getOptionSecurityId = (baseSymbol, strike, optionType) => {
-    
+
 //     // 🔥 THE FIX: Aapka Webhook wala solid logic wapas aa gaya!
 //     // Ye Dhan ke naye format (e.g., BANKNIFTY-Mar2026-53400-CE) ko correctly pakad lega
 //     const matches = nfoInstruments.filter(inst => 
@@ -537,7 +537,7 @@
 
 // const downloadAndParseInstruments = async () => {
 //     console.log("📥 Downloading Dhan Scrip Master CSV... Please wait.");
-    
+
 //     try {
 //         const response = await axios({
 //             method: 'get',
@@ -551,7 +551,7 @@
 //             .pipe(csv({ mapHeaders: ({ header }) => header.trim() })) 
 //             .on('data', (row) => {
 //                 const instName = (row.SEM_INSTRUMENT_NAME || "").trim();
-                
+
 //                 // Sirf Options uthao
 //                 if (instName === 'OPTIDX' || instName === 'OPTSTK') {
 //                     tempData.push({
@@ -628,7 +628,7 @@ let nfoInstruments = [];
 
 const downloadAndParseInstruments = async () => {
     console.log("📥 Downloading Dhan Scrip Master CSV... Please wait.");
-    
+
     try {
         const response = await axios({
             method: 'get',
@@ -639,22 +639,22 @@ const downloadAndParseInstruments = async () => {
         const tempData = [];
 
         response.data
-            .pipe(csv({ mapHeaders: ({ header }) => header.trim() })) 
+            .pipe(csv({ mapHeaders: ({ header }) => header.trim() }))
             .on('data', (row) => {
                 const instName = (row.SEM_INSTRUMENT_NAME || "").trim();
                 const secId = (row.SEM_SMST_SECURITY_ID || "").trim();
-                
+
                 // 🔥 THE IRON-CLAD GATEKEEPER 🔥
                 // 1. Sirf Options hone chahiye
                 // 2. ID ki lambai 7 anko se kam honi chahiye (BSE 10 digit ka hota hai, wo yahin block ho jayega!)
                 if ((instName === 'OPTIDX' || instName === 'OPTSTK') && secId.length > 0 && secId.length <= 7) {
                     tempData.push({
                         id: secId, // Ye ab 100% NSE ka 5/6 digit ID hoga
-                        baseSymbol: (row.SEM_SYMBOL || "").trim().toUpperCase(), 
-                        strike: parseFloat(row.SEM_STRIKE_PRICE),  
+                        baseSymbol: (row.SEM_SYMBOL || "").trim().toUpperCase(),
+                        strike: parseFloat(row.SEM_STRIKE_PRICE),
                         optionType: (row.SEM_OPTION_TYPE || "").trim().toUpperCase(),
-                        expiry: (row.SEM_EXPIRY_DATE || "").trim(),               
-                        tradingSymbol: (row.SEM_TRADING_SYMBOL || "").trim().toUpperCase() 
+                        expiry: (row.SEM_EXPIRY_DATE || "").trim(),
+                        tradingSymbol: (row.SEM_TRADING_SYMBOL || "").trim().toUpperCase()
                     });
                 }
             })
@@ -670,9 +670,9 @@ const downloadAndParseInstruments = async () => {
 };
 
 const getOptionSecurityId = (baseSymbol, strike, optionType) => {
-    const targetBase = baseSymbol.toUpperCase(); 
-    const targetStrike = parseFloat(strike); 
-    
+    const targetBase = baseSymbol.toUpperCase();
+    const targetStrike = parseFloat(strike);
+
     // Engine se jo aaye, use CALL/PUT aur CE/PE dono format me ready rakho
     const isCall = ['CE', 'CALL'].includes(optionType.toUpperCase());
     const opt1 = isCall ? 'CE' : 'PE';
@@ -681,15 +681,15 @@ const getOptionSecurityId = (baseSymbol, strike, optionType) => {
     const matches = nfoInstruments.filter(inst => {
         // 1. Exact Strike match
         if (inst.strike !== targetStrike) return false;
-        
+
         // 2. Symbol match (Dhan ke kisi bhi column me ho)
         const matchBase = inst.baseSymbol === targetBase || inst.tradingSymbol.startsWith(targetBase);
         if (!matchBase) return false;
-        
+
         // 3. Option Type match
         const matchOpt = inst.optionType === opt1 || inst.optionType === opt2 || inst.tradingSymbol.endsWith(opt1);
         if (!matchOpt) return false;
-        
+
         return true;
     });
 
@@ -704,10 +704,10 @@ const getOptionSecurityId = (baseSymbol, strike, optionType) => {
     return {
         id: matches[0].id,
         exchange: "NSE_FNO", // Dhan API ke liye
-        tradingSymbol: matches[0].tradingSymbol, 
-        expiry: matches[0].expiry.split(' ')[0],       
+        tradingSymbol: matches[0].tradingSymbol,
+        expiry: matches[0].expiry.split(' ')[0],
         optionType: isCall ? 'CALL' : 'PUT', // Order payload me CALL/PUT jayega
-        strike: matches[0].strike  
+        strike: matches[0].strike
     };
 };
 
