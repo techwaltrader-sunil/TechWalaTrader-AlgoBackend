@@ -556,18 +556,16 @@ const downloadAndParseInstruments = async () => {
                     
                     let rawExchange = (row.SEM_EXM_EXCH_ID || "").trim().toUpperCase();
                     let mappedExchange = "NSE_FNO"; 
-                    
                     if (rawExchange.includes('BSE') || rawExchange === 'BFO') {
                         mappedExchange = 'BSE_FNO'; 
                     }
 
                     tempData.push({
                         id: (row.SEM_SMST_SECURITY_ID || "").trim(),
-                        // 🔥 Dono symbol save karenge (Dhan dash wala naam Custom me deta hai)
+                        // 🔥 Ensure hum DASH wala symbol hi use kar rahe hain
                         customSymbol: (row.SEM_CUSTOM_SYMBOL || "").trim(), 
-                        tradingSymbol: (row.SEM_TRADING_SYMBOL || "").trim(),
                         strike: parseFloat(row.SEM_STRIKE_PRICE),  
-                        optionType: (row.SEM_OPTION_TYPE || "").trim().toUpperCase(), 
+                        optionType: (row.SEM_OPTION_TYPE || "").trim().toUpperCase(), // Yahan 'CE' ya 'PE' aayega
                         expiry: (row.SEM_EXPIRY_DATE || "").trim(),               
                         exchange: mappedExchange 
                     });
@@ -584,32 +582,39 @@ const downloadAndParseInstruments = async () => {
 };
 
 const getOptionSecurityId = (baseSymbol, strike, optionType) => {
+    const targetBase = baseSymbol.toUpperCase(); 
+    const targetStrike = parseFloat(strike); 
     
-    // 🔥 THE MASTERSTROKE: Engine CE bhejega, hum CSV me CALL dhundhenge!
-    let mappedOptionType = optionType.toUpperCase();
-    if (mappedOptionType === 'CE') mappedOptionType = 'CALL';
-    if (mappedOptionType === 'PE') mappedOptionType = 'PUT';
+    // Safety Fallback: Engine hamesha 'CE' ya 'PE' bhejega
+    let targetOpt = optionType.toUpperCase();
+    if (targetOpt === 'CALL') targetOpt = 'CE'; 
+    if (targetOpt === 'PUT') targetOpt = 'PE';  
 
+    // 🔥 THE PERFECT FILTER: CSV me 'CE' aur 'NSE_FNO' dhundho
     const matches = nfoInstruments.filter(inst => 
-        inst.exchange === 'NSE_FNO' && // LOCK 1: Sirf NSE
-        inst.customSymbol.startsWith(baseSymbol.toUpperCase() + '-') && // LOCK 2: Dash wala naam
-        inst.strike === parseFloat(strike) && 
-        inst.optionType === mappedOptionType // LOCK 3: CE ko CALL me map kiya
+        inst.exchange === 'NSE_FNO' && 
+        inst.customSymbol.startsWith(targetBase + '-') && 
+        inst.strike === targetStrike && 
+        inst.optionType === targetOpt // CE match karega
     );
 
     if (matches.length === 0) {
-        console.log(`⚠️ Instrument NOT FOUND for: ${baseSymbol} ${strike} ${optionType}`);
+        console.log(`⚠️ Instrument NOT FOUND for: ${targetBase} ${targetStrike} ${targetOpt}`);
         return null;
     }
 
+    // Sabse kareeb wali expiry ko top par laao
     matches.sort((a, b) => new Date(a.expiry) - new Date(b.expiry));
 
+    // 🔥 THE MAGIC TRICK: Dhan API order ke liye wapas CE ko CALL me convert karo
+    const apiOptionType = matches[0].optionType === 'CE' ? 'CALL' : 'PUT';
+
     return {
-        id: matches[0].id,
+        id: matches[0].id, // 100% genuine 5-digit NSE ID
         exchange: matches[0].exchange, 
-        tradingSymbol: matches[0].customSymbol, // UI me wahi dash wala naam dikhega
+        tradingSymbol: matches[0].customSymbol, 
         expiry: matches[0].expiry.split(' ')[0],       
-        optionType: optionType, // Engine ko CE hi wapas do
+        optionType: apiOptionType, // Engine API ko CALL/PUT bhejega
         strike: matches[0].strike  
     };
 };
