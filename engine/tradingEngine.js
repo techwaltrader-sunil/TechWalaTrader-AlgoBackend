@@ -804,33 +804,61 @@ const getStrikeStep = (symbol) => {
 };
 
 /// ==========================================
-// 🚀 THE BULLETPROOF PRICE FETCHER (From Webhook Clue)
+// 🚀 THE ULTIMATE PRICE FETCHER (Yahoo + Google Finance)
 // ==========================================
 const fetchLivePrice = async (symbol) => {
     const baseSymbol = symbol.toUpperCase();
     try {
-        console.log(`📡 Fetching Live Price for ${baseSymbol} from Yahoo Finance...`);
-        let yahooTicker = "";
+        console.log(`📡 Fetching Live Price for ${baseSymbol}...`);
 
-        // 🔥 THE CLUE: Yahan humne aapke Webhook wala logic wapas daal diya!
+        // 🔥 METHOD 1: YAHOO FINANCE (Sirf Nifty aur BankNifty ke liye - Super Fast)
+        let yahooTicker = "";
         if (baseSymbol.includes("BANKNIFTY")) yahooTicker = "^NSEBANK";
         else if (baseSymbol.includes("FINNIFTY")) yahooTicker = "NIFTY_FIN_SERVICE.NS";
-        else if (baseSymbol.includes("MIDCP") || baseSymbol.includes("MIDCAP")) yahooTicker = "NIFTY_MIDCAP_SELECT.NS"; 
-        else if (baseSymbol.includes("NIFTY")) yahooTicker = "^NSEI";
+        else if (baseSymbol.includes("NIFTY") && !baseSymbol.includes("MIDCP")) yahooTicker = "^NSEI";
         else if (baseSymbol.includes("SENSEX")) yahooTicker = "^BSESN";
 
         if (yahooTicker) {
             const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooTicker}?interval=1m`;
-            const yRes = await axios.get(yUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
-
-            if (yRes.data && yRes.data.chart && yRes.data.chart.result) {
+            const yRes = await axios.get(yUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }).catch(() => null);
+            if (yRes && yRes.data?.chart?.result?.[0]?.meta?.regularMarketPrice) {
                 const ltp = yRes.data.chart.result[0].meta.regularMarketPrice;
-                console.log(`✅ [DEBUG] Yahoo LTP for ${baseSymbol}: ${ltp}`);
+                console.log(`✅ [DEBUG] Yahoo LTP: ${ltp}`);
                 return ltp;
             }
         }
-        
-        console.log(`❌ [DEBUG] Yahoo returned empty result for ${baseSymbol}`);
+
+        // 🔥 METHOD 2: GOOGLE FINANCE SCRAPER (The Savior for MIDCPNIFTY)
+        let gfTicker = "";
+        if (baseSymbol.includes("MIDCP") || baseSymbol.includes("MIDCAP")) gfTicker = "NIFTY_MIDCAP_SELECT:INDEXNSE";
+        else if (baseSymbol.includes("BANKNIFTY")) gfTicker = "NIFTY_BANK:INDEXNSE";
+        else if (baseSymbol.includes("NIFTY")) gfTicker = "NIFTY_50:INDEXNSE";
+
+        if (gfTicker) {
+            console.log(`🔍 Trying Google Finance for ${gfTicker}...`);
+            const gfUrl = `https://www.google.com/finance/quote/${gfTicker}`;
+            const gfRes = await axios.get(gfUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+            }).catch(() => null);
+            
+            if (gfRes && gfRes.data) {
+                // Pehla Jadu (Regex)
+                const match = gfRes.data.match(/data-last-price="([0-9.]+)"/);
+                if (match && match[1]) {
+                    console.log(`✅ [DEBUG] Google Finance LTP: ${match[1]}`);
+                    return parseFloat(match[1]);
+                }
+                // Dusra Jadu (Regex Backup)
+                const match2 = gfRes.data.match(/class="YMlKec fxKbKc"[^>]*>₹?([^<]+)<\/div>/);
+                if (match2 && match2[1]) {
+                    const price = match2[1].replace(/,/g, '');
+                    console.log(`✅ [DEBUG] Google Finance LTP: ${price}`);
+                    return parseFloat(price);
+                }
+            }
+        }
+
+        console.log(`❌ [DEBUG] Both Yahoo and Google Finance failed for ${baseSymbol}`);
         return null;
 
     } catch (error) { 
