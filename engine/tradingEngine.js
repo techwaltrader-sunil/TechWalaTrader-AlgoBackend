@@ -803,56 +803,36 @@ const getStrikeStep = (symbol) => {
     return 50;
 };
 
-// ==========================================
-// 🚀 THE REAL GOD MODE PRICE FETCHER (Yahoo + Google)
+/// ==========================================
+// 🚀 THE BULLETPROOF PRICE FETCHER (From Webhook Clue)
 // ==========================================
 const fetchLivePrice = async (symbol) => {
     const baseSymbol = symbol.toUpperCase();
     try {
-        // 🔥 METHOD 1: YAHOO FINANCE (Super Fast for Nifty, BankNifty, Sensex)
+        console.log(`📡 Fetching Live Price for ${baseSymbol} from Yahoo Finance...`);
         let yahooTicker = "";
-        if (baseSymbol === "BANKNIFTY") yahooTicker = "^NSEBANK";
-        else if (baseSymbol === "FINNIFTY") yahooTicker = "NIFTY_FIN_SERVICE.NS";
-        else if (baseSymbol === "NIFTY") yahooTicker = "^NSEI";
-        else if (baseSymbol === "SENSEX") yahooTicker = "^BSESN";
+
+        // 🔥 THE CLUE: Yahan humne aapke Webhook wala logic wapas daal diya!
+        if (baseSymbol.includes("BANKNIFTY")) yahooTicker = "^NSEBANK";
+        else if (baseSymbol.includes("FINNIFTY")) yahooTicker = "NIFTY_FIN_SERVICE.NS";
+        else if (baseSymbol.includes("MIDCP") || baseSymbol.includes("MIDCAP")) yahooTicker = "NIFTY_MIDCAP_SELECT.NS"; 
+        else if (baseSymbol.includes("NIFTY")) yahooTicker = "^NSEI";
+        else if (baseSymbol.includes("SENSEX")) yahooTicker = "^BSESN";
 
         if (yahooTicker) {
             const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooTicker}?interval=1m`;
-            const yRes = await axios.get(yUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }).catch(() => null);
-            if (yRes && yRes.data?.chart?.result?.[0]?.meta?.regularMarketPrice) {
-                return yRes.data.chart.result[0].meta.regularMarketPrice;
+            const yRes = await axios.get(yUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
+
+            if (yRes.data && yRes.data.chart && yRes.data.chart.result) {
+                const ltp = yRes.data.chart.result[0].meta.regularMarketPrice;
+                console.log(`✅ [DEBUG] Yahoo LTP for ${baseSymbol}: ${ltp}`);
+                return ltp;
             }
         }
-
-        // 🔥 METHOD 2: THE "BRAHMASTRA" (Google Finance Scraping)
-        // TradingView fail ho gaya tha, lekin Google Finance MIDCPNIFTY ka 100% accurate price dega!
-        let gfTicker = "";
-        if (baseSymbol === "MIDCPNIFTY" || baseSymbol === "MIDCAP") gfTicker = "NIFTY_MIDCAP_SELECT:INDEXNSE";
-        else if (baseSymbol === "BANKNIFTY") gfTicker = "NIFTY_BANK:INDEXNSE";
-        else if (baseSymbol === "FINNIFTY") gfTicker = "NIFTY_FIN_SERVICE:INDEXNSE";
-        else if (baseSymbol === "NIFTY") gfTicker = "NIFTY_50:INDEXNSE";
-        else if (baseSymbol === "SENSEX") gfTicker = "SENSEX:INDEXBOM";
-
-        if (gfTicker) {
-            const gfUrl = `https://www.google.com/finance/quote/${gfTicker}`;
-            const gfRes = await axios.get(gfUrl, {
-                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-            }).catch(() => null);
-            
-            if (gfRes && gfRes.data) {
-                // Google Finance ki HTML me se Live Price nikalne ka Jadu (Regex)
-                const match = gfRes.data.match(/data-last-price="([0-9.]+)"/);
-                if (match && match[1]) {
-                    return parseFloat(match[1]);
-                }
-                const match2 = gfRes.data.match(/class="YMlKec fxKbKc"[^>]*>₹?([^<]+)<\/div>/);
-                if (match2 && match2[1]) {
-                    return parseFloat(match2[1].replace(/,/g, ''));
-                }
-            }
-        }
-
+        
+        console.log(`❌ [DEBUG] Yahoo returned empty result for ${baseSymbol}`);
         return null;
+
     } catch (error) { 
         console.error(`❌ [DEBUG] Price Fetch Error for ${baseSymbol}:`, error.message);
         return null; 
