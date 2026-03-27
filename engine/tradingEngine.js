@@ -804,38 +804,40 @@ const getStrikeStep = (symbol) => {
 };
 
 // ==========================================
-// 🚀 THE ULTIMATE RENDER-SAFE FETCHER (Groww API + Yahoo)
+// 🚀 THE UNBREAKABLE 3-LAYER PRICE FETCHER
 // ==========================================
 const fetchLivePrice = async (symbol) => {
     const baseSymbol = symbol.toUpperCase();
     try {
         console.log(`📡 Fetching Live Price for ${baseSymbol}...`);
+        let ltp = null;
 
-        // 🔥 METHOD 1: GROWW API (100% Reliable for Cloud Servers, NO BLOCKS!)
-        let growwTicker = "";
-        let exchange = "NSE";
-        if (baseSymbol.includes("MIDCP") || baseSymbol.includes("MIDCAP")) growwTicker = "NIFTY MIDCAP SELECT";
-        else if (baseSymbol.includes("BANKNIFTY")) growwTicker = "NIFTY BANK";
-        else if (baseSymbol.includes("FINNIFTY")) growwTicker = "NIFTY FIN SERVICE";
-        else if (baseSymbol.includes("NIFTY")) growwTicker = "NIFTY 50";
-        else if (baseSymbol.includes("SENSEX")) { growwTicker = "SENSEX"; exchange = "BSE"; }
+        // 🔥 LAYER 1: TRADINGVIEW SCANNER (Cloudflare Bypass - Most Reliable)
+        let tvTicker = "";
+        if (baseSymbol.includes("MIDCP") || baseSymbol.includes("MIDCAP")) tvTicker = "NSE:MIDCPNIFTY";
+        else if (baseSymbol.includes("BANKNIFTY")) tvTicker = "NSE:BANKNIFTY";
+        else if (baseSymbol.includes("FINNIFTY")) tvTicker = "NSE:FINNIFTY";
+        else if (baseSymbol.includes("NIFTY")) tvTicker = "NSE:NIFTY";
+        else if (baseSymbol.includes("SENSEX")) tvTicker = "BSE:SENSEX";
 
-        if (growwTicker) {
-            // Groww ki open API jo JSON data deti hai, scraping ki zarurat nahi!
-            const gUrl = `https://groww.in/v1/api/stocks_data/v1/tr_live_indices/exchange/${exchange}/segment/CASH/${encodeURIComponent(growwTicker)}`;
-            const gRes = await axios.get(gUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }).catch(() => null);
-            
-            // Groww ka data 'livePrice' ya 'value' key me aata hai
-            if (gRes && gRes.data) {
-                const ltp = gRes.data.livePrice || gRes.data.value || gRes.data.price;
-                if (ltp) {
-                    console.log(`✅ [DEBUG] Groww API LTP for ${baseSymbol}: ${ltp}`);
-                    return parseFloat(ltp);
+        if (tvTicker) {
+            try {
+                const tvRes = await axios.post('https://scanner.tradingview.com/india/scan', {
+                    "symbols": { "tickers": [tvTicker] },
+                    "columns": ["close"]
+                }, { headers: { 'Content-Type': 'application/json' } });
+
+                if (tvRes.data && tvRes.data.data && tvRes.data.data.length > 0) {
+                    ltp = parseFloat(tvRes.data.data[0].d[0]);
+                    if (ltp) {
+                        console.log(`✅ [LAYER 1] TradingView LTP for ${baseSymbol}: ${ltp}`);
+                        return ltp;
+                    }
                 }
-            }
+            } catch (e) { console.log(`⚠️ [LAYER 1 FAILED] TradingView Error: ${e.message}`); }
         }
 
-        // 🔥 METHOD 2: YAHOO FINANCE FALLBACK (Nifty/BankNifty Backup)
+        // 🔥 LAYER 2: YAHOO FINANCE (Super Fast Fallback for Nifty/BankNifty)
         let yahooTicker = "";
         if (baseSymbol.includes("BANKNIFTY")) yahooTicker = "^NSEBANK";
         else if (baseSymbol.includes("FINNIFTY")) yahooTicker = "NIFTY_FIN_SERVICE.NS";
@@ -843,20 +845,46 @@ const fetchLivePrice = async (symbol) => {
         else if (baseSymbol.includes("SENSEX")) yahooTicker = "^BSESN";
 
         if (yahooTicker) {
-            const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooTicker}?interval=1m`;
-            const yRes = await axios.get(yUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }).catch(() => null);
-            if (yRes && yRes.data?.chart?.result?.[0]?.meta?.regularMarketPrice) {
-                const ltp = yRes.data.chart.result[0].meta.regularMarketPrice;
-                console.log(`✅ [DEBUG] Yahoo LTP for ${baseSymbol}: ${ltp}`);
-                return parseFloat(ltp);
-            }
+            try {
+                const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooTicker}?interval=1m`;
+                const yRes = await axios.get(yUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+                if (yRes.data && yRes.data.chart && yRes.data.chart.result) {
+                    ltp = parseFloat(yRes.data.chart.result[0].meta.regularMarketPrice);
+                    if (ltp) {
+                        console.log(`✅ [LAYER 2] Yahoo LTP for ${baseSymbol}: ${ltp}`);
+                        return ltp;
+                    }
+                }
+            } catch (e) { console.log(`⚠️ [LAYER 2 FAILED] Yahoo Error: ${e.message}`); }
         }
 
-        console.log(`❌ [DEBUG] Both Groww and Yahoo APIs failed for ${baseSymbol}`);
+        // 🔥 LAYER 3: GOOGLE FINANCE (Heavy Duty Scraper with Anti-Bot Headers)
+        let gfTicker = "";
+        if (baseSymbol.includes("MIDCP") || baseSymbol.includes("MIDCAP")) gfTicker = "NIFTY_MIDCAP_SELECT:INDEXNSE";
+        else if (baseSymbol.includes("BANKNIFTY")) gfTicker = "NIFTY_BANK:INDEXNSE";
+        else if (baseSymbol.includes("NIFTY")) gfTicker = "NIFTY_50:INDEXNSE";
+
+        if (gfTicker) {
+            try {
+                const gfUrl = `https://www.google.com/finance/quote/${gfTicker}`;
+                // Anti-Bot Headers to bypass Render Server Blocks
+                const gfRes = await axios.get(gfUrl, {
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36' }
+                });
+                const match = gfRes.data.match(/data-last-price="([0-9.]+)"/);
+                if (match && match[1]) {
+                    ltp = parseFloat(match[1]);
+                    console.log(`✅ [LAYER 3] Google Finance LTP for ${baseSymbol}: ${ltp}`);
+                    return ltp;
+                }
+            } catch (e) { console.log(`⚠️ [LAYER 3 FAILED] Google Finance Error: ${e.message}`); }
+        }
+
+        console.log(`❌ [CRITICAL] ALL 3 APIS FAILED to fetch Spot Price for ${baseSymbol}`);
         return null;
 
     } catch (error) { 
-        console.error(`❌ [DEBUG] Price Fetch Error for ${baseSymbol}:`, error.message);
+        console.error(`❌ [DEBUG] Code Crash in fetchLivePrice:`, error.message);
         return null; 
     }
 };
