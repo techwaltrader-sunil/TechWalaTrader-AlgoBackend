@@ -440,24 +440,29 @@ cron.schedule('*/30 * * * * *', async () => {
                         // if (rawSymbol.toUpperCase().includes("BANK")) baseSymbol = "BANKNIFTY";
                         // else if (rawSymbol.toUpperCase().includes("FIN")) baseSymbol = "FINNIFTY";
 
-                        // 🔥 THE SMART CATCHER: Frontend chahe kisi bhi naam se data bheje, ye pakad lega!
+                        // 🔥 THE ULTIMATE CATCHER & DEBUGGER
                         const instrumentData = (strategy.data.instruments && strategy.data.instruments.length > 0) ? strategy.data.instruments[0] : {};
                         
-                        // Search area badha diya hai taaki MIDCPNIFTY miss na ho
-                        let rawSymbol = instrumentData.name || instrumentData.symbol || instrumentData.value || strategy.symbol || strategy.name || "";
+                        // Humne config.index aur config.symbol bhi add kar diya hai
+                        let rawSymbol = instrumentData.name || instrumentData.symbol || instrumentData.value || config.index || config.symbol || strategy.symbol || strategy.name || "";
                         
                         let baseSymbol = "NIFTY"; // Default fallback
                         const upperRawSymbol = String(rawSymbol).toUpperCase();
                         
+                        // 🛑 CCTV CAMERA: Ye line Render console me chhap degi ki aakhir frontend bhej kya raha hai!
+                        console.log(`🔍 [DEBUG] Strategy Name: "${strategy.name}" | Frontend ne bheja: "${rawSymbol}"`);
+
                         if (upperRawSymbol.includes("BANK")) {
                             baseSymbol = "BANKNIFTY";
                         } else if (upperRawSymbol.includes("FIN")) {
                             baseSymbol = "FINNIFTY";
                         } else if (upperRawSymbol.includes("MIDCP") || upperRawSymbol.includes("MIDCAP")) {
-                            baseSymbol = "MIDCPNIFTY"; // 👈 YE RAHA MIDCAP KA FIX!
+                            baseSymbol = "MIDCPNIFTY";
                         } else if (upperRawSymbol.includes("SENSEX")) {
                             baseSymbol = "SENSEX";
                         }
+
+                        console.log(`✅ [DEBUG] Engine ne decide kiya: ${baseSymbol}`);
 
                         for (const leg of strategy.data.legs) {
                             let optType = leg.optionType === "Call" ? "CE" : "PE";
