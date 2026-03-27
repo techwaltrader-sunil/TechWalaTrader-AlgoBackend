@@ -434,11 +434,30 @@ cron.schedule('*/30 * * * * *', async () => {
                     const broker = await Broker.findById(brokerId);
                     if (broker && broker.engineOn) {
 
-                        const instrumentData = strategy.data.instruments[0];
-                        let rawSymbol = instrumentData ? instrumentData.name : "";
-                        let baseSymbol = "NIFTY";
-                        if (rawSymbol.toUpperCase().includes("BANK")) baseSymbol = "BANKNIFTY";
-                        else if (rawSymbol.toUpperCase().includes("FIN")) baseSymbol = "FINNIFTY";
+                        // const instrumentData = strategy.data.instruments[0];
+                        // let rawSymbol = instrumentData ? instrumentData.name : "";
+                        // let baseSymbol = "NIFTY";
+                        // if (rawSymbol.toUpperCase().includes("BANK")) baseSymbol = "BANKNIFTY";
+                        // else if (rawSymbol.toUpperCase().includes("FIN")) baseSymbol = "FINNIFTY";
+
+                        // 🔥 THE SMART CATCHER: Frontend chahe kisi bhi naam se data bheje, ye pakad lega!
+                        const instrumentData = (strategy.data.instruments && strategy.data.instruments.length > 0) ? strategy.data.instruments[0] : {};
+                        
+                        // Search area badha diya hai taaki MIDCPNIFTY miss na ho
+                        let rawSymbol = instrumentData.name || instrumentData.symbol || instrumentData.value || strategy.symbol || strategy.name || "";
+                        
+                        let baseSymbol = "NIFTY"; // Default fallback
+                        const upperRawSymbol = String(rawSymbol).toUpperCase();
+                        
+                        if (upperRawSymbol.includes("BANK")) {
+                            baseSymbol = "BANKNIFTY";
+                        } else if (upperRawSymbol.includes("FIN")) {
+                            baseSymbol = "FINNIFTY";
+                        } else if (upperRawSymbol.includes("MIDCP") || upperRawSymbol.includes("MIDCAP")) {
+                            baseSymbol = "MIDCPNIFTY"; // 👈 YE RAHA MIDCAP KA FIX!
+                        } else if (upperRawSymbol.includes("SENSEX")) {
+                            baseSymbol = "SENSEX";
+                        }
 
                         for (const leg of strategy.data.legs) {
                             let optType = leg.optionType === "Call" ? "CE" : "PE";
