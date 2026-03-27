@@ -93,11 +93,93 @@
 
 
 
+// const axios = require('axios');
+
+// // Dhan API Base URLs
+// const DHAN_API_URL = 'https://api.dhan.co/orders';
+// const DHAN_FEED_URL = 'https://api.dhan.co/marketfeed/ltp'; // 🔥 NAYA: Live Price URL
+
+// /**
+//  * Place a real order on Dhan
+//  */
+// const placeDhanOrder = async (clientId, accessToken, orderData) => {
+//     try {
+//         const payload = {
+//             dhanClientId: clientId,
+//             correlationId: `TM-${Date.now()}`, 
+//             transactionType: orderData.action, 
+//             exchangeSegment: "NSE_FNO", 
+//             productType: "INTRADAY", 
+//             orderType: "MARKET", 
+//             validity: "DAY",
+//             securityId: orderData.securityId, 
+//             quantity: orderData.quantity
+//         };
+
+//         const response = await axios.post(DHAN_API_URL, payload, {
+//             headers: {
+//                 'access-token': accessToken,
+//                 'Content-Type': 'application/json',
+//                 'Accept': 'application/json'
+//             }
+//         });
+
+//         console.log(`✅ [DHAN API] Order Placed Successfully for ${clientId}:`, response.data);
+//         return { success: true, data: response.data };
+
+//     } catch (error) {
+//         console.error(`❌ [DHAN API] Order Failed for ${clientId}:`, error.response?.data || error.message);
+//         return { success: false, error: error.response?.data || error.message };
+//     }
+// };
+
+// /**
+//  * 🔥 PHASE 2: Fetch Live Premium Price (LTP) from Dhan
+//  * @param {String} clientId - User's Dhan Client ID
+//  * @param {String} accessToken - User's Dhan Access Token
+//  * @param {String} exchange - e.g., "NSE_FNO"
+//  * @param {String} securityId - e.g., "35012"
+//  */
+// const fetchLiveLTP = async (clientId, accessToken, exchange, securityId) => {
+//     try {
+//         const payload = {};
+//         // Dhan API format: { "NSE_FNO": ["35012"] }
+//         payload[exchange] = [String(securityId)];
+
+//         const response = await axios.post(DHAN_FEED_URL, payload, {
+//             headers: {
+//                 'access-token': accessToken,
+//                 'client-id': clientId,
+//                 'Content-Type': 'application/json',
+//                 'Accept': 'application/json'
+//             }
+//         });
+
+//         // Response format is generally: { data: { NSE_FNO: { "35012": 320.50 } } }
+//         const ltpData = response.data?.data;
+//         if (ltpData && ltpData[exchange] && ltpData[exchange][securityId]) {
+//             return parseFloat(ltpData[exchange][securityId]);
+//         }
+        
+//         return null;
+//     } catch (error) {
+//         console.error(`❌ [DHAN API] LTP Fetch Failed for ${securityId}:`, error.response?.data || error.message);
+//         return null;
+//     }
+// };
+
+// module.exports = {
+//     placeDhanOrder,
+//     fetchLiveLTP // 🔥 NAYA Export
+// };
+
+
 const axios = require('axios');
 
 // Dhan API Base URLs
 const DHAN_API_URL = 'https://api.dhan.co/orders';
-const DHAN_FEED_URL = 'https://api.dhan.co/marketfeed/ltp'; // 🔥 NAYA: Live Price URL
+// 🔥 THE FIX 1: Dhan ka naya v2 URL update kar diya
+const DHAN_FEED_URL = 'https://api.dhan.co/v2/marketfeed/ltp'; 
 
 /**
  * Place a real order on Dhan
@@ -134,17 +216,13 @@ const placeDhanOrder = async (clientId, accessToken, orderData) => {
 };
 
 /**
- * 🔥 PHASE 2: Fetch Live Premium Price (LTP) from Dhan
- * @param {String} clientId - User's Dhan Client ID
- * @param {String} accessToken - User's Dhan Access Token
- * @param {String} exchange - e.g., "NSE_FNO"
- * @param {String} securityId - e.g., "35012"
+ * 🔥 Fetch Live Premium Price (LTP) from Dhan
  */
 const fetchLiveLTP = async (clientId, accessToken, exchange, securityId) => {
     try {
         const payload = {};
-        // Dhan API format: { "NSE_FNO": ["35012"] }
-        payload[exchange] = [String(securityId)];
+        // Dhan API ke liye ID ko strictly number (Integer) me bhejna safe hota hai
+        payload[exchange] = [parseInt(securityId)];
 
         const response = await axios.post(DHAN_FEED_URL, payload, {
             headers: {
@@ -155,10 +233,12 @@ const fetchLiveLTP = async (clientId, accessToken, exchange, securityId) => {
             }
         });
 
-        // Response format is generally: { data: { NSE_FNO: { "35012": 320.50 } } }
         const ltpData = response.data?.data;
+        
+        // 🔥 THE FIX 2: Dhan 'last_price' key ke andar price bhejta hai
         if (ltpData && ltpData[exchange] && ltpData[exchange][securityId]) {
-            return parseFloat(ltpData[exchange][securityId]);
+            const price = ltpData[exchange][securityId].last_price;
+            return parseFloat(price);
         }
         
         return null;
@@ -170,5 +250,5 @@ const fetchLiveLTP = async (clientId, accessToken, exchange, securityId) => {
 
 module.exports = {
     placeDhanOrder,
-    fetchLiveLTP // 🔥 NAYA Export
+    fetchLiveLTP 
 };
