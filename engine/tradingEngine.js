@@ -803,7 +803,7 @@ const getStrikeStep = (symbol) => {
     return 50;
 };
 
-/==========================================
+
 // 🚀 THE FINAL PRICE FETCHER (Correct TradingView Symbol)
 // ==========================================
 const fetchLivePrice = async (symbol) => {
