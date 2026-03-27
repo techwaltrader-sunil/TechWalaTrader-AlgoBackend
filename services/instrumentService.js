@@ -698,25 +698,27 @@ const getOptionSecurityId = (baseSymbol, strike, optionType) => {
         return null;
     }
 
-   // Sabse kareeb wali expiry nikalo
+    // Sabse kareeb wali expiry nikalo
     matches.sort((a, b) => new Date(a.expiry) - new Date(b.expiry));
 
-    // 🔥 THE BEAUTY FIX: Frontend par sundar naam dikhane ke liye format banaya
-    const rawExpiry = matches[0].expiry.split(' ')[0]; // Dhan '30-Mar-2026' deta hai
-    const displayExpiry = rawExpiry.toUpperCase().replace(/-/g, ' '); // Ise '30 MAR 2026' bana diya
-    const displayOpt = isCall ? 'CALL' : 'PUT';
-    
-    // Yahan humne apna custom naam bana liya: "NIFTY 30 MAR 2026 23050 CALL"
-    const beautifulSymbolName = `${targetBase} ${displayExpiry} ${matches[0].strike} ${displayOpt}`;
-
     return {
+        // id: matches[0].id,
+        // exchange: "NSE_FNO", // Dhan API ke liye
+        // tradingSymbol: matches[0].tradingSymbol,
+        // expiry: matches[0].expiry.split(' ')[0],
+        // optionType: isCall ? 'CALL' : 'PUT', // Order payload me CALL/PUT jayega
+        // strike: matches[0].strike
+
+
         id: matches[0].id,
-        exchange: "NSE_FNO", 
-        tradingSymbol: beautifulSymbolName, // 👈 Ab UI par ekdum saaf naam jayega
-        expiry: rawExpiry,       
-        optionType: isCall ? 'CALL' : 'PUT', 
+        exchange: "NSE_FNO", // Hardcoded safely because BSE is blocked
+        tradingSymbol: matches[0].customSymbol || matches[0].tradingSymbol, 
+        expiry: matches[0].expiry.split(' ')[0],       
+        optionType: suffix === 'CE' ? 'CALL' : 'PUT', // Dhan API format
         strike: matches[0].strike  
     };
+
+   
 };
 
 module.exports = { downloadAndParseInstruments, getOptionSecurityId };
