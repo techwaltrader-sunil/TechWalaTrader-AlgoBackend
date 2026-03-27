@@ -803,41 +803,18 @@ const getStrikeStep = (symbol) => {
     return 50;
 };
 
-// ==========================================
-// 🚀 THE ACTUAL UNBREAKABLE FETCHER (Yahoo Fixed)
+/==========================================
+// 🚀 THE FINAL PRICE FETCHER (Correct TradingView Symbol)
 // ==========================================
 const fetchLivePrice = async (symbol) => {
     const baseSymbol = symbol.toUpperCase();
     try {
         console.log(`📡 Fetching Live Price for ${baseSymbol}...`);
-        let ltp = null;
-
-        // 🔥 LAYER 1: YAHOO FINANCE (Main Weapon - Webhook me yehi pass hua tha!)
-        let yahooTicker = "";
-        if (baseSymbol.includes("BANKNIFTY")) yahooTicker = "^NSEBANK";
-        else if (baseSymbol.includes("FINNIFTY")) yahooTicker = "NIFTY_FIN_SERVICE.NS";
-        // 👇 YE LINE MAINE PICHLE CODE MEIN MISS KAR DI THI! 👇
-        else if (baseSymbol.includes("MIDCP") || baseSymbol.includes("MIDCAP")) yahooTicker = "NIFTY_MIDCAP_SELECT.NS"; 
-        else if (baseSymbol.includes("NIFTY")) yahooTicker = "^NSEI";
-        else if (baseSymbol.includes("SENSEX")) yahooTicker = "^BSESN";
-
-        if (yahooTicker) {
-            try {
-                const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooTicker}?interval=1m`;
-                const yRes = await axios.get(yUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-                if (yRes.data && yRes.data.chart && yRes.data.chart.result) {
-                    ltp = parseFloat(yRes.data.chart.result[0].meta.regularMarketPrice);
-                    if (ltp) {
-                        console.log(`✅ [LAYER 1] Yahoo LTP for ${baseSymbol}: ${ltp}`);
-                        return ltp;
-                    }
-                }
-            } catch (e) { console.log(`⚠️ [LAYER 1 FAILED] Yahoo Error: ${e.message}`); }
-        }
-
-        // 🔥 LAYER 2: TRADINGVIEW SCANNER
+        
+        // 🔥 LAYER 1: TRADINGVIEW (The True Savior with Correct Symbol)
         let tvTicker = "";
-        if (baseSymbol.includes("MIDCP") || baseSymbol.includes("MIDCAP")) tvTicker = "NSE:MIDCPNIFTY";
+        // 👇 THE MAGIC FIX: "NSE:NIFTY_MID_SELECT" IS THE EXACT TV SYMBOL! 👇
+        if (baseSymbol.includes("MIDCP") || baseSymbol.includes("MIDCAP")) tvTicker = "NSE:NIFTY_MID_SELECT";
         else if (baseSymbol.includes("BANKNIFTY")) tvTicker = "NSE:BANKNIFTY";
         else if (baseSymbol.includes("FINNIFTY")) tvTicker = "NSE:FINNIFTY";
         else if (baseSymbol.includes("NIFTY")) tvTicker = "NSE:NIFTY";
@@ -851,37 +828,39 @@ const fetchLivePrice = async (symbol) => {
                 }, { headers: { 'Content-Type': 'application/json' } });
 
                 if (tvRes.data && tvRes.data.data && tvRes.data.data.length > 0) {
-                    ltp = parseFloat(tvRes.data.data[0].d[0]);
+                    const ltp = parseFloat(tvRes.data.data[0].d[0]);
                     if (ltp) {
-                        console.log(`✅ [LAYER 2] TradingView LTP for ${baseSymbol}: ${ltp}`);
+                        console.log(`✅ [DEBUG] TradingView LTP for ${baseSymbol}: ${ltp}`);
+                        return ltp;
+                    }
+                } else {
+                    console.log(`⚠️ TradingView ko '${tvTicker}' nahi mila (Empty Data)`);
+                }
+            } catch (e) { console.log(`⚠️ [LAYER 1 FAILED] TradingView Error: ${e.message}`); }
+        }
+
+        // 🔥 LAYER 2: YAHOO FINANCE FALLBACK (Nifty/BankNifty Only - No Midcap!)
+        let yahooTicker = "";
+        if (baseSymbol.includes("BANKNIFTY")) yahooTicker = "^NSEBANK";
+        else if (baseSymbol.includes("FINNIFTY")) yahooTicker = "NIFTY_FIN_SERVICE.NS";
+        else if (baseSymbol.includes("NIFTY") && !baseSymbol.includes("MIDCP")) yahooTicker = "^NSEI";
+        else if (baseSymbol.includes("SENSEX")) yahooTicker = "^BSESN";
+
+        if (yahooTicker) {
+            try {
+                const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooTicker}?interval=1m`;
+                const yRes = await axios.get(yUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+                if (yRes.data && yRes.data.chart && yRes.data.chart.result) {
+                    const ltp = parseFloat(yRes.data.chart.result[0].meta.regularMarketPrice);
+                    if (ltp) {
+                        console.log(`✅ [DEBUG] Yahoo LTP for ${baseSymbol}: ${ltp}`);
                         return ltp;
                     }
                 }
-            } catch (e) { console.log(`⚠️ [LAYER 2 FAILED] TradingView Error: ${e.message}`); }
+            } catch (e) { console.log(`⚠️ [LAYER 2 FAILED] Yahoo Error: ${e.message}`); }
         }
 
-        // 🔥 LAYER 3: GOOGLE FINANCE 
-        let gfTicker = "";
-        if (baseSymbol.includes("MIDCP") || baseSymbol.includes("MIDCAP")) gfTicker = "NIFTY_MIDCAP_SELECT:INDEXNSE";
-        else if (baseSymbol.includes("BANKNIFTY")) gfTicker = "NIFTY_BANK:INDEXNSE";
-        else if (baseSymbol.includes("NIFTY")) gfTicker = "NIFTY_50:INDEXNSE";
-
-        if (gfTicker) {
-            try {
-                const gfUrl = `https://www.google.com/finance/quote/${gfTicker}`;
-                const gfRes = await axios.get(gfUrl, {
-                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-                });
-                const match = gfRes.data.match(/data-last-price="([0-9.]+)"/);
-                if (match && match[1]) {
-                    ltp = parseFloat(match[1]);
-                    console.log(`✅ [LAYER 3] Google Finance LTP for ${baseSymbol}: ${ltp}`);
-                    return ltp;
-                }
-            } catch (e) { console.log(`⚠️ [LAYER 3 FAILED] Google Finance Error: ${e.message}`); }
-        }
-
-        console.log(`❌ [CRITICAL] ALL 3 APIS FAILED to fetch Spot Price for ${baseSymbol}`);
+        console.log(`❌ [CRITICAL] ALL APIS FAILED to fetch Spot Price for ${baseSymbol}`);
         return null;
 
     } catch (error) { 
