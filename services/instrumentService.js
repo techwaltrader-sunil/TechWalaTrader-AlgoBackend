@@ -702,20 +702,20 @@ const getOptionSecurityId = (baseSymbol, strike, optionType) => {
     matches.sort((a, b) => new Date(a.expiry) - new Date(b.expiry));
 
     return {
-        // id: matches[0].id,
-        // exchange: "NSE_FNO", // Dhan API ke liye
-        // tradingSymbol: matches[0].tradingSymbol,
-        // expiry: matches[0].expiry.split(' ')[0],
-        // optionType: isCall ? 'CALL' : 'PUT', // Order payload me CALL/PUT jayega
-        // strike: matches[0].strike
-
-
         id: matches[0].id,
-        exchange: "NSE_FNO", // Hardcoded safely because BSE is blocked
-        tradingSymbol: matches[0].customSymbol || matches[0].tradingSymbol, 
-        expiry: matches[0].expiry.split(' ')[0],       
-        optionType: suffix === 'CE' ? 'CALL' : 'PUT', // Dhan API format
-        strike: matches[0].strike  
+        exchange: "NSE_FNO", // Dhan API ke liye
+        tradingSymbol: matches[0].tradingSymbol,
+        expiry: matches[0].expiry.split(' ')[0],
+        optionType: isCall ? 'CALL' : 'PUT', // Order payload me CALL/PUT jayega
+        strike: matches[0].strike
+
+
+        // id: matches[0].id,
+        // exchange: "NSE_FNO", // Hardcoded safely because BSE is blocked
+        // tradingSymbol: matches[0].customSymbol || matches[0].tradingSymbol, 
+        // expiry: matches[0].expiry.split(' ')[0],       
+        // optionType: suffix === 'CE' ? 'CALL' : 'PUT', // Dhan API format
+        // strike: matches[0].strike  
     };
 
    
