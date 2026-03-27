@@ -512,6 +512,92 @@ cron.schedule('*/30 * * * * *', async () => {
                     }
                 }
             }
+
+            // ==========================================
+            // 3. MTM (MAX PROFIT / MAX LOSS) SQUARE-OFF LOGIC 💰
+            // ==========================================
+            const riskData = strategy.data?.riskManagement || {};
+            const maxProfit = parseFloat(riskData.maxProfit) || 0;
+            const maxLoss = parseFloat(riskData.maxLoss) || 0;
+
+            // Sirf tabhi check karo jab trade open ho, Entry Price mil chuka ho, aur MaxProfit/MaxLoss set ho (0 se zyada ho)
+            if (!executionLocks.has(exitLockKey) && deployment.tradedSecurityId && deployment.entryPrice > 0 && (maxProfit > 0 || maxLoss > 0)) {
+                
+                for (const brokerId of deployment.brokers) {
+                    const broker = await Broker.findById(brokerId);
+                    if (broker && broker.engineOn) {
+                        
+                        try {
+                            // Dhan API se Contract ka Live Price (LTP) nikalo
+                            const liveLtp = await fetchLiveLTP(broker.clientId, broker.apiSecret, deployment.tradedExchange, deployment.tradedSecurityId);
+                            
+                            if (liveLtp && liveLtp > 0) {
+                                let currentPnl = 0;
+                                
+                                // P&L Calculation: (Live Price - Entry Price) * Qty
+                                if (deployment.tradeAction === 'BUY') {
+                                    currentPnl = (liveLtp - deployment.entryPrice) * deployment.tradedQty;
+                                } else {
+                                    currentPnl = (deployment.entryPrice - liveLtp) * deployment.tradedQty;
+                                }
+
+                                console.log(`📊 [MTM Tracker] Strategy: ${strategy.name} | Live P&L: ₹${currentPnl.toFixed(2)} (LTP: ${liveLtp}, Entry: ${deployment.entryPrice})`);
+
+                                let squareOffReason = null;
+                                
+                                // Condition 1: Max Profit Hit (Target)
+                                if (maxProfit > 0 && currentPnl >= maxProfit) {
+                                    squareOffReason = `Target Reached (Max Profit: ₹${maxProfit})`;
+                                } 
+                                // Condition 2: Max Loss Hit (Stop-Loss) - Math.abs ensures it works even if user puts 500 or -500
+                                else if (maxLoss > 0 && currentPnl <= -Math.abs(maxLoss)) {
+                                    squareOffReason = `Stop-Loss Hit (Max Loss: ₹${Math.abs(maxLoss)})`;
+                                }
+
+                                // Agar Target ya SL hit hua to Order fire karo!
+                                if (squareOffReason) {
+                                    executionLocks.add(exitLockKey);
+                                    console.log(`🚨 MTM SQUARE-OFF TRIGGERED! Reason: ${squareOffReason}`);
+                                    
+                                    const exitAction = deployment.tradeAction === 'BUY' ? 'SELL' : 'BUY';
+                                    const orderData = {
+                                        action: exitAction,
+                                        quantity: deployment.tradedQty,
+                                        securityId: deployment.tradedSecurityId,
+                                        segment: deployment.tradedExchange
+                                    };
+
+                                    const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
+                                    const squareOffSymbolName = deployment.tradedSymbol ? `${deployment.tradedSymbol} (MTM-Exit)` : "MTM Square-Off";
+
+                                    if (orderResponse.success) {
+                                        const respData = orderResponse.data || {};
+                                        if (respData.orderStatus && respData.orderStatus.toUpperCase() !== "REJECTED") {
+                                            console.log("🏁 MTM SQUARE-OFF ORDER SUCCESSFULLY PLACED!");
+                                            deployment.status = 'COMPLETED'; // Algo Stop
+                                            await deployment.save();
+                                            await createAndEmitLog(broker, squareOffSymbolName, exitAction, deployment.tradedQty, 'SUCCESS', `MTM Exit: ${squareOffReason}`, respData.orderId);
+                                        } else {
+                                            await createAndEmitLog(broker, squareOffSymbolName, exitAction, deployment.tradedQty, 'FAILED', respData.remarks || "RMS Rejected", respData.orderId);
+                                            executionLocks.delete(exitLockKey); // Lock hatao taaki agle 30 sec me fir try kare
+                                        }
+                                    } else {
+                                        const errorMsg = orderResponse.error?.errorMessage || orderResponse.data?.remarks || JSON.stringify(orderResponse.error || {});
+                                        await createAndEmitLog(broker, squareOffSymbolName, exitAction, deployment.tradedQty, 'FAILED', `MTM Exit Failed: ${errorMsg}`);
+                                        executionLocks.delete(exitLockKey);
+                                    }
+                                }
+                            }
+                            
+                            // 🔥 Dhan API Block (805 Error) se bachne ke liye 1 second ka delay
+                            await sleep(1000); 
+
+                        } catch (err) {
+                            console.log(`⚠️ MTM Check Failed for ${strategy.name}: ${err.message}`);
+                        }
+                    }
+                }
+            }
         }
     } catch (error) { console.error("❌ Trading Engine Error:", error); }
 });
