@@ -372,30 +372,84 @@ const getStrikeStep = (symbol) => {
     return 50;
 };
 
+// const fetchLivePrice = async (symbol) => {
+//     try {
+//         let ticker = "";
+//         const upperSymbol = symbol.toUpperCase();
+//         if (upperSymbol.includes("BANKNIFTY")) ticker = "^NSEBANK";
+//         else if (upperSymbol.includes("FINNIFTY")) ticker = "NIFTY_FIN_SERVICE.NS";
+//         else if (upperSymbol.includes("MIDCPNIFTY")) ticker = "NIFTY_MIDCAP_SELECT.NS";
+//         else if (upperSymbol.includes("NIFTY")) ticker = "^NSEI";
+//         else if (upperSymbol.includes("SENSEX")) ticker = "^BSESN";
+//         else return null;
+
+//         const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1m`;
+//         const response = await axios.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+
+//         if (!response.data.chart.result) return null;
+//         return response.data.chart.result[0].meta.regularMarketPrice;
+//     } catch (error) { return null; }
+// };
+
+// const createAndEmitLog = async (broker, symbol, action, quantity, status, message, orderId = "N/A") => {
+//     try {
+//         const newLog = await AlgoTradeLog.create({ brokerId: broker._id, brokerName: broker.name, symbol, action, quantity, status, message, orderId });
+//         if (global.io) global.io.emit('new-trade-log', newLog);
+//     } catch (err) { console.error("❌ Log Error:", err.message); }
+// };
+
+
+
 const fetchLivePrice = async (symbol) => {
+    const baseSymbol = symbol.toUpperCase();
     try {
-        let ticker = "";
-        const upperSymbol = symbol.toUpperCase();
-        if (upperSymbol.includes("BANKNIFTY")) ticker = "^NSEBANK";
-        else if (upperSymbol.includes("FINNIFTY")) ticker = "NIFTY_FIN_SERVICE.NS";
-        else if (upperSymbol.includes("MIDCPNIFTY")) ticker = "NIFTY_MIDCAP_SELECT.NS";
-        else if (upperSymbol.includes("NIFTY")) ticker = "^NSEI";
-        else if (upperSymbol.includes("SENSEX")) ticker = "^BSESN";
-        else return null;
+        // METHOD 1: Try Yahoo Finance (Fastest, but Yahoo doesn't have MIDCPNIFTY)
+        let yahooTicker = "";
+        if (baseSymbol === "BANKNIFTY") yahooTicker = "^NSEBANK";
+        else if (baseSymbol === "FINNIFTY") yahooTicker = "NIFTY_FIN_SERVICE.NS";
+        else if (baseSymbol === "NIFTY") yahooTicker = "^NSEI";
+        else if (baseSymbol === "SENSEX") yahooTicker = "^BSESN";
 
-        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1m`;
-        const response = await axios.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        if (yahooTicker) {
+            const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooTicker}?interval=1m`;
+            const yRes = await axios.get(yUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }).catch(() => null);
+            if (yRes && yRes.data?.chart?.result?.[0]?.meta?.regularMarketPrice) {
+                return yRes.data.chart.result[0].meta.regularMarketPrice;
+            }
+        }
 
-        if (!response.data.chart.result) return null;
-        return response.data.chart.result[0].meta.regularMarketPrice;
-    } catch (error) { return null; }
-};
+        // 🔥 METHOD 2: THE "BRAHMASTRA" (Google Finance Bypass)
+        // Ye Yahoo ki zarurat khatam kar dega aur Midcap ka live price nikal lega!
+        let gfTicker = "";
+        if (baseSymbol === "MIDCPNIFTY") gfTicker = "NIFTY_MIDCAP_SELECT:INDEXNSE";
+        else if (baseSymbol === "BANKNIFTY") gfTicker = "NIFTY_BANK:INDEXNSE";
+        else if (baseSymbol === "FINNIFTY") gfTicker = "NIFTY_FIN_SERVICE:INDEXNSE";
+        else if (baseSymbol === "NIFTY") gfTicker = "NIFTY_50:INDEXNSE";
+        else if (baseSymbol === "SENSEX") gfTicker = "SENSEX:INDEXBOM";
 
-const createAndEmitLog = async (broker, symbol, action, quantity, status, message, orderId = "N/A") => {
-    try {
-        const newLog = await AlgoTradeLog.create({ brokerId: broker._id, brokerName: broker.name, symbol, action, quantity, status, message, orderId });
-        if (global.io) global.io.emit('new-trade-log', newLog);
-    } catch (err) { console.error("❌ Log Error:", err.message); }
+        if (gfTicker) {
+            const gfUrl = `https://www.google.com/finance/quote/${gfTicker}`;
+            const gfRes = await axios.get(gfUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+            });
+            
+            // Google Finance ki HTML me se Live Price nikalne ka Jadu (Regex)
+            const match = gfRes.data.match(/data-last-price="([0-9.]+)"/);
+            if (match && match[1]) {
+                return parseFloat(match[1]);
+            }
+            // Agar pehla tarika fail ho jaye, to dusra fallback
+            const match2 = gfRes.data.match(/class="YMlKec fxKbKc"[^>]*>₹?([^<]+)<\/div>/);
+            if (match2 && match2[1]) {
+                return parseFloat(match2[1].replace(/,/g, ''));
+            }
+        }
+
+        return null;
+    } catch (error) { 
+        console.error(`❌ [DEBUG] Price Fetch Error for ${baseSymbol}:`, error.message);
+        return null; 
+    }
 };
 
 // ==========================================
