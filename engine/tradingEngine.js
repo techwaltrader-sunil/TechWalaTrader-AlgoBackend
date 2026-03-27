@@ -804,33 +804,12 @@ const getStrikeStep = (symbol) => {
 };
 
 // ==========================================
-// 🚀 THE GOD MODE PRICE FETCHER
+// 🚀 THE REAL GOD MODE PRICE FETCHER (Yahoo + Google)
 // ==========================================
 const fetchLivePrice = async (symbol) => {
     const baseSymbol = symbol.toUpperCase();
     try {
-        // METHOD 1: TRADINGVIEW (100% Reliable for Indian Indices)
-        let tvTicker = "";
-        if (baseSymbol === "BANKNIFTY") tvTicker = "NSE:BANKNIFTY";
-        else if (baseSymbol === "FINNIFTY") tvTicker = "NSE:FINNIFTY";
-        else if (baseSymbol === "MIDCPNIFTY" || baseSymbol === "MIDCAP") tvTicker = "NSE:MIDCPNIFTY";
-        else if (baseSymbol === "NIFTY") tvTicker = "NSE:NIFTY";
-        else if (baseSymbol === "SENSEX") tvTicker = "BSE:SENSEX";
-        
-        if (tvTicker) {
-            const tvUrl = 'https://scanner.tradingview.com/india/scan';
-            const tvPayload = {
-                "symbols": { "tickers": [tvTicker] },
-                "columns": ["close"]
-            };
-            const tvRes = await axios.post(tvUrl, tvPayload).catch(() => null);
-            if (tvRes?.data?.data?.length > 0) {
-                const price = tvRes.data.data[0].d[0];
-                if (price) return parseFloat(price);
-            }
-        }
-        
-        // METHOD 2: YAHOO FINANCE FALLBACK
+        // 🔥 METHOD 1: YAHOO FINANCE (Super Fast for Nifty, BankNifty, Sensex)
         let yahooTicker = "";
         if (baseSymbol === "BANKNIFTY") yahooTicker = "^NSEBANK";
         else if (baseSymbol === "FINNIFTY") yahooTicker = "NIFTY_FIN_SERVICE.NS";
@@ -840,10 +819,39 @@ const fetchLivePrice = async (symbol) => {
         if (yahooTicker) {
             const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooTicker}?interval=1m`;
             const yRes = await axios.get(yUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }).catch(() => null);
-            if (yRes?.data?.chart?.result?.[0]?.meta?.regularMarketPrice) {
+            if (yRes && yRes.data?.chart?.result?.[0]?.meta?.regularMarketPrice) {
                 return yRes.data.chart.result[0].meta.regularMarketPrice;
             }
         }
+
+        // 🔥 METHOD 2: THE "BRAHMASTRA" (Google Finance Scraping)
+        // TradingView fail ho gaya tha, lekin Google Finance MIDCPNIFTY ka 100% accurate price dega!
+        let gfTicker = "";
+        if (baseSymbol === "MIDCPNIFTY" || baseSymbol === "MIDCAP") gfTicker = "NIFTY_MIDCAP_SELECT:INDEXNSE";
+        else if (baseSymbol === "BANKNIFTY") gfTicker = "NIFTY_BANK:INDEXNSE";
+        else if (baseSymbol === "FINNIFTY") gfTicker = "NIFTY_FIN_SERVICE:INDEXNSE";
+        else if (baseSymbol === "NIFTY") gfTicker = "NIFTY_50:INDEXNSE";
+        else if (baseSymbol === "SENSEX") gfTicker = "SENSEX:INDEXBOM";
+
+        if (gfTicker) {
+            const gfUrl = `https://www.google.com/finance/quote/${gfTicker}`;
+            const gfRes = await axios.get(gfUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+            }).catch(() => null);
+            
+            if (gfRes && gfRes.data) {
+                // Google Finance ki HTML me se Live Price nikalne ka Jadu (Regex)
+                const match = gfRes.data.match(/data-last-price="([0-9.]+)"/);
+                if (match && match[1]) {
+                    return parseFloat(match[1]);
+                }
+                const match2 = gfRes.data.match(/class="YMlKec fxKbKc"[^>]*>₹?([^<]+)<\/div>/);
+                if (match2 && match2[1]) {
+                    return parseFloat(match2[1].replace(/,/g, ''));
+                }
+            }
+        }
+
         return null;
     } catch (error) { 
         console.error(`❌ [DEBUG] Price Fetch Error for ${baseSymbol}:`, error.message);
