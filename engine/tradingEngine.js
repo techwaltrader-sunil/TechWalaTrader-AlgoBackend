@@ -469,13 +469,38 @@ cron.schedule('*/30 * * * * *', async () => {
                             let tradeAction = leg.action.toUpperCase();
                             let tradeQty = (leg.quantity || 1) * deployment.multiplier;
 
+                            // let currentSpotPrice = await fetchLivePrice(baseSymbol);
+                            // if (!currentSpotPrice) continue;
+
+                            // let stepValue = getStrikeStep(baseSymbol);
+                            // let targetStrikePrice = Math.round(currentSpotPrice / stepValue) * stepValue;
+                            // const instrument = getOptionSecurityId(baseSymbol, targetStrikePrice, optType);
+                            // if (!instrument) continue;
+
                             let currentSpotPrice = await fetchLivePrice(baseSymbol);
-                            if (!currentSpotPrice) continue;
+                            console.log(`📊 [DEBUG] ${baseSymbol} Live Spot Price:`, currentSpotPrice);
+
+                            // SILENT FAILURE KO ROKNE KA LOGIC
+                            if (!currentSpotPrice) {
+                                console.log(`❌ [DEBUG] Yahoo Finance se Spot Price nahi mila!`);
+                                await createAndEmitLog(broker, baseSymbol, tradeAction, tradeQty, 'FAILED', `Yahoo API failed to fetch spot price. Cannot calculate ATM Strike.`);
+                                continue;
+                            }
 
                             let stepValue = getStrikeStep(baseSymbol);
                             let targetStrikePrice = Math.round(currentSpotPrice / stepValue) * stepValue;
+                            console.log(`🎯 [DEBUG] Calculated Target Strike: ${targetStrikePrice}`);
+
                             const instrument = getOptionSecurityId(baseSymbol, targetStrikePrice, optType);
-                            if (!instrument) continue;
+                            
+                            // DOOSRA SILENT FAILURE KO ROKNE KA LOGIC
+                            if (!instrument) {
+                                console.log(`❌ [DEBUG] CSV me Instrument nahi mila: ${baseSymbol} ${targetStrikePrice} ${optType}`);
+                                await createAndEmitLog(broker, `${baseSymbol} ${targetStrikePrice} ${optType}`, tradeAction, tradeQty, 'FAILED', `Strike ${targetStrikePrice} not found in Dhan Scrip CSV`);
+                                continue;
+                            }
+                            
+                            console.log(`✅ [DEBUG] Final Instrument Match:`, instrument.tradingSymbol);
 
                             let finalSymbolName = instrument.tradingSymbol;
 
