@@ -804,7 +804,7 @@ const getStrikeStep = (symbol) => {
 };
 
 // ==========================================
-// 🚀 THE UNBREAKABLE 3-LAYER PRICE FETCHER
+// 🚀 THE ACTUAL UNBREAKABLE FETCHER (Yahoo Fixed)
 // ==========================================
 const fetchLivePrice = async (symbol) => {
     const baseSymbol = symbol.toUpperCase();
@@ -812,7 +812,30 @@ const fetchLivePrice = async (symbol) => {
         console.log(`📡 Fetching Live Price for ${baseSymbol}...`);
         let ltp = null;
 
-        // 🔥 LAYER 1: TRADINGVIEW SCANNER (Cloudflare Bypass - Most Reliable)
+        // 🔥 LAYER 1: YAHOO FINANCE (Main Weapon - Webhook me yehi pass hua tha!)
+        let yahooTicker = "";
+        if (baseSymbol.includes("BANKNIFTY")) yahooTicker = "^NSEBANK";
+        else if (baseSymbol.includes("FINNIFTY")) yahooTicker = "NIFTY_FIN_SERVICE.NS";
+        // 👇 YE LINE MAINE PICHLE CODE MEIN MISS KAR DI THI! 👇
+        else if (baseSymbol.includes("MIDCP") || baseSymbol.includes("MIDCAP")) yahooTicker = "NIFTY_MIDCAP_SELECT.NS"; 
+        else if (baseSymbol.includes("NIFTY")) yahooTicker = "^NSEI";
+        else if (baseSymbol.includes("SENSEX")) yahooTicker = "^BSESN";
+
+        if (yahooTicker) {
+            try {
+                const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooTicker}?interval=1m`;
+                const yRes = await axios.get(yUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+                if (yRes.data && yRes.data.chart && yRes.data.chart.result) {
+                    ltp = parseFloat(yRes.data.chart.result[0].meta.regularMarketPrice);
+                    if (ltp) {
+                        console.log(`✅ [LAYER 1] Yahoo LTP for ${baseSymbol}: ${ltp}`);
+                        return ltp;
+                    }
+                }
+            } catch (e) { console.log(`⚠️ [LAYER 1 FAILED] Yahoo Error: ${e.message}`); }
+        }
+
+        // 🔥 LAYER 2: TRADINGVIEW SCANNER
         let tvTicker = "";
         if (baseSymbol.includes("MIDCP") || baseSymbol.includes("MIDCAP")) tvTicker = "NSE:MIDCPNIFTY";
         else if (baseSymbol.includes("BANKNIFTY")) tvTicker = "NSE:BANKNIFTY";
@@ -830,35 +853,14 @@ const fetchLivePrice = async (symbol) => {
                 if (tvRes.data && tvRes.data.data && tvRes.data.data.length > 0) {
                     ltp = parseFloat(tvRes.data.data[0].d[0]);
                     if (ltp) {
-                        console.log(`✅ [LAYER 1] TradingView LTP for ${baseSymbol}: ${ltp}`);
+                        console.log(`✅ [LAYER 2] TradingView LTP for ${baseSymbol}: ${ltp}`);
                         return ltp;
                     }
                 }
-            } catch (e) { console.log(`⚠️ [LAYER 1 FAILED] TradingView Error: ${e.message}`); }
+            } catch (e) { console.log(`⚠️ [LAYER 2 FAILED] TradingView Error: ${e.message}`); }
         }
 
-        // 🔥 LAYER 2: YAHOO FINANCE (Super Fast Fallback for Nifty/BankNifty)
-        let yahooTicker = "";
-        if (baseSymbol.includes("BANKNIFTY")) yahooTicker = "^NSEBANK";
-        else if (baseSymbol.includes("FINNIFTY")) yahooTicker = "NIFTY_FIN_SERVICE.NS";
-        else if (baseSymbol.includes("NIFTY") && !baseSymbol.includes("MIDCP")) yahooTicker = "^NSEI";
-        else if (baseSymbol.includes("SENSEX")) yahooTicker = "^BSESN";
-
-        if (yahooTicker) {
-            try {
-                const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooTicker}?interval=1m`;
-                const yRes = await axios.get(yUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-                if (yRes.data && yRes.data.chart && yRes.data.chart.result) {
-                    ltp = parseFloat(yRes.data.chart.result[0].meta.regularMarketPrice);
-                    if (ltp) {
-                        console.log(`✅ [LAYER 2] Yahoo LTP for ${baseSymbol}: ${ltp}`);
-                        return ltp;
-                    }
-                }
-            } catch (e) { console.log(`⚠️ [LAYER 2 FAILED] Yahoo Error: ${e.message}`); }
-        }
-
-        // 🔥 LAYER 3: GOOGLE FINANCE (Heavy Duty Scraper with Anti-Bot Headers)
+        // 🔥 LAYER 3: GOOGLE FINANCE 
         let gfTicker = "";
         if (baseSymbol.includes("MIDCP") || baseSymbol.includes("MIDCAP")) gfTicker = "NIFTY_MIDCAP_SELECT:INDEXNSE";
         else if (baseSymbol.includes("BANKNIFTY")) gfTicker = "NIFTY_BANK:INDEXNSE";
@@ -867,9 +869,8 @@ const fetchLivePrice = async (symbol) => {
         if (gfTicker) {
             try {
                 const gfUrl = `https://www.google.com/finance/quote/${gfTicker}`;
-                // Anti-Bot Headers to bypass Render Server Blocks
                 const gfRes = await axios.get(gfUrl, {
-                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36' }
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
                 });
                 const match = gfRes.data.match(/data-last-price="([0-9.]+)"/);
                 if (match && match[1]) {
