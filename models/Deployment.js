@@ -69,7 +69,8 @@ const deploymentSchema = new mongoose.Schema({
     tradedExchange: { type: String, default: "NSE_FNO" }, // NSE_EQ ya NSE_FNO
     tradedQty: { type: Number, default: 0 }, // Kitni quantity li gayi
     entryPrice: { type: Number, default: 0 }, // Kis premium par trade execute hua
-    tradeAction: { type: String, enum: ['BUY', 'SELL'], default: 'BUY' } // BUY ya SELL
+    tradeAction: { type: String, enum: ['BUY', 'SELL'], default: 'BUY' }, // BUY ya SELL
+    tradedSymbol: { type: String }
     
 }, { timestamps: true });
 
