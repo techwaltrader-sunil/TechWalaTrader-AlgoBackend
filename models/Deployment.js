@@ -70,7 +70,9 @@ const deploymentSchema = new mongoose.Schema({
     tradedQty: { type: Number, default: 0 }, // Kitni quantity li gayi
     entryPrice: { type: Number, default: 0 }, // Kis premium par trade execute hua
     tradeAction: { type: String, enum: ['BUY', 'SELL'], default: 'BUY' }, // BUY ya SELL
-    tradedSymbol: { type: String }
+    tradedSymbol: { type: String },
+    exitPrice: { type: Number, default: 0 },
+    realizedPnl: { type: Number, default: 0 },
     
 }, { timestamps: true });
 
