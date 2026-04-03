@@ -287,9 +287,13 @@ const fetchDhanHistoricalData = async (clientId, accessToken, securityId, exchan
         
         const response = await axios.post(url, payload, { headers });
         
-        if (response.data && response.data.data) {
+        // 🔥 FIX: Intraday me 'data.data' aata hai, Daily me seedha 'data' aata hai
+        const responseData = isDaily ? response.data : (response.data ? response.data.data : null);
+        
+        // 🔥 FIX: Time ka naam check karna (Intraday me start_Time, Daily me timestamp)
+        if (responseData && (responseData.start_Time || responseData.timestamp || responseData.open)) {
             console.log(`✅ [Dhan API] ${isDaily ? 'Daily' : 'Intraday'} Data Fetched Successfully!`);
-            return { success: true, data: response.data.data };
+            return { success: true, data: responseData };
         } else {
             return { success: false, message: 'Invalid data format received from Dhan' };
         }

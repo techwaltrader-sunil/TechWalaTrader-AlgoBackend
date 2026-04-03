@@ -576,11 +576,42 @@ const runBacktestSimulator = async (req, res) => {
                 formatDhanDate(startDate), formatDhanDate(endDate), timeframe
             );
 
-            if (dhanRes.success && dhanRes.data.start_Time) {
-                const { start_Time, open, high, low, close, volume } = dhanRes.data;
+            // if (dhanRes.success && dhanRes.data.start_Time) {
+            //     const { start_Time, open, high, low, close, volume } = dhanRes.data;
+            //     const bulkOps = [];
+            //     for (let i = 0; i < start_Time.length; i++) {
+            //         const timestamp = new Date(start_Time[i] * 1000); 
+            //         bulkOps.push({ insertOne: { document: { symbol, timeframe, timestamp, open: open[i], high: high[i], low: low[i], close: close[i], volume: volume[i] } } });
+            //     }
+                
+            //     if (bulkOps.length > 0) {
+            //         await HistoricalData.bulkWrite(bulkOps, { ordered: false }).catch(e => console.log("Duplicates ignored"));
+            //         console.log(`✅ Saved ${bulkOps.length} new candles to MongoDB!`);
+            //         cachedData = await HistoricalData.find({ symbol, timeframe, timestamp: { $gte: startDate, $lte: endDate } }).sort({ timestamp: 1 });
+            //     }
+            // } else {
+            //     // 🔥 GENUINE SOLUTION: Fake data nahi banayenge. Sidha User ko sach batayenge.
+            //     console.log(`⚠️ Dhan API returned no data. Reason: ${dhanRes.message}`);
+                
+            //     return res.status(404).json({ 
+            //         success: false, 
+            //         errorType: "NO_DATA",
+            //         message: "Data not available for this period. Market might be closed (Weekend/Holiday) or the date is too old for intraday data. Please try a recent working day." 
+            //     });
+            // }
+
+            // 🔥 FIX: Check both 'start_Time' (Intraday) and 'timestamp' (Daily)
+            const timeArray = dhanRes.data ? (dhanRes.data.start_Time || dhanRes.data.timestamp) : null;
+
+            if (dhanRes.success && timeArray) {
+                const { open, high, low, close, volume } = dhanRes.data;
                 const bulkOps = [];
-                for (let i = 0; i < start_Time.length; i++) {
-                    const timestamp = new Date(start_Time[i] * 1000); 
+                for (let i = 0; i < timeArray.length; i++) {
+                    // Dhan kabhi seconds me bhejta hai, kabhi milliseconds me. Dono handle karein.
+                    let ms = timeArray[i];
+                    if (ms < 10000000000) ms = ms * 1000; 
+
+                    const timestamp = new Date(ms); 
                     bulkOps.push({ insertOne: { document: { symbol, timeframe, timestamp, open: open[i], high: high[i], low: low[i], close: close[i], volume: volume[i] } } });
                 }
                 
@@ -590,13 +621,13 @@ const runBacktestSimulator = async (req, res) => {
                     cachedData = await HistoricalData.find({ symbol, timeframe, timestamp: { $gte: startDate, $lte: endDate } }).sort({ timestamp: 1 });
                 }
             } else {
-                // 🔥 GENUINE SOLUTION: Fake data nahi banayenge. Sidha User ko sach batayenge.
-                console.log(`⚠️ Dhan API returned no data. Reason: ${dhanRes.message}`);
+                // Fake data nahi banayenge. Sidha User ko sach batayenge.
+                console.log(`⚠️ Dhan API returned no data. Reason: ${dhanRes.message || "Unknown Format"}`);
                 
                 return res.status(404).json({ 
                     success: false, 
                     errorType: "NO_DATA",
-                    message: "Data not available for this period. Market might be closed (Weekend/Holiday) or the date is too old for intraday data. Please try a recent working day." 
+                    message: "Data not available for this period. Market might be closed (Weekend/Holiday) or the date is too old for intraday data." 
                 });
             }
         }
