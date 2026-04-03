@@ -251,20 +251,30 @@ const fetchLiveLTP = async (clientId, accessToken, exchange, securityId) => {
 // ==========================================
 // 📊 FETCH HISTORICAL DATA (OHLCV) FROM DHAN
 // ==========================================
-// 🔥 FIX: Added 'interval' parameter
 const fetchDhanHistoricalData = async (clientId, accessToken, securityId, exchangeSegment, instrumentType, fromDate, toDate, interval = "5") => {
     try {
-        const url = 'https://api.dhan.co/charts/intraday';
+        // 🔥 FIX: Check karo ki Timeframe Daily (1D) hai ya Intraday (5m, 15m)
+        const isDaily = (interval.toUpperCase() === "D" || interval.toUpperCase() === "1D");
         
-        // Payload as per Dhan API documentation
+        // Daily aur Intraday ke endpoints alag hote hain
+        const url = isDaily 
+            ? 'https://api.dhan.co/charts/historical' 
+            : 'https://api.dhan.co/charts/intraday';
+        
         const payload = {
             securityId: securityId.toString(),
             exchangeSegment: exchangeSegment, 
             instrument: instrumentType,       
             fromDate: fromDate,               
             toDate: toDate,
-            interval: interval // 🎯 THE MAGIC FIX: Dhan ko timeframe batana zaroori hai!
         };
+
+        // Dhan ko Daily me 'expiryCode' chahiye hota hai, aur Intraday me 'interval'
+        if (isDaily) {
+            payload.expiryCode = 0; 
+        } else {
+            payload.interval = interval;
+        }
 
         const headers = {
             'client-id': clientId,
@@ -273,20 +283,20 @@ const fetchDhanHistoricalData = async (clientId, accessToken, securityId, exchan
             'Accept': 'application/json'
         };
 
-        console.log(`📡 [Dhan API] Fetching Historical Data for ${securityId} | Interval: ${interval}m | From: ${fromDate} To: ${toDate}...`);
+        console.log(`📡 [Dhan API] Fetching ${isDaily ? 'DAILY' : 'INTRADAY'} Data for ID: ${securityId} | From: ${fromDate} To: ${toDate}...`);
         
         const response = await axios.post(url, payload, { headers });
         
         if (response.data && response.data.data) {
-            console.log(`✅ [Dhan API] Historical Data Fetched Successfully!`);
+            console.log(`✅ [Dhan API] ${isDaily ? 'Daily' : 'Intraday'} Data Fetched Successfully!`);
             return { success: true, data: response.data.data };
         } else {
             return { success: false, message: 'Invalid data format received from Dhan' };
         }
     } catch (error) {
-        // Dhan kabhi-kabhi error message seedha string me bhejta hai
-        const errorMsg = error.response?.data?.errorMessage || error.response?.data || error.message;
-        console.error('❌ [Dhan API] Historical Fetch Error:', errorMsg);
+        const errData = error.response?.data;
+        const errorMsg = errData?.internalErrorMessage || errData?.errorMessage || error.message || "Unknown error occurred";
+        console.error(`❌ [Dhan API] Historical Fetch Error:`, errData || errorMsg);
         return { success: false, message: errorMsg };
     }
 };

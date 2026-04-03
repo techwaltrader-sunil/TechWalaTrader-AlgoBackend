@@ -542,15 +542,18 @@ const runBacktestSimulator = async (req, res) => {
         const cleanSymbolForMap = upperSymbol.replace(' 50', '').trim();
         const securityId = instrumentData.securityId || dhanIdMap[upperSymbol] || dhanIdMap[cleanSymbolForMap] || "13";
         
-        let timeframe = "5";
-        if (strategy.data && strategy.data.config && strategy.data.config.timeframe) {
-            timeframe = strategy.data.config.timeframe.toString().replace('m', '');
-        } else if (strategy.data && strategy.data.entrySettings && strategy.data.entrySettings.timeframe) {
-            timeframe = strategy.data.entrySettings.timeframe.toString().replace('m', '');
-        }
+        // 🔥 TESTING FIX: Abhi ke liye hum forcefully Daily (1D) data mangwa rahe hain
+        let timeframe = "1D";
+
+        // let timeframe = "5";
+        // if (strategy.data && strategy.data.config && strategy.data.config.timeframe) {
+        //     timeframe = strategy.data.config.timeframe.toString().replace('m', '');
+        // } else if (strategy.data && strategy.data.entrySettings && strategy.data.entrySettings.timeframe) {
+        //     timeframe = strategy.data.entrySettings.timeframe.toString().replace('m', '');
+        // }
 
         // Ye log ab aapko exact batayega ki Dhan ko kya jaa raha hai
-        console.log(`🧠 Config -> Symbol: ${symbol}, ID: ${securityId}, Seg: ${exchangeSegment}, Inst: ${instrumentType}, TF: ${timeframe}m`);
+        console.log(`🧠 Config -> Symbol: ${symbol}, ID: ${securityId}, Seg: ${exchangeSegment}, Inst: ${instrumentType}, TF: ${timeframe}`);
 
         // ==========================================
         // 3. CACHING & DHAN API INTEGRATION
