@@ -251,18 +251,19 @@ const fetchLiveLTP = async (clientId, accessToken, exchange, securityId) => {
 // ==========================================
 // 📊 FETCH HISTORICAL DATA (OHLCV) FROM DHAN
 // ==========================================
-const fetchDhanHistoricalData = async (clientId, accessToken, securityId, exchangeSegment, instrumentType, fromDate, toDate) => {
+// 🔥 FIX: Added 'interval' parameter
+const fetchDhanHistoricalData = async (clientId, accessToken, securityId, exchangeSegment, instrumentType, fromDate, toDate, interval = "5") => {
     try {
-        // Dhan Intraday/Historical API Endpoint
         const url = 'https://api.dhan.co/charts/intraday';
         
         // Payload as per Dhan API documentation
         const payload = {
             securityId: securityId.toString(),
-            exchangeSegment: exchangeSegment, // e.g., 'NSE_FNO' ya 'NSE_EQ'
-            instrument: instrumentType,       // e.g., 'OPTIDX' (Options) ya 'FUTIDX'
-            fromDate: fromDate,               // Format: 'YYYY-MM-DD'
-            toDate: toDate                    // Format: 'YYYY-MM-DD'
+            exchangeSegment: exchangeSegment, 
+            instrument: instrumentType,       
+            fromDate: fromDate,               
+            toDate: toDate,
+            interval: interval // 🎯 THE MAGIC FIX: Dhan ko timeframe batana zaroori hai!
         };
 
         const headers = {
@@ -272,22 +273,19 @@ const fetchDhanHistoricalData = async (clientId, accessToken, securityId, exchan
             'Accept': 'application/json'
         };
 
-        console.log(`📡 [Dhan API] Fetching Historical Data for ${securityId} | From: ${fromDate} To: ${toDate}...`);
+        console.log(`📡 [Dhan API] Fetching Historical Data for ${securityId} | Interval: ${interval}m | From: ${fromDate} To: ${toDate}...`);
         
         const response = await axios.post(url, payload, { headers });
         
-        // Dhan data arrays me bhejta hai: { open: [...], high: [...], low: [...], close: [...], volume: [...], start_Time: [...] }
         if (response.data && response.data.data) {
             console.log(`✅ [Dhan API] Historical Data Fetched Successfully!`);
-            return {
-                success: true,
-                data: response.data.data
-            };
+            return { success: true, data: response.data.data };
         } else {
             return { success: false, message: 'Invalid data format received from Dhan' };
         }
     } catch (error) {
-        const errorMsg = error.response?.data?.errorMessage || error.message;
+        // Dhan kabhi-kabhi error message seedha string me bhejta hai
+        const errorMsg = error.response?.data?.errorMessage || error.response?.data || error.message;
         console.error('❌ [Dhan API] Historical Fetch Error:', errorMsg);
         return { success: false, message: errorMsg };
     }

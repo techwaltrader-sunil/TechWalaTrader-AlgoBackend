@@ -331,7 +331,7 @@ const runBacktestSimulator = async (req, res) => {
             
             const dhanRes = await fetchDhanHistoricalData(
                 broker.clientId, broker.apiSecret, securityId, exchangeSegment, 'INDEX', 
-                formatDhanDate(startDate), formatDhanDate(endDate)
+                formatDhanDate(startDate), formatDhanDate(endDate), timeframe
             );
 
             if (dhanRes.success && dhanRes.data.start_Time) {
