@@ -821,7 +821,8 @@ const runBacktestSimulator = async (req, res) => {
         else if (rawExchange === "MCX") exchangeSegment = "MCX_COMM";
         else exchangeSegment = rawExchange;
 
-        if (upperSymbol.includes("NIFTY") || upperSymbol.includes("SENSEX") || upperSymbol.includes("BANK")) {
+        // 🔥 FIX: "BANK" ki jagah exact "BANKNIFTY" match karenge, taaki HDFCBANK jaisa stock index na ban jaye
+        if (upperSymbol.includes("NIFTY") || upperSymbol.includes("SENSEX") || upperSymbol === "BANKNIFTY" || upperSymbol === "NIFTY BANK") {
             exchangeSegment = "IDX_I";
         }
 
