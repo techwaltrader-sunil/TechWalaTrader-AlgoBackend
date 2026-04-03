@@ -498,11 +498,10 @@ const runBacktestSimulator = async (req, res) => {
         else if (period === '2Y') startDate.setFullYear(startDate.getFullYear() - 2); 
         else startDate.setMonth(startDate.getMonth() - 1); // Default 1M
 
-        // ==========================================
+       // ==========================================
         // 2. Data Fetching & Caching (DYNAMIC LOGIC)
         // ==========================================
         
-        // Dhan ke Security IDs ka "Smart Map" (Agar DB me ID na mile to ye kaam aayega)
         const dhanIdMap = {
             "NIFTY": "13",
             "BANKNIFTY": "25",
@@ -511,42 +510,43 @@ const runBacktestSimulator = async (req, res) => {
             "SENSEX": "51"
         };
 
-        // Strategy ke 'data.instruments' array se pehla instrument nikalo
         const instrumentData = (strategy.data && strategy.data.instruments && strategy.data.instruments.length > 0) 
                                 ? strategy.data.instruments[0] 
                                 : {};
 
-        // 🎯 1. Symbol (Default: NIFTY)
         const symbol = instrumentData.symbol || instrumentData.name || "NIFTY"; 
+        const upperSymbol = symbol.toUpperCase(); // e.g., "NIFTY 50"
         
-        // 🎯 2. Exchange Segment (Smart Mapping for Dhan Strict Enums)
         let rawExchange = (instrumentData.exchange || "IDX_I").toUpperCase();
-        let exchangeSegment = "IDX_I"; // Default
+        let exchangeSegment = "IDX_I"; 
 
-        // Agar DB me chota naam (NSE/BSE) hai, to Dhan ka format lagao
         if (rawExchange === "NSE") exchangeSegment = "NSE_EQ";
         else if (rawExchange === "BSE") exchangeSegment = "BSE_EQ";
         else if (rawExchange === "NFO") exchangeSegment = "NSE_FNO";
         else if (rawExchange === "MCX") exchangeSegment = "MCX_COMM";
         else exchangeSegment = rawExchange;
 
-        // 🔥 OVERRIDE: Agar Nifty, BankNifty ya Midcap jaisa INDEX hai, to Dhan ko hamesha 'IDX_I' hi bhejna hai
-        if (["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX"].includes(symbol.toUpperCase())) {
+        // 🔥 FIX 1: Ab chahe "NIFTY 50" ho ya "NIFTY", ye samajh jayega ki ye Index hai
+        if (upperSymbol.includes("NIFTY") || upperSymbol.includes("SENSEX") || upperSymbol.includes("BANK")) {
             exchangeSegment = "IDX_I";
-        } 
+        }
+
+        // 🔥 FIX 2: Instrument Type (Agar IDX_I hai to INDEX, warna EQUITY)
+        const instrumentType = exchangeSegment === "IDX_I" ? "INDEX" : "EQUITY";
+
+        // "NIFTY 50" me se " 50" hata do taaki Map se ID '13' nikal sake
+        const cleanSymbol = upperSymbol.replace(' 50', '').trim();
+        const securityId = instrumentData.securityId || dhanIdMap[cleanSymbol] || "13"; 
         
-        // 🎯 3. Security ID (Pehle DB check karo, nahi to Map se uthao, warna 13)
-        const securityId = instrumentData.securityId || dhanIdMap[symbol.toUpperCase()] || "13"; 
-        
-        // 🎯 4. Timeframe (Config ya EntrySettings se uthao, warna 5 minute)
         let timeframe = "5";
         if (strategy.data && strategy.data.config && strategy.data.config.timeframe) {
-            timeframe = strategy.data.config.timeframe.toString().replace('m', ''); // '5m' ko '5' banayega
+            timeframe = strategy.data.config.timeframe.toString().replace('m', '');
         } else if (strategy.data && strategy.data.entrySettings && strategy.data.entrySettings.timeframe) {
             timeframe = strategy.data.entrySettings.timeframe.toString().replace('m', '');
         }
 
-        console.log(`🧠 Dynamic Config -> Symbol: ${symbol}, ID: ${securityId}, Timeframe: ${timeframe}m`);
+        // Ye log ab aapko exact batayega ki Dhan ko kya jaa raha hai
+        console.log(`🧠 Config -> Symbol: ${symbol}, ID: ${securityId}, Seg: ${exchangeSegment}, Inst: ${instrumentType}, TF: ${timeframe}m`);
 
         // ==========================================
         // 3. CACHING & DHAN API INTEGRATION
@@ -563,8 +563,9 @@ const runBacktestSimulator = async (req, res) => {
 
             const formatDhanDate = (d) => d.toISOString().split('T')[0];
             
+            // 🔥 FIX 3: 'INDEX' ki jagah dynamic 'instrumentType' bhej rahe hain
             const dhanRes = await fetchDhanHistoricalData(
-                broker.clientId, broker.apiSecret, securityId, exchangeSegment, 'INDEX', 
+                broker.clientId, broker.apiSecret, securityId, exchangeSegment, instrumentType, 
                 formatDhanDate(startDate), formatDhanDate(endDate), timeframe
             );
 
@@ -579,11 +580,9 @@ const runBacktestSimulator = async (req, res) => {
                 if (bulkOps.length > 0) {
                     await HistoricalData.bulkWrite(bulkOps, { ordered: false }).catch(e => console.log("Duplicates ignored"));
                     console.log(`✅ Saved ${bulkOps.length} new candles to MongoDB!`);
-                    // Fetch again after saving
                     cachedData = await HistoricalData.find({ symbol, timeframe, timestamp: { $gte: startDate, $lte: endDate } }).sort({ timestamp: 1 });
                 }
             } else {
-                // Dhan ka asli error message frontend ko bhejo
                 return res.status(500).json({ success: false, message: `Dhan API Error: ${dhanRes.message}` });
             }
         }
