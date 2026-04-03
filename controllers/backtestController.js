@@ -802,7 +802,9 @@ const runBacktestSimulator = async (req, res) => {
             "MIDCPNIFTY": "118",
             "NIFTY MID SELECT": "118",
             "SENSEX": "51",
-            "BSE SENSEX": "51"
+            "BSE SENSEX": "51",
+            "HDFCBANK": "1333", // 🔥 Added HDFC Bank
+            "RELIANCE": "2885"  // 🔥 Added Reliance
         };
 
         const instrumentData = (strategy.data && strategy.data.instruments && strategy.data.instruments.length > 0) 
@@ -853,7 +855,7 @@ const runBacktestSimulator = async (req, res) => {
             const broker = await Broker.findOne({ engineOn: true });
             if (!broker) return res.status(400).json({ success: false, message: 'No active broker found for API keys' });
 
-            const formatDhanDate = (d) => d.toISOString().split('T')[0];
+            // const formatDhanDate = (d) => d.toISOString().split('T')[0];
             
             // // 🔥 100% DYNAMIC CALL: Koi Hardcoding Nahi!
             // const dhanRes = await fetchDhanHistoricalData(
@@ -868,17 +870,17 @@ const runBacktestSimulator = async (req, res) => {
             // );
 
 
-            // 🔥 ULTIMATE HDFC TEST: Bank Nifty ki jagah HDFC Bank (NSE_EQ) mangwa kar dekhein
-            const testSecurityId = "1333"; // HDFC Bank ka Dhan ID
-            const testSegment = "NSE_EQ";
-            const testInstrument = "EQUITY";
+            // 🔥 HDFC wala testSecurityId, testSegment sab delete kar dijiye.
+            // Aur ye apna original dynamic code wapas laga dijiye:
+
+            const formatDhanDate = (d) => d.toISOString().split('T')[0];
 
             const dhanRes = await fetchDhanHistoricalData(
                 broker.clientId, 
                 broker.apiSecret, 
-                testSecurityId,    // 🔥 HARDCODED FOR TEST
-                testSegment,       // 🔥 HARDCODED FOR TEST
-                testInstrument,    // 🔥 HARDCODED FOR TEST
+                securityId,           // Dynamic ID aayega
+                exchangeSegment,      // Dynamic Segment aayega
+                instrumentType,       // Dynamic Instrument aayega
                 formatDhanDate(startDate), 
                 formatDhanDate(endDate), 
                 timeframe
