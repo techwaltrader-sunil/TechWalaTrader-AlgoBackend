@@ -349,7 +349,8 @@ const runBacktestSimulator = async (req, res) => {
                     cachedData = await HistoricalData.find({ symbol, timeframe, timestamp: { $gte: startDate, $lte: endDate } }).sort({ timestamp: 1 });
                 }
             } else {
-                return res.status(500).json({ success: false, message: 'Failed to fetch data from Dhan' });
+                // Dhan ka asli error message frontend ko bhejo
+                return res.status(500).json({ success: false, message: `Dhan API Error: ${dhanRes.message}` });
             }
         }
 
