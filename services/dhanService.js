@@ -277,8 +277,8 @@ const fetchDhanHistoricalData = async (clientId, accessToken, securityId, exchan
         // }
 
         const url = isDaily 
-            ? 'https://api.dhan.co/charts/historical' 
-            : 'https://api.dhan.co/charts/intraday';
+            ? 'https://api.dhan.co/v2/charts/historical' 
+            : 'https://api.dhan.co/v2/charts/intraday';
 
         // 🔥 THE ULTIMATE V2 FIX: Time is STRICTLY required for Intraday in Dhan V2
         const formattedFromDate = isDaily ? fromDate : `${fromDate} 09:15:00`;
@@ -295,8 +295,9 @@ const fetchDhanHistoricalData = async (clientId, accessToken, securityId, exchan
         if (isDaily) {
             payload.expiryCode = 0; 
         } else {
-            payload.interval = interval;
-            payload.oi = false; // Dhan V2 API ki ek aur strict requirement
+            // 🔥 FIX: Parameters table (image_f6e645) ke hisaab se interval 'enum integer' hai
+            payload.interval = parseInt(interval) || 5; 
+            payload.oi = false;
         }
 
         const headers = {
