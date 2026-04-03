@@ -257,23 +257,46 @@ const fetchDhanHistoricalData = async (clientId, accessToken, securityId, exchan
         const isDaily = (interval.toUpperCase() === "D" || interval.toUpperCase() === "1D");
         
         // Daily aur Intraday ke endpoints alag hote hain
+        // const url = isDaily 
+        //     ? 'https://api.dhan.co/charts/historical' 
+        //     : 'https://api.dhan.co/charts/intraday';
+        
+        // const payload = {
+        //     securityId: securityId.toString(),
+        //     exchangeSegment: exchangeSegment, 
+        //     instrument: instrumentType,       
+        //     fromDate: fromDate,               
+        //     toDate: toDate,
+        // };
+
+        // // Dhan ko Daily me 'expiryCode' chahiye hota hai, aur Intraday me 'interval'
+        // if (isDaily) {
+        //     payload.expiryCode = 0; 
+        // } else {
+        //     payload.interval = interval;
+        // }
+
         const url = isDaily 
             ? 'https://api.dhan.co/charts/historical' 
             : 'https://api.dhan.co/charts/intraday';
-        
+
+        // 🔥 THE MAGIC FIX: Dhan V2 Docs ke hisaab se Intraday me Time (HH:MM:SS) dena zaroori hai!
+        const formattedFromDate = isDaily ? fromDate : `${fromDate} 09:15:00`;
+        const formattedToDate = isDaily ? toDate : `${toDate} 15:30:00`;
+
         const payload = {
             securityId: securityId.toString(),
             exchangeSegment: exchangeSegment, 
             instrument: instrumentType,       
-            fromDate: fromDate,               
-            toDate: toDate,
+            fromDate: formattedFromDate,               
+            toDate: formattedToDate,
         };
 
-        // Dhan ko Daily me 'expiryCode' chahiye hota hai, aur Intraday me 'interval'
         if (isDaily) {
             payload.expiryCode = 0; 
         } else {
             payload.interval = interval;
+            payload.oi = false; // V2 Docs ke anusaar
         }
 
         const headers = {
