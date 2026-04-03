@@ -502,12 +502,18 @@ const runBacktestSimulator = async (req, res) => {
         // 2. Data Fetching & Caching (DYNAMIC LOGIC)
         // ==========================================
         
+        // Dhan ke Security IDs ka "Super Map" (Har tarah ke naam ko cover karega)
         const dhanIdMap = {
             "NIFTY": "13",
+            "NIFTY 50": "13",
             "BANKNIFTY": "25",
+            "NIFTY BANK": "25",       // 🔥 Aapke DB wala naam!
             "FINNIFTY": "27",
+            "NIFTY FIN SERVICE": "27",
             "MIDCPNIFTY": "118",
-            "SENSEX": "51"
+            "NIFTY MID SELECT": "118",
+            "SENSEX": "51",
+            "BSE SENSEX": "51"
         };
 
         const instrumentData = (strategy.data && strategy.data.instruments && strategy.data.instruments.length > 0) 
@@ -515,7 +521,7 @@ const runBacktestSimulator = async (req, res) => {
                                 : {};
 
         const symbol = instrumentData.symbol || instrumentData.name || "NIFTY"; 
-        const upperSymbol = symbol.toUpperCase(); // e.g., "NIFTY 50"
+        const upperSymbol = symbol.toUpperCase().trim(); 
         
         let rawExchange = (instrumentData.exchange || "IDX_I").toUpperCase();
         let exchangeSegment = "IDX_I"; 
@@ -526,17 +532,15 @@ const runBacktestSimulator = async (req, res) => {
         else if (rawExchange === "MCX") exchangeSegment = "MCX_COMM";
         else exchangeSegment = rawExchange;
 
-        // 🔥 FIX 1: Ab chahe "NIFTY 50" ho ya "NIFTY", ye samajh jayega ki ye Index hai
         if (upperSymbol.includes("NIFTY") || upperSymbol.includes("SENSEX") || upperSymbol.includes("BANK")) {
             exchangeSegment = "IDX_I";
         }
 
-        // 🔥 FIX 2: Instrument Type (Agar IDX_I hai to INDEX, warna EQUITY)
         const instrumentType = exchangeSegment === "IDX_I" ? "INDEX" : "EQUITY";
 
-        // "NIFTY 50" me se " 50" hata do taaki Map se ID '13' nikal sake
-        const cleanSymbol = upperSymbol.replace(' 50', '').trim();
-        const securityId = instrumentData.securityId || dhanIdMap[cleanSymbol] || "13"; 
+        // 🔥 FIX: Ab ye directly "NIFTY BANK" ko match karke 25 nikal lega!
+        const cleanSymbolForMap = upperSymbol.replace(' 50', '').trim();
+        const securityId = instrumentData.securityId || dhanIdMap[upperSymbol] || dhanIdMap[cleanSymbolForMap] || "13";
         
         let timeframe = "5";
         if (strategy.data && strategy.data.config && strategy.data.config.timeframe) {
