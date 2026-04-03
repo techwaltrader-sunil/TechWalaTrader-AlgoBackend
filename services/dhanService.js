@@ -280,23 +280,19 @@ const fetchDhanHistoricalData = async (clientId, accessToken, securityId, exchan
             ? 'https://api.dhan.co/charts/historical' 
             : 'https://api.dhan.co/charts/intraday';
 
-        // 🔥 THE MAGIC FIX: Dhan V2 Docs ke hisaab se Intraday me Time (HH:MM:SS) dena zaroori hai!
-        const formattedFromDate = isDaily ? fromDate : `${fromDate} 09:15:00`;
-        const formattedToDate = isDaily ? toDate : `${toDate} 15:30:00`;
-
+        // 🔥 FIX: Wapas simple YYYY-MM-DD format (Dhan ko time string pasand nahi hai)
         const payload = {
             securityId: securityId.toString(),
             exchangeSegment: exchangeSegment, 
             instrument: instrumentType,       
-            fromDate: formattedFromDate,               
-            toDate: formattedToDate,
+            fromDate: fromDate, // No time added             
+            toDate: toDate,
         };
 
         if (isDaily) {
             payload.expiryCode = 0; 
         } else {
             payload.interval = interval;
-            payload.oi = false; // V2 Docs ke anusaar
         }
 
         const headers = {
