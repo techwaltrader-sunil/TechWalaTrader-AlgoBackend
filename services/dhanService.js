@@ -287,14 +287,19 @@ const fetchDhanHistoricalData = async (clientId, accessToken, securityId, exchan
         
         const response = await axios.post(url, payload, { headers });
         
-        // 🔥 FIX: Intraday me 'data.data' aata hai, Daily me seedha 'data' aata hai
-        const responseData = isDaily ? response.data : (response.data ? response.data.data : null);
-        
-        // 🔥 FIX: Time ka naam check karna (Intraday me start_Time, Daily me timestamp)
-        if (responseData && (responseData.start_Time || responseData.timestamp || responseData.open)) {
-            console.log(`✅ [Dhan API] ${isDaily ? 'Daily' : 'Intraday'} Data Fetched Successfully!`);
-            return { success: true, data: responseData };
+        // 🔥 ULTIMATE FIX: Dhan chahe data.data me bheje ya sirf data me, hum dono check karenge!
+        // Sabse pehle andar wale data me dhundo, agar wahan nahi hai to bahar wale me dhundo
+        const actualData = (response.data && response.data.data && response.data.data.open) 
+                            ? response.data.data 
+                            : response.data;
+
+        // Ab hum bas ye check karenge ki 'open' prices ki array aayi hai ya nahi
+        if (actualData && actualData.open && actualData.open.length > 0) {
+            console.log(`✅ [Dhan API] ${isDaily ? 'Daily' : 'Intraday'} Data Fetched Successfully! Candles: ${actualData.open.length}`);
+            return { success: true, data: actualData };
         } else {
+            // Agar phir bhi fail ho, to log me print kar lenge ki aakhir Dhan ne bheja kya hai!
+            console.log('⚠️ Dhan Response Format:', JSON.stringify(response.data).substring(0, 200));
             return { success: false, message: 'Invalid data format received from Dhan' };
         }
     } catch (error) {
