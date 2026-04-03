@@ -472,7 +472,7 @@ const { fetchDhanHistoricalData } = require('../services/dhanService');
 const runBacktestSimulator = async (req, res) => {
     try {
         const { strategyId } = req.params;
-        const { period } = req.query; // e.g., '1M', '3M', '6M'
+        const { period, start, end } = req.query; // 🔥 FIX: Frontend se aayi start/end date receive karein
         
         const strategy = await Strategy.findById(strategyId);
         if (!strategy) {
@@ -485,7 +485,13 @@ const runBacktestSimulator = async (req, res) => {
         let endDate = new Date();
         let startDate = new Date();
         
-        if (period === '1M') startDate.setMonth(startDate.getMonth() - 1); 
+        // 🔥 FIX: Agar Custom hai aur dates aayi hain, to unhe set karo
+        if (period === 'Custom' && start && end) {
+            startDate = new Date(start);
+            endDate = new Date(end);
+            endDate.setHours(23, 59, 59, 999); // Din ka aakhiri second
+        }
+        else if (period === '1M') startDate.setMonth(startDate.getMonth() - 1); 
         else if (period === '3M') startDate.setMonth(startDate.getMonth() - 3); 
         else if (period === '6M') startDate.setMonth(startDate.getMonth() - 6); 
         else if (period === '1Y') startDate.setFullYear(startDate.getFullYear() - 1); 
