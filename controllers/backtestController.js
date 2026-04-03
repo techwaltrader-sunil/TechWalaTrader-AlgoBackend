@@ -583,7 +583,14 @@ const runBacktestSimulator = async (req, res) => {
                     cachedData = await HistoricalData.find({ symbol, timeframe, timestamp: { $gte: startDate, $lte: endDate } }).sort({ timestamp: 1 });
                 }
             } else {
-                return res.status(500).json({ success: false, message: `Dhan API Error: ${dhanRes.message}` });
+                // 🔥 GENUINE SOLUTION: Fake data nahi banayenge. Sidha User ko sach batayenge.
+                console.log(`⚠️ Dhan API returned no data. Reason: ${dhanRes.message}`);
+                
+                return res.status(404).json({ 
+                    success: false, 
+                    errorType: "NO_DATA",
+                    message: "Data not available for this period. Market might be closed (Weekend/Holiday) or the date is too old for intraday data. Please try a recent working day." 
+                });
             }
         }
 
