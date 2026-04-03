@@ -513,8 +513,21 @@ const runBacktestSimulator = async (req, res) => {
         // 🎯 1. Symbol (Default: NIFTY)
         const symbol = instrumentData.symbol || instrumentData.name || "NIFTY"; 
         
-        // 🎯 2. Exchange Segment (Default: IDX_I for Index)
-        const exchangeSegment = instrumentData.exchange || "IDX_I"; 
+        // 🎯 2. Exchange Segment (Smart Mapping for Dhan Strict Enums)
+        let rawExchange = (instrumentData.exchange || "IDX_I").toUpperCase();
+        let exchangeSegment = "IDX_I"; // Default
+
+        // Agar DB me chota naam (NSE/BSE) hai, to Dhan ka format lagao
+        if (rawExchange === "NSE") exchangeSegment = "NSE_EQ";
+        else if (rawExchange === "BSE") exchangeSegment = "BSE_EQ";
+        else if (rawExchange === "NFO") exchangeSegment = "NSE_FNO";
+        else if (rawExchange === "MCX") exchangeSegment = "MCX_COMM";
+        else exchangeSegment = rawExchange;
+
+        // 🔥 OVERRIDE: Agar Nifty, BankNifty ya Midcap jaisa INDEX hai, to Dhan ko hamesha 'IDX_I' hi bhejna hai
+        if (["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX"].includes(symbol.toUpperCase())) {
+            exchangeSegment = "IDX_I";
+        } 
         
         // 🎯 3. Security ID (Pehle DB check karo, nahi to Map se uthao, warna 13)
         const securityId = instrumentData.securityId || dhanIdMap[symbol.toUpperCase()] || "13"; 
