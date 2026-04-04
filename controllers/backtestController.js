@@ -1084,68 +1084,44 @@
 
 // module.exports = { runBacktestSimulator };
 
-
 const Strategy = require('../models/Strategy');
 const HistoricalData = require('../models/HistoricalData');
 const Broker = require('../models/Broker');
 const { fetchDhanHistoricalData } = require('../services/dhanService');
-
-// 🔥 Nayi library yahan require ki gayi hai
 const { SMA, EMA, RSI, MACD, BollingerBands, ATR } = require('technicalindicators');
 
-// 🔥 THE REAL DATA BACKTEST ENGINE 🔥
 const runBacktestSimulator = async (req, res) => {
     try {
         const { strategyId } = req.params;
-        const { period, start, end } = req.query; // Frontend se aayi start/end date receive karein
+        const { period, start, end } = req.query;
         
         const strategy = await Strategy.findById(strategyId);
-        if (!strategy) {
-            return res.status(404).json({ error: "Strategy not found" });
-        }
+        if (!strategy) return res.status(404).json({ error: "Strategy not found" });
 
         console.log(`🚀 Running Real Backtest for: ${strategy.name} | Period: ${period || '1M'}`);
 
-        // ==========================================
-        // 1. DATE CALCULATION
-        // ==========================================
         let endDate = new Date();
         let startDate = new Date();
         
         if (period === 'Custom' && start && end) {
             startDate = new Date(start);
             endDate = new Date(end);
-            endDate.setHours(23, 59, 59, 999); // Din ka aakhiri second
+            endDate.setHours(23, 59, 59, 999); 
         }
         else if (period === '1M') startDate.setMonth(startDate.getMonth() - 1); 
         else if (period === '3M') startDate.setMonth(startDate.getMonth() - 3); 
         else if (period === '6M') startDate.setMonth(startDate.getMonth() - 6); 
         else if (period === '1Y') startDate.setFullYear(startDate.getFullYear() - 1); 
         else if (period === '2Y') startDate.setFullYear(startDate.getFullYear() - 2); 
-        else startDate.setMonth(startDate.getMonth() - 1); // Default 1M
+        else startDate.setMonth(startDate.getMonth() - 1); 
 
-        // ==========================================
-        // 2. DYNAMIC CONFIGURATION (Symbol, ID, Exchange)
-        // ==========================================
         const dhanIdMap = {
-            "NIFTY": "13",
-            "NIFTY 50": "13",
-            "BANKNIFTY": "25",
-            "NIFTY BANK": "25",
-            "FINNIFTY": "27",
-            "NIFTY FIN SERVICE": "27",
-            "MIDCPNIFTY": "118",
-            "NIFTY MID SELECT": "118",
-            "SENSEX": "51",
-            "BSE SENSEX": "51",
-            "HDFCBANK": "1333", // 🔥 Added HDFC Bank
-            "RELIANCE": "2885"  // 🔥 Added Reliance
+            "NIFTY": "13", "NIFTY 50": "13", "BANKNIFTY": "25", "NIFTY BANK": "25",
+            "FINNIFTY": "27", "NIFTY FIN SERVICE": "27", "MIDCPNIFTY": "118", "NIFTY MID SELECT": "118",
+            "SENSEX": "51", "BSE SENSEX": "51", "HDFCBANK": "1333", "RELIANCE": "2885"
         };
 
-        const instrumentData = (strategy.data && strategy.data.instruments && strategy.data.instruments.length > 0) 
-                                ? strategy.data.instruments[0] 
-                                : {};
-
+        const instrumentData = (strategy.data && strategy.data.instruments && strategy.data.instruments.length > 0) ? strategy.data.instruments[0] : {};
         const symbol = instrumentData.symbol || instrumentData.name || "NIFTY"; 
         const upperSymbol = symbol.toUpperCase().trim(); 
         
@@ -1158,70 +1134,40 @@ const runBacktestSimulator = async (req, res) => {
         else if (rawExchange === "MCX") exchangeSegment = "MCX_COMM";
         else exchangeSegment = rawExchange;
 
-        // 🔥 FIX: "BANK" ki jagah exact "BANKNIFTY" match karenge
         if (upperSymbol.includes("NIFTY") || upperSymbol.includes("SENSEX") || upperSymbol === "BANKNIFTY" || upperSymbol === "NIFTY BANK") {
             exchangeSegment = "IDX_I";
         }
 
         const instrumentType = exchangeSegment === "IDX_I" ? "INDEX" : "EQUITY";
-
         const cleanSymbolForMap = upperSymbol.replace(' 50', '').trim();
         const securityId = instrumentData.securityId || dhanIdMap[upperSymbol] || dhanIdMap[cleanSymbolForMap] || "13";
         
         let timeframe = "5"; 
-        if (strategy.data && strategy.data.config && strategy.data.config.timeframe) {
-            timeframe = strategy.data.config.timeframe.toString().replace('m', '');
-        } else if (strategy.data && strategy.data.entrySettings && strategy.data.entrySettings.timeframe) {
-            timeframe = strategy.data.entrySettings.timeframe.toString().replace('m', '');
-        }
+        if (strategy.data && strategy.data.config && strategy.data.config.timeframe) timeframe = strategy.data.config.timeframe.toString().replace('m', '');
+        else if (strategy.data && strategy.data.entrySettings && strategy.data.entrySettings.timeframe) timeframe = strategy.data.entrySettings.timeframe.toString().replace('m', '');
 
-        console.log(`🧠 Config -> Symbol: ${symbol}, ID: ${securityId}, Seg: ${exchangeSegment}, Inst: ${instrumentType}, TF: ${timeframe}`);
-
-        // ==========================================
-        // 3. CACHING & DHAN API INTEGRATION (SMART LOGIC)
-        // ==========================================
-        console.log(`🔍 Checking DB for ${symbol} data from ${startDate.toISOString().split('T')[0]}...`);
+        // 🔥 FIX 1: .lean() lagaya taaki data pure JSON ban jaye aur properties access ho sakein
         let cachedData = await HistoricalData.find({
             symbol, timeframe, timestamp: { $gte: startDate, $lte: endDate }
-        }).sort({ timestamp: 1 });
+        }).sort({ timestamp: 1 }).lean();
 
-        // 🔥 SMART CACHE LOGIC START 🔥
         let shouldFetchFromDhan = false;
-
         if (cachedData.length === 0) {
             shouldFetchFromDhan = true;
         } else {
             const dbStartDate = cachedData[0].timestamp;
             const dbEndDate = cachedData[cachedData.length - 1].timestamp;
-
-            if (dbStartDate > new Date(startDate.getTime() + 86400000) || 
-                dbEndDate < new Date(endDate.getTime() - 86400000)) {
-                
-                console.log(`⚠️ Partial data found in DB. Need fresh data from Dhan!`);
+            if (dbStartDate > new Date(startDate.getTime() + 86400000) || dbEndDate < new Date(endDate.getTime() - 86400000)) {
                 shouldFetchFromDhan = true;
-                
                 await HistoricalData.deleteMany({ symbol, timeframe, timestamp: { $gte: startDate, $lte: endDate } });
             }
         }
 
         if (shouldFetchFromDhan) {
-            console.log(`⚠️ Fetching fresh data from Dhan API...`);
             const broker = await Broker.findOne({ engineOn: true });
             if (!broker) return res.status(400).json({ success: false, message: 'No active broker found for API keys' });
 
-            const formatDhanDate = (d) => d.toISOString().split('T')[0];
-
-            const dhanRes = await fetchDhanHistoricalData(
-                broker.clientId, 
-                broker.apiSecret, 
-                securityId,           
-                exchangeSegment,      
-                instrumentType,       
-                formatDhanDate(startDate), 
-                formatDhanDate(endDate), 
-                timeframe
-            );
-
+            const dhanRes = await fetchDhanHistoricalData(broker.clientId, broker.apiSecret, securityId, exchangeSegment, instrumentType, startDate.toISOString().split('T')[0], endDate.toISOString().split('T')[0], timeframe);
             const timeArray = dhanRes.data ? (dhanRes.data.start_Time || dhanRes.data.timestamp) : null;
 
             if (dhanRes.success && timeArray) {
@@ -1230,107 +1176,69 @@ const runBacktestSimulator = async (req, res) => {
                 for (let i = 0; i < timeArray.length; i++) {
                     let ms = timeArray[i];
                     if (ms < 10000000000) ms = ms * 1000; 
-
-                    const timestamp = new Date(ms); 
-                    bulkOps.push({ insertOne: { document: { symbol, timeframe, timestamp, open: open[i], high: high[i], low: low[i], close: close[i], volume: volume[i] } } });
+                    bulkOps.push({ insertOne: { document: { symbol, timeframe, timestamp: new Date(ms), open: open[i], high: high[i], low: low[i], close: close[i], volume: volume[i] } } });
                 }
                 
                 if (bulkOps.length > 0) {
                     await HistoricalData.bulkWrite(bulkOps, { ordered: false }).catch(e => console.log("Duplicates ignored"));
-                    console.log(`✅ Saved ${bulkOps.length} new candles to MongoDB!`);
-                    cachedData = await HistoricalData.find({ symbol, timeframe, timestamp: { $gte: startDate, $lte: endDate } }).sort({ timestamp: 1 });
+                    // 🔥 FIX 1 (Again): Fresh fetch ke baad bhi .lean()
+                    cachedData = await HistoricalData.find({ symbol, timeframe, timestamp: { $gte: startDate, $lte: endDate } }).sort({ timestamp: 1 }).lean();
                 }
             } else {
-                console.log(`⚠️ Dhan API returned no data. Reason: ${dhanRes.message || "Unknown Format"}`);
-                return res.status(404).json({ 
-                    success: false, 
-                    errorType: "NO_DATA",
-                    message: "Data not available for this period. Market might be closed (Weekend/Holiday) or the date is too old for intraday data." 
-                });
+                return res.status(404).json({ success: false, errorType: "NO_DATA", message: "Data not available for this period." });
             }
         }
-        // 🔥 SMART CACHE LOGIC END 🔥
 
         console.log(`📊 Processing ${cachedData.length} Real Candles...`);
 
-
         // ==========================================
-        // 🧠 THE UNIVERSAL INDICATOR ENGINE (PRO VERSION) 🧠
+        // 🧠 THE UNIVERSAL INDICATOR ENGINE 🧠
         // ==========================================
-        console.log("⚙️ Pre-calculating Technical Indicators...");
-        
         const calculateIndicator = (indConfig, candles) => {
             if (!indConfig) return null;
-            
-            if (indConfig.id === 'number' || indConfig.id === 'static') {
-                return candles.map(() => Number(indConfig.value || indConfig.params?.Value || 0));
-            }
+            if (indConfig.id === 'number' || indConfig.id === 'static') return candles.map(() => Number(indConfig.value || indConfig.params?.Value || 0));
 
-            // 🔥 BUG FIX 1: Strings ko strictly Numbers me convert kiya taaki Indicator fail na ho
-            const closePrices = candles.map(c => Number(c.close));
-            const highPrices = candles.map(c => Number(c.high));
-            const lowPrices = candles.map(c => Number(c.low));
-            const volumes = candles.map(c => Number(c.volume));
+            // 🔥 FIX 2: Strictly parsing floats to prevent NaN crash
+            const closePrices = candles.map(c => parseFloat(c.close) || 0);
+            const highPrices = candles.map(c => parseFloat(c.high) || 0);
+            const lowPrices = candles.map(c => parseFloat(c.low) || 0);
+            const volumes = candles.map(c => parseFloat(c.volume) || 0);
             
             let results = [];
-
             try {
                 if (indConfig.id === 'candle') return closePrices;
                 if (indConfig.id === 'volume') return volumes;
-
-                if (indConfig.id === 'sma') {
-                    results = SMA.calculate({ period: Number(indConfig.params?.Period) || 14, values: closePrices });
-                }
-                else if (indConfig.id === 'ema') {
-                    results = EMA.calculate({ period: Number(indConfig.params?.Period) || 9, values: closePrices });
-                }
-                else if (indConfig.id === 'rsi') {
-                    results = RSI.calculate({ period: Number(indConfig.params?.Period) || 14, values: closePrices });
-                }
+                if (indConfig.id === 'sma') results = SMA.calculate({ period: Number(indConfig.params?.Period) || 14, values: closePrices });
+                else if (indConfig.id === 'ema') results = EMA.calculate({ period: Number(indConfig.params?.Period) || 9, values: closePrices });
+                else if (indConfig.id === 'rsi') results = RSI.calculate({ period: Number(indConfig.params?.Period) || 14, values: closePrices });
                 else if (indConfig.id === 'macd') {
-                    const macdOutput = MACD.calculate({
-                        values: closePrices,
-                        fastPeriod: Number(indConfig.params?.['Fast MA']) || 12,
-                        slowPeriod: Number(indConfig.params?.['Slow MA']) || 26,
-                        signalPeriod: Number(indConfig.params?.Signal) || 9,
-                        SimpleMAOscillator: false, SimpleMASignal: false
-                    });
+                    const macdOutput = MACD.calculate({ values: closePrices, fastPeriod: Number(indConfig.params?.['Fast MA']) || 12, slowPeriod: Number(indConfig.params?.['Slow MA']) || 26, signalPeriod: Number(indConfig.params?.Signal) || 9, SimpleMAOscillator: false, SimpleMASignal: false });
                     const lineType = indConfig.params?.Line || 'MACD Line';
                     results = macdOutput.map(m => lineType === 'Signal Line' ? m.signal : (lineType === 'Histogram' ? m.histogram : m.MACD));
                 }
                 else if (indConfig.id === 'bb') {
-                    const bbOutput = BollingerBands.calculate({
-                        period: Number(indConfig.params?.Period) || 20, values: closePrices, stdDev: Number(indConfig.params?.StdDev) || 2
-                    });
+                    const bbOutput = BollingerBands.calculate({ period: Number(indConfig.params?.Period) || 20, values: closePrices, stdDev: Number(indConfig.params?.StdDev) || 2 });
                     const lineType = indConfig.params?.Line || 'Upper';
                     results = bbOutput.map(b => lineType === 'Lower' ? b.lower : (lineType === 'Middle' ? b.middle : b.upper));
                 }
-                else if (indConfig.id === 'atr') {
-                    results = ATR.calculate({ high: highPrices, low: lowPrices, close: closePrices, period: Number(indConfig.params?.Period) || 14 });
-                }
+                else if (indConfig.id === 'atr') results = ATR.calculate({ high: highPrices, low: lowPrices, close: closePrices, period: Number(indConfig.params?.Period) || 14 });
                 else if (indConfig.id === 'supertrend') {
                     const period = Number(indConfig.params?.Period) || 7;
                     const multiplier = Number(indConfig.params?.Multiplier) || 3;
                     const atrResult = ATR.calculate({ high: highPrices, low: lowPrices, close: closePrices, period });
-                    
-                    let stArray = [];
-                    let finalUpper = 0, finalLower = 0, isUptrend = true;
-                    
+                    let stArray = []; let finalUpper = 0, finalLower = 0, isUptrend = true;
                     for (let i = 0; i < closePrices.length; i++) {
                         if (i < period) { stArray.push(null); continue; }
                         let atr = atrResult[i - period];
                         let basicUpper = (highPrices[i] + lowPrices[i]) / 2 + (multiplier * atr);
                         let basicLower = (highPrices[i] + lowPrices[i]) / 2 - (multiplier * atr);
-                        
                         if (i === period) { finalUpper = basicUpper; finalLower = basicLower; } 
                         else {
                             finalUpper = (basicUpper < finalUpper || closePrices[i-1] > finalUpper) ? basicUpper : finalUpper;
                             finalLower = (basicLower > finalLower || closePrices[i-1] < finalLower) ? basicLower : finalLower;
                         }
-                        
                         if (closePrices[i] > finalUpper) isUptrend = true;
                         else if (closePrices[i] < finalLower) isUptrend = false;
-                        
                         stArray.push(isUptrend ? finalLower : finalUpper);
                     }
                     results = stArray.filter(v => v !== null); 
@@ -1348,9 +1256,7 @@ const runBacktestSimulator = async (req, res) => {
         };
 
         const entryConds = strategy.data.entryConditions && strategy.data.entryConditions.length > 0 ? strategy.data.entryConditions[0] : null;
-
-        const calcLongInd1 = [];
-        const calcLongInd2 = [];
+        const calcLongInd1 = []; const calcLongInd2 = [];
 
         if (entryConds && entryConds.longRules) {
             entryConds.longRules.forEach((rule, idx) => {
@@ -1365,12 +1271,8 @@ const runBacktestSimulator = async (req, res) => {
                 case 'Greater Than': return val1 > val2;
                 case 'Less Than': return val1 < val2;
                 case 'Equals': return val1 === val2;
-                case 'Crosses Above':
-                    if (prevVal1 === null || prevVal2 === null) return false;
-                    return prevVal1 <= prevVal2 && val1 > val2; 
-                case 'Crosses Below':
-                    if (prevVal1 === null || prevVal2 === null) return false;
-                    return prevVal1 >= prevVal2 && val1 < val2; 
+                case 'Crosses Above': return prevVal1 !== null && prevVal2 !== null && prevVal1 <= prevVal2 && val1 > val2; 
+                case 'Crosses Below': return prevVal1 !== null && prevVal2 !== null && prevVal1 >= prevVal2 && val1 < val2; 
                 default: return false;
             }
         };
@@ -1379,37 +1281,24 @@ const runBacktestSimulator = async (req, res) => {
         let winDays = 0, lossDays = 0, winTrades = 0, lossTrades = 0;
         let currentWinStreak = 0, currentLossStreak = 0, maxWinStreak = 0, maxLossStreak = 0;
         let maxProfitTrade = 0, maxLossTrade = 0;
-        const equityCurve = [];
-        const daywiseBreakdown = [];
-        let dailyBreakdownMap = {}; 
+        const equityCurve = []; const daywiseBreakdown = []; let dailyBreakdownMap = {}; 
 
-        let isPositionOpen = false;
-        let entryPrice = 0;
-        let tradeQuantity = strategy.data.legs && strategy.data.legs[0] ? Number(strategy.data.legs[0].quantity) : 1;
-        // Default quantity agar frontend se nahi aayi to 15 (Nifty) ya 15 (Banknifty) set kar do, abhi 1 rakhte hain
-        if (!tradeQuantity || isNaN(tradeQuantity)) tradeQuantity = 1;
+        let isPositionOpen = false; let entryPrice = 0;
+        let tradeQuantity = strategy.data.legs && strategy.data.legs[0] ? Number(strategy.data.legs[0].quantity) : 15; // Fallback to 15 (Banknifty lot)
+        if (!tradeQuantity || isNaN(tradeQuantity)) tradeQuantity = 15;
 
         cachedData.forEach((candle, i) => {
-            
-            // 🔥 BULLETPROOF TIME FIX (String ko chhodkar Minutes me calculate kiya)
-            // 5.5 hours add karke direct Indian Standard Time (IST) Date object banaya
-            const istDate = new Date(candle.timestamp.getTime() + (5.5 * 60 * 60 * 1000));
-            const h = istDate.getUTCHours();
-            const m = istDate.getUTCMinutes();
-            
-            // Time in minutes (e.g., 9:15 AM = 9*60 + 15 = 555)
+            const candleTime = new Date(candle.timestamp).getTime();
+            const istDate = new Date(candleTime + (5.5 * 60 * 60 * 1000));
+            const h = istDate.getUTCHours(); const m = istDate.getUTCMinutes();
             const timeInMinutes = (h * 60) + m; 
             const dateStr = istDate.toISOString().split('T')[0];
 
-            if (!dailyBreakdownMap[dateStr]) {
-                dailyBreakdownMap[dateStr] = { pnl: 0, trades: 0 };
-            }
+            if (!dailyBreakdownMap[dateStr]) dailyBreakdownMap[dateStr] = { pnl: 0, trades: 0 };
 
             let longSignal = false;
-
             if (entryConds && entryConds.longRules && entryConds.longRules.length > 0) {
                 let overallResult = null;
-
                 entryConds.longRules.forEach((rule, idx) => {
                     const val1 = calcLongInd1[idx] ? calcLongInd1[idx][i] : null;
                     const val2 = calcLongInd2[idx] ? calcLongInd2[idx][i] : null;
@@ -1417,114 +1306,71 @@ const runBacktestSimulator = async (req, res) => {
                     const prevVal2 = (i > 0 && calcLongInd2[idx]) ? calcLongInd2[idx][i-1] : null;
 
                     const ruleResult = evaluateCondition(val1, val2, prevVal1, prevVal2, rule.op);
-
-                    if (idx === 0) {
-                        overallResult = ruleResult;
-                    } else {
+                    if (idx === 0) overallResult = ruleResult;
+                    else {
                         const logicalOp = entryConds.logicalOps[idx - 1]; 
                         if (logicalOp === 'AND') overallResult = overallResult && ruleResult;
                         else if (logicalOp === 'OR') overallResult = overallResult || ruleResult;
                     }
                 });
-
                 longSignal = overallResult;
             }
 
-            // Market Time limits: 09:15 AM (555 mins) to 03:15 PM (915 mins)
-            const isMarketOpen = timeInMinutes >= 555 && timeInMinutes < 915;
-            const isExitTime = timeInMinutes >= 915; // 3:15 PM 
+            const isMarketOpen = timeInMinutes >= 555 && timeInMinutes < 915; // 09:15 to 15:15
+            const isExitTime = timeInMinutes >= 915; // >= 15:15
             
-            // 🔥 BULLETPROOF EXIT: Agar ye aaj ki aakhiri candle hai, to trade zabardasti kaat do
             let isLastCandleOfDay = false;
-            if (i === cachedData.length - 1) {
-                isLastCandleOfDay = true;
-            } else {
-                const nextCandleIst = new Date(cachedData[i+1].timestamp.getTime() + (5.5 * 60 * 60 * 1000));
-                const nextDateStr = nextCandleIst.toISOString().split('T')[0];
-                if (nextDateStr !== dateStr) isLastCandleOfDay = true;
+            if (i === cachedData.length - 1) isLastCandleOfDay = true;
+            else {
+                const nextCandleIst = new Date(new Date(cachedData[i+1].timestamp).getTime() + (5.5 * 60 * 60 * 1000));
+                if (nextCandleIst.toISOString().split('T')[0] !== dateStr) isLastCandleOfDay = true;
             }
 
-            // 🟢 TAKE TRADE (ENTRY)
             if (!isPositionOpen && longSignal && isMarketOpen) {
                 isPositionOpen = true;
-                entryPrice = Number(candle.close);
+                entryPrice = parseFloat(candle.close);
+                console.log(`✅ [TRADE OPEN] Date: ${dateStr} | Time: ${h}:${m} | Price: ${entryPrice}`); // 🔥 Render log check
             }
 
-            // 🔴 EXIT TRADE (EXIT)
             if (isPositionOpen && (isExitTime || isLastCandleOfDay)) {
                 isPositionOpen = false;
-                const exitPrice = Number(candle.close);
+                const exitPrice = parseFloat(candle.close);
                 const pnl = (exitPrice - entryPrice) * tradeQuantity; 
+                console.log(`❌ [TRADE CLOSE] Date: ${dateStr} | Time: ${h}:${m} | PnL: ${pnl.toFixed(2)}`); // 🔥 Render log check
 
                 dailyBreakdownMap[dateStr].pnl += pnl;
                 dailyBreakdownMap[dateStr].trades += 1;
 
-                if (pnl > 0) {
-                    winTrades++;
-                    if (pnl > maxProfitTrade) maxProfitTrade = pnl;
-                } else {
-                    lossTrades++;
-                    if (pnl < maxLossTrade) maxLossTrade = pnl;
-                }
+                if (pnl > 0) { winTrades++; if (pnl > maxProfitTrade) maxProfitTrade = pnl; } 
+                else { lossTrades++; if (pnl < maxLossTrade) maxLossTrade = pnl; }
             }
         });
 
-        // ==========================================
-        // 5. DAILY LOOP (UI Format Conversion)
-        // ==========================================
         for (const [date, data] of Object.entries(dailyBreakdownMap)) {
             if (data.trades > 0) { 
-                const dailyPnL = data.pnl;
-                currentEquity += dailyPnL;
-                
+                currentEquity += data.pnl;
                 if (currentEquity > peakEquity) peakEquity = currentEquity;
                 const drawdown = currentEquity - peakEquity;
                 if (drawdown < maxDrawdown) maxDrawdown = drawdown;
 
-                if (dailyPnL > 0) {
-                    winDays++;
-                    currentWinStreak++;
-                    currentLossStreak = 0;
-                    if (currentWinStreak > maxWinStreak) maxWinStreak = currentWinStreak;
-                } else {
-                    lossDays++;
-                    currentLossStreak++;
-                    currentWinStreak = 0;
-                    if (currentLossStreak > maxLossStreak) maxLossStreak = currentLossStreak;
-                }
+                if (data.pnl > 0) { winDays++; currentWinStreak++; currentLossStreak = 0; if (currentWinStreak > maxWinStreak) maxWinStreak = currentWinStreak; } 
+                else { lossDays++; currentLossStreak++; currentWinStreak = 0; if (currentLossStreak > maxLossStreak) maxLossStreak = currentLossStreak; }
 
-                equityCurve.push({ date: date, pnl: currentEquity });
-                daywiseBreakdown.push({ date: date, dailyPnL: dailyPnL, tradesTaken: data.trades });
+                equityCurve.push({ date, pnl: currentEquity });
+                daywiseBreakdown.push({ date, dailyPnL: data.pnl, tradesTaken: data.trades });
             }
         }
 
-        // ==========================================
-        // 6. RETURN RESULT
-        // ==========================================
         const backtestResult = {
-            summary: {
-                totalPnL: currentEquity,
-                maxDrawdown: maxDrawdown,
-                tradingDays: winDays + lossDays,
-                winDays: winDays,
-                lossDays: lossDays,
-                totalTrades: winTrades + lossTrades,
-                winTrades: winTrades,
-                lossTrades: lossTrades,
-                maxWinStreak: maxWinStreak,
-                maxLossStreak: maxLossStreak,
-                maxProfit: maxProfitTrade,
-                maxLoss: maxLossTrade,
-            },
-            equityCurve: equityCurve,
-            daywiseBreakdown: daywiseBreakdown.reverse()
+            summary: { totalPnL: currentEquity, maxDrawdown, tradingDays: winDays + lossDays, winDays, lossDays, totalTrades: winTrades + lossTrades, winTrades, lossTrades, maxWinStreak, maxLossStreak, maxProfit: maxProfitTrade, maxLoss: maxLossTrade },
+            equityCurve, daywiseBreakdown: daywiseBreakdown.reverse()
         };
 
         return res.status(200).json({ success: true, data: backtestResult });
 
     } catch (error) {
         console.error("Backtest Error:", error);
-        res.status(500).json({ success: false, error: "Internal Server Error during Backtesting" });
+        res.status(500).json({ success: false, error: "Internal Server Error" });
     }
 };
 
