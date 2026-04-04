@@ -1091,7 +1091,7 @@ const Broker = require('../models/Broker');
 const { fetchDhanHistoricalData } = require('../services/dhanService');
 
 // 🔥 Nayi library yahan require ki gayi hai
-const { SMA, EMA, RSI } = require('technicalindicators');
+const { SMA, EMA, RSI, MACD, BollingerBands, ATR } = require('technicalindicators');
 
 // 🔥 THE REAL DATA BACKTEST ENGINE 🔥
 const runBacktestSimulator = async (req, res) => {
@@ -1255,42 +1255,99 @@ const runBacktestSimulator = async (req, res) => {
 
 
         // ==========================================
-        // 🧠 THE UNIVERSAL INDICATOR ENGINE 🧠
+        // 🧠 THE UNIVERSAL INDICATOR ENGINE (PRO VERSION) 🧠
         // ==========================================
         console.log("⚙️ Pre-calculating Technical Indicators...");
         
-        // Helper Function: Indicator calculate karne ke liye
         const calculateIndicator = (indConfig, candles) => {
             if (!indConfig) return null;
             
-            // Agar Static Number hai (jaise 50), to har candle ke liye 50 return karo
             if (indConfig.id === 'number' || indConfig.id === 'static') {
                 return candles.map(() => Number(indConfig.value || indConfig.params?.Value || 0));
             }
 
             const closePrices = candles.map(c => c.close);
+            const highPrices = candles.map(c => c.high);
+            const lowPrices = candles.map(c => c.low);
+            const volumes = candles.map(c => c.volume);
+            
             let results = [];
-            const period = Number(indConfig.params?.Period) || 14;
 
             try {
-                if (indConfig.id === 'sma') results = SMA.calculate({ period, values: closePrices });
-                else if (indConfig.id === 'ema') results = EMA.calculate({ period, values: closePrices });
-                else if (indConfig.id === 'rsi') results = RSI.calculate({ period, values: closePrices });
-                else if (indConfig.id === 'candle') return closePrices; // Direct Price
+                if (indConfig.id === 'candle') return closePrices;
+                if (indConfig.id === 'volume') return volumes;
 
-                // Array size match karne ke liye shuru me 'null' daal do (Padding)
-                const padding = Array(candles.length - results.length).fill(null);
-                return [...padding, ...results];
+                if (indConfig.id === 'sma') {
+                    results = SMA.calculate({ period: Number(indConfig.params?.Period) || 14, values: closePrices });
+                }
+                else if (indConfig.id === 'ema') {
+                    results = EMA.calculate({ period: Number(indConfig.params?.Period) || 9, values: closePrices });
+                }
+                else if (indConfig.id === 'rsi') {
+                    results = RSI.calculate({ period: Number(indConfig.params?.Period) || 14, values: closePrices });
+                }
+                else if (indConfig.id === 'macd') {
+                    const macdOutput = MACD.calculate({
+                        values: closePrices,
+                        fastPeriod: Number(indConfig.params?.['Fast MA']) || 12,
+                        slowPeriod: Number(indConfig.params?.['Slow MA']) || 26,
+                        signalPeriod: Number(indConfig.params?.Signal) || 9,
+                        SimpleMAOscillator: false, SimpleMASignal: false
+                    });
+                    const lineType = indConfig.params?.Line || 'MACD Line';
+                    results = macdOutput.map(m => lineType === 'Signal Line' ? m.signal : (lineType === 'Histogram' ? m.histogram : m.MACD));
+                }
+                else if (indConfig.id === 'bb') {
+                    const bbOutput = BollingerBands.calculate({
+                        period: Number(indConfig.params?.Period) || 20, values: closePrices, stdDev: Number(indConfig.params?.StdDev) || 2
+                    });
+                    const lineType = indConfig.params?.Line || 'Upper';
+                    results = bbOutput.map(b => lineType === 'Lower' ? b.lower : (lineType === 'Middle' ? b.middle : b.upper));
+                }
+                else if (indConfig.id === 'atr') {
+                    results = ATR.calculate({ high: highPrices, low: lowPrices, close: closePrices, period: Number(indConfig.params?.Period) || 14 });
+                }
+                else if (indConfig.id === 'supertrend') {
+                    const period = Number(indConfig.params?.Period) || 7;
+                    const multiplier = Number(indConfig.params?.Multiplier) || 3;
+                    const atrResult = ATR.calculate({ high: highPrices, low: lowPrices, close: closePrices, period });
+                    
+                    let stArray = [];
+                    let finalUpper = 0, finalLower = 0, isUptrend = true;
+                    
+                    for (let i = 0; i < closePrices.length; i++) {
+                        if (i < period) { stArray.push(null); continue; }
+                        let atr = atrResult[i - period];
+                        let basicUpper = (highPrices[i] + lowPrices[i]) / 2 + (multiplier * atr);
+                        let basicLower = (highPrices[i] + lowPrices[i]) / 2 - (multiplier * atr);
+                        
+                        if (i === period) { finalUpper = basicUpper; finalLower = basicLower; } 
+                        else {
+                            finalUpper = (basicUpper < finalUpper || closePrices[i-1] > finalUpper) ? basicUpper : finalUpper;
+                            finalLower = (basicLower > finalLower || closePrices[i-1] < finalLower) ? basicLower : finalLower;
+                        }
+                        
+                        if (closePrices[i] > finalUpper) isUptrend = true;
+                        else if (closePrices[i] < finalLower) isUptrend = false;
+                        
+                        stArray.push(isUptrend ? finalLower : finalUpper);
+                    }
+                    results = stArray.filter(v => v !== null); 
+                }
+
+                if (results.length > 0) {
+                    const padding = Array(candles.length - results.length).fill(null);
+                    return [...padding, ...results];
+                }
+                return Array(candles.length).fill(null);
             } catch (error) {
                 console.error(`Error calculating ${indConfig.id}:`, error);
                 return Array(candles.length).fill(null);
             }
         };
 
-        // Strategy se Entry Conditions nikalna
         const entryConds = strategy.data.entryConditions && strategy.data.entryConditions.length > 0 ? strategy.data.entryConditions[0] : null;
 
-        // Loop se pehle saare indicators ek baar me calculate karke rakh lo (For Super Fast Speed ⚡)
         const calcLongInd1 = [];
         const calcLongInd2 = [];
 
@@ -1301,7 +1358,6 @@ const runBacktestSimulator = async (req, res) => {
             });
         }
 
-        // Helper Function: Condition check karne ke liye
         const evaluateCondition = (val1, val2, prevVal1, prevVal2, op) => {
             if (val1 === null || val2 === null) return false;
             switch(op) {
@@ -1310,10 +1366,10 @@ const runBacktestSimulator = async (req, res) => {
                 case 'Equals': return val1 === val2;
                 case 'Crosses Above':
                     if (prevVal1 === null || prevVal2 === null) return false;
-                    return prevVal1 <= prevVal2 && val1 > val2; // Pichli candle me niche tha, ab upar hai
+                    return prevVal1 <= prevVal2 && val1 > val2; 
                 case 'Crosses Below':
                     if (prevVal1 === null || prevVal2 === null) return false;
-                    return prevVal1 >= prevVal2 && val1 < val2; // Pichli candle me upar tha, ab niche hai
+                    return prevVal1 >= prevVal2 && val1 < val2; 
                 default: return false;
             }
         };
@@ -1335,14 +1391,14 @@ const runBacktestSimulator = async (req, res) => {
         let tradeQuantity = strategy.data.legs && strategy.data.legs[0] ? Number(strategy.data.legs[0].quantity) : 1;
 
         cachedData.forEach((candle, i) => {
-            const timeStr = candle.timestamp.toLocaleTimeString('en-IN', { hour12: false, timeZone: 'Asia/Kolkata' });
+            // 🔥 TIME FIX: Ensure format is strictly HH:MM:SS
+            const timeStr = candle.timestamp.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata' });
             const dateStr = candle.timestamp.toISOString().split('T')[0];
 
             if (!dailyBreakdownMap[dateStr]) {
                 dailyBreakdownMap[dateStr] = { pnl: 0, trades: 0 };
             }
 
-            // 🔥 REAL DYNAMIC EVALUATION 🔥
             let longSignal = false;
 
             if (entryConds && entryConds.longRules && entryConds.longRules.length > 0) {
@@ -1356,7 +1412,6 @@ const runBacktestSimulator = async (req, res) => {
 
                     const ruleResult = evaluateCondition(val1, val2, prevVal1, prevVal2, rule.op);
 
-                    // Logical Operator (AND / OR) Check karna
                     if (idx === 0) {
                         overallResult = ruleResult;
                     } else {
@@ -1366,7 +1421,7 @@ const runBacktestSimulator = async (req, res) => {
                     }
                 });
 
-                longSignal = overallResult;
+                longSignal = overallResult
             }
 
             // MARKET TIMING RESTRICTION (9:15 AM ke baad hi trade le)
