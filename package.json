@@ -21,6 +21,7 @@
     "moment-timezone": "^0.6.1",
     "mongoose": "^9.1.5",
     "node-cron": "^4.2.1",
-    "socket.io": "^4.8.3"
+    "socket.io": "^4.8.3",
+    "technicalindicators": "^3.1.0"
   }
 }
