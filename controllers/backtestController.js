@@ -1266,10 +1266,11 @@ const runBacktestSimulator = async (req, res) => {
                 return candles.map(() => Number(indConfig.value || indConfig.params?.Value || 0));
             }
 
-            const closePrices = candles.map(c => c.close);
-            const highPrices = candles.map(c => c.high);
-            const lowPrices = candles.map(c => c.low);
-            const volumes = candles.map(c => c.volume);
+            // 🔥 BUG FIX 1: Strings ko strictly Numbers me convert kiya taaki Indicator fail na ho
+            const closePrices = candles.map(c => Number(c.close));
+            const highPrices = candles.map(c => Number(c.high));
+            const lowPrices = candles.map(c => Number(c.low));
+            const volumes = candles.map(c => Number(c.volume));
             
             let results = [];
 
@@ -1374,10 +1375,6 @@ const runBacktestSimulator = async (req, res) => {
             }
         };
 
-
-        // ==========================================
-        // 4. METRICS & ENGINE LOOP
-        // ==========================================
         let currentEquity = 0, peakEquity = 0, maxDrawdown = 0;
         let winDays = 0, lossDays = 0, winTrades = 0, lossTrades = 0;
         let currentWinStreak = 0, currentLossStreak = 0, maxWinStreak = 0, maxLossStreak = 0;
@@ -1389,11 +1386,20 @@ const runBacktestSimulator = async (req, res) => {
         let isPositionOpen = false;
         let entryPrice = 0;
         let tradeQuantity = strategy.data.legs && strategy.data.legs[0] ? Number(strategy.data.legs[0].quantity) : 1;
+        // Default quantity agar frontend se nahi aayi to 15 (Nifty) ya 15 (Banknifty) set kar do, abhi 1 rakhte hain
+        if (!tradeQuantity || isNaN(tradeQuantity)) tradeQuantity = 1;
 
         cachedData.forEach((candle, i) => {
-            // 🔥 TIME FIX: Ensure format is strictly HH:MM:SS
-            const timeStr = candle.timestamp.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata' });
-            const dateStr = candle.timestamp.toISOString().split('T')[0];
+            
+            // 🔥 BULLETPROOF TIME FIX (String ko chhodkar Minutes me calculate kiya)
+            // 5.5 hours add karke direct Indian Standard Time (IST) Date object banaya
+            const istDate = new Date(candle.timestamp.getTime() + (5.5 * 60 * 60 * 1000));
+            const h = istDate.getUTCHours();
+            const m = istDate.getUTCMinutes();
+            
+            // Time in minutes (e.g., 9:15 AM = 9*60 + 15 = 555)
+            const timeInMinutes = (h * 60) + m; 
+            const dateStr = istDate.toISOString().split('T')[0];
 
             if (!dailyBreakdownMap[dateStr]) {
                 dailyBreakdownMap[dateStr] = { pnl: 0, trades: 0 };
@@ -1421,23 +1427,33 @@ const runBacktestSimulator = async (req, res) => {
                     }
                 });
 
-                longSignal = overallResult
+                longSignal = overallResult;
             }
 
-            // MARKET TIMING RESTRICTION (9:15 AM ke baad hi trade le)
-            const isMarketOpen = timeStr >= "09:15:00" && timeStr < "15:15:00";
+            // Market Time limits: 09:15 AM (555 mins) to 03:15 PM (915 mins)
+            const isMarketOpen = timeInMinutes >= 555 && timeInMinutes < 915;
+            const isExitTime = timeInMinutes >= 915; // 3:15 PM 
+            
+            // 🔥 BULLETPROOF EXIT: Agar ye aaj ki aakhiri candle hai, to trade zabardasti kaat do
+            let isLastCandleOfDay = false;
+            if (i === cachedData.length - 1) {
+                isLastCandleOfDay = true;
+            } else {
+                const nextCandleIst = new Date(cachedData[i+1].timestamp.getTime() + (5.5 * 60 * 60 * 1000));
+                const nextDateStr = nextCandleIst.toISOString().split('T')[0];
+                if (nextDateStr !== dateStr) isLastCandleOfDay = true;
+            }
 
             // 🟢 TAKE TRADE (ENTRY)
             if (!isPositionOpen && longSignal && isMarketOpen) {
                 isPositionOpen = true;
-                entryPrice = candle.close;
-                // console.log(`📈 LONG ENTRY at ${dateStr} ${timeStr} | Price: ${entryPrice}`);
+                entryPrice = Number(candle.close);
             }
 
-            // 🔴 EXIT TRADE (Dummy Exit Rule: 15:15 par becho, isko aage advance karenge)
-            if (isPositionOpen && timeStr >= "15:15:00") {
+            // 🔴 EXIT TRADE (EXIT)
+            if (isPositionOpen && (isExitTime || isLastCandleOfDay)) {
                 isPositionOpen = false;
-                const exitPrice = candle.close;
+                const exitPrice = Number(candle.close);
                 const pnl = (exitPrice - entryPrice) * tradeQuantity; 
 
                 dailyBreakdownMap[dateStr].pnl += pnl;
