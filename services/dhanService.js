@@ -334,17 +334,17 @@ const fetchDhanHistoricalData = async (clientId, accessToken, securityId, exchan
     }
 };
 
-// 🔥 NEW: Function to fetch EXACT premium for Expired Options
+// 🔥 NEW & FIXED: Function to fetch EXACT premium for Expired Options
 const fetchExpiredOptionData = async (clientId, apiSecret, spotSecurityId, strike, optionType, fromDate, toDate) => {
     try {
         const payload = {
             exchangeSegment: "NSE_FNO",
             interval: "1",
-            securityId: Number(spotSecurityId), // Spot ID (Nifty=13, Banknifty=25)
+            securityId: Number(spotSecurityId), 
             instrument: "OPTIDX",
-            expiryFlag: "WEEK", // WEEK is best for BankNifty weekly expiries
-            expiryCode: 1, // 1 = Current Week Expiry
-            strike: strike.toString(), // e.g., "48000"
+            expiryFlag: "WEEK", // BankNifty mostly uses Weekly expiries
+            expiryCode: 1, 
+            strike: "ATM", // 🔥 SECRET 1: Expired API strictly needs "ATM", not numbers like 52400
             drvOptionType: optionType === "CE" ? "CALL" : "PUT",
             requiredData: ["open", "high", "low", "close", "volume"],
             fromDate: fromDate,
@@ -353,18 +353,38 @@ const fetchExpiredOptionData = async (clientId, apiSecret, spotSecurityId, strik
 
         const response = await axios({
             method: 'post',
-            url: 'https://api.dhan.co/v2/historical/expired-options', // API Endpoint
+            url: 'https://api.dhan.co/v2/charts/rollingoption', // 🔥 SECRET 2: The exact URL
             headers: {
                 'access-token': apiSecret,
                 'client-id': clientId,
+                'Accept': 'application/json',
                 'Content-Type': 'application/json'
             },
             data: payload
         });
 
-        return { success: true, data: response.data.data };
+        // 🔥 SECRET 3: THE ADAPTER (Format conversion to prevent backend crash)
+        const optionKey = optionType === "CE" ? "ce" : "pe";
+        const expData = response.data.data ? response.data.data[optionKey] : null;
+
+        if (!expData || !expData.timestamp || expData.timestamp.length === 0) {
+             return { success: false, error: "No data found in expired options" };
+        }
+
+        // Converting Expired API format to perfectly match Standard Intraday API format!
+        const formattedData = {
+            start_Time: expData.timestamp, // Matching the property name
+            open: expData.open,
+            high: expData.high,
+            low: expData.low,
+            close: expData.close,
+            volume: expData.volume
+        };
+
+        return { success: true, data: formattedData };
+
     } catch (error) {
-        console.log(`⚠️ Expired API Error for Strike ${strike}:`, error.response?.data?.errorMessage || error.message);
+        console.log(`⚠️ Expired API Error for ${optionType}:`, error.response?.data || error.message);
         return { success: false, error: error.message };
     }
 };
