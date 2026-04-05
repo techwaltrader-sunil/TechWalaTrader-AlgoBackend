@@ -1412,6 +1412,8 @@ const { fetchDhanHistoricalData } = require('../services/dhanService');
 const { SMA, EMA, RSI, MACD, BollingerBands, ATR } = require('technicalindicators');
 const { getOptionSecurityId } = require('../services/instrumentService');
 
+const { fetchDhanHistoricalData, fetchExpiredOptionData } = require('../services/dhanService');
+
 const runBacktestSimulator = async (req, res) => {
     try {
         const { strategyId } = req.params;
@@ -1653,14 +1655,15 @@ const runBacktestSimulator = async (req, res) => {
             if (!isPositionOpen && longSignal && isMarketOpen) {
                 let tradeSymbol = upperSymbol;
                 let finalEntryPrice = spotClosePrice;
-                let validTrade = true; // 🔥 SAFETY LOCK
+                let validTrade = true;
 
-                if(isOptionsTrade) {
+                if(isOptionsTrade && broker) {
                     const targetStrike = calculateATM(spotClosePrice, upperSymbol);
-                    const optionConfig = getOptionSecurityId(upperSymbol, targetStrike, optionType);
+                    let apiSuccess = false;
                     
-                    if(optionConfig && broker) {
-                        tradeSymbol = optionConfig.tradingSymbol;
+                    // 1. Try Standard API (For active/recent contracts)
+                    const optionConfig = getOptionSecurityId(upperSymbol, targetStrike, optionType);
+                    if(optionConfig) {
                         try {
                             const optRes = await fetchDhanHistoricalData(broker.clientId, broker.apiSecret, optionConfig.id, "NSE_FNO", "OPTIDX", dateStr, dateStr, "1");
                             if(optRes.success && optRes.data && optRes.data.close) {
@@ -1669,14 +1672,32 @@ const runBacktestSimulator = async (req, res) => {
                                     return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
                                 });
                                 finalEntryPrice = exactMatchIndex !== -1 ? optRes.data.close[exactMatchIndex] : optRes.data.close[0];
-                            } else {
-                                console.log(`⚠️ Trade Canceled: Option Premium data fetch failed for ${tradeSymbol}`);
-                                validTrade = false;
+                                tradeSymbol = optionConfig.tradingSymbol;
+                                apiSuccess = true;
+                            } 
+                        } catch(e) { }
+                    } 
+                    
+                    // 2. 🔥 THE MASTERSTROKE: If Standard API fails (DH-905), use Expired Options API
+                    if (!apiSuccess) {
+                        console.log(`⚠️ Standard API Failed. Trying Expired Options API for: ${upperSymbol} ${targetStrike} ${optionType}`);
+                        try {
+                            const expRes = await fetchExpiredOptionData(broker.clientId, broker.apiSecret, spotSecurityId, targetStrike, optionType, dateStr, dateStr);
+                            if(expRes.success && expRes.data && expRes.data.close) {
+                                const exactMatchIndex = expRes.data.start_Time.findIndex(t => {
+                                    const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
+                                    return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
+                                });
+                                finalEntryPrice = exactMatchIndex !== -1 ? expRes.data.close[exactMatchIndex] : expRes.data.close[0];
+                                tradeSymbol = `${upperSymbol} ${targetStrike} ${optionType} (EXP)`; // Mark as Expired Contract
+                                apiSuccess = true;
                             }
-                        } catch(e) { validTrade = false; }
-                    } else {
-                        console.log(`⚠️ Trade Canceled: Token not found in CSV for ${upperSymbol} ${targetStrike} ${optionType}`);
+                        } catch(e) { }
+                    }
+
+                    if (!apiSuccess) {
                         validTrade = false;
+                        console.log(`❌ Trade Canceled: Real Premium Data not available in any API for ${upperSymbol} ${targetStrike} ${optionType}`);
                     }
                 }
 
@@ -1698,7 +1719,11 @@ const runBacktestSimulator = async (req, res) => {
                 let finalExitPrice = spotClosePrice;
 
                 if(isOptionsTrade && currentTrade.optionConfig && broker) {
-                    const optionConfig = getOptionSecurityId(upperSymbol, currentTrade.optionConfig.strike, currentTrade.optionConfig.type);
+                    let apiSuccess = false;
+                    const targetStrike = currentTrade.optionConfig.strike;
+                    
+                    // 1. Try Standard API
+                    const optionConfig = getOptionSecurityId(upperSymbol, targetStrike, currentTrade.optionConfig.type);
                     if(optionConfig) {
                         try {
                             const optRes = await fetchDhanHistoricalData(broker.clientId, broker.apiSecret, optionConfig.id, "NSE_FNO", "OPTIDX", dateStr, dateStr, "1");
@@ -1708,12 +1733,29 @@ const runBacktestSimulator = async (req, res) => {
                                     return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
                                 });
                                 finalExitPrice = exactMatchIndex !== -1 ? optRes.data.close[exactMatchIndex] : optRes.data.close[optRes.data.close.length - 1];
-                            } else {
-                                finalExitPrice = currentTrade.entryPrice; // Fallback to 0 PnL if API fails
+                                apiSuccess = true;
                             }
-                        } catch(e) { finalExitPrice = currentTrade.entryPrice; }
-                    } else {
-                        finalExitPrice = currentTrade.entryPrice; // Fallback
+                        } catch(e) { }
+                    }
+
+                    // 2. 🔥 THE MASTERSTROKE: If Standard API fails, use Expired Options API
+                    if (!apiSuccess) {
+                        try {
+                            const expRes = await fetchExpiredOptionData(broker.clientId, broker.apiSecret, spotSecurityId, targetStrike, currentTrade.optionConfig.type, dateStr, dateStr);
+                            if(expRes.success && expRes.data && expRes.data.close) {
+                                const exactMatchIndex = expRes.data.start_Time.findIndex(t => {
+                                    const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
+                                    return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
+                                });
+                                finalExitPrice = exactMatchIndex !== -1 ? expRes.data.close[exactMatchIndex] : expRes.data.close[expRes.data.close.length - 1];
+                                apiSuccess = true;
+                            }
+                        } catch(e) { }
+                    }
+
+                    if (!apiSuccess) {
+                        // Agar dhan ka server hi down hai, to trade 0 PnL par kaat do (loss se bachne ke liye)
+                        finalExitPrice = currentTrade.entryPrice; 
                     }
                 }
 
@@ -1725,7 +1767,7 @@ const runBacktestSimulator = async (req, res) => {
                 currentTrade.exitType = isLastCandleOfDay ? "EOD_SQUAREOFF" : "TIME_SQUAREOFF";
                 dailyBreakdownMap[dateStr].tradesList.push(currentTrade);
                 
-                console.log(`❌ [TRADE CLOSE] Date: ${dateStr} | Premium: ${finalExitPrice} | PnL: ${pnl.toFixed(2)}`);
+                console.log(`❌ [TRADE CLOSE] Date: ${dateStr} | Premium: ${finalExitPrice.toFixed(2)} | PnL: ${pnl.toFixed(2)}`);
                 currentTrade = null; 
 
                 dailyBreakdownMap[dateStr].pnl += pnl;

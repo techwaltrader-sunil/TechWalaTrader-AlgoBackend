@@ -334,8 +334,44 @@ const fetchDhanHistoricalData = async (clientId, accessToken, securityId, exchan
     }
 };
 
+// 🔥 NEW: Function to fetch EXACT premium for Expired Options
+const fetchExpiredOptionData = async (clientId, apiSecret, spotSecurityId, strike, optionType, fromDate, toDate) => {
+    try {
+        const payload = {
+            exchangeSegment: "NSE_FNO",
+            interval: "1",
+            securityId: Number(spotSecurityId), // Spot ID (Nifty=13, Banknifty=25)
+            instrument: "OPTIDX",
+            expiryFlag: "WEEK", // WEEK is best for BankNifty weekly expiries
+            expiryCode: 1, // 1 = Current Week Expiry
+            strike: strike.toString(), // e.g., "48000"
+            drvOptionType: optionType === "CE" ? "CALL" : "PUT",
+            requiredData: ["open", "high", "low", "close", "volume"],
+            fromDate: fromDate,
+            toDate: toDate
+        };
+
+        const response = await axios({
+            method: 'post',
+            url: 'https://api.dhan.co/v2/historical/expired-options', // API Endpoint
+            headers: {
+                'access-token': apiSecret,
+                'client-id': clientId,
+                'Content-Type': 'application/json'
+            },
+            data: payload
+        });
+
+        return { success: true, data: response.data.data };
+    } catch (error) {
+        console.log(`⚠️ Expired API Error for Strike ${strike}:`, error.response?.data?.errorMessage || error.message);
+        return { success: false, error: error.message };
+    }
+};
+
 module.exports = {
     placeDhanOrder,
     fetchLiveLTP,
-    fetchDhanHistoricalData
+    fetchDhanHistoricalData,
+    fetchExpiredOptionData // 🔥 Make sure to export this
 };
