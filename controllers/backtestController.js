@@ -1778,24 +1778,58 @@ const runBacktestSimulator = async (req, res) => {
             }
         }
 
+        // ==========================================
+        // 5. DAILY LOOP (UI Format Conversion & Metrics)
+        // ==========================================
+        
+        // 🔥 FIX 1: Market jitne din khula tha, wo total days nikal liye
+        let totalMarketDays = Object.keys(dailyBreakdownMap).length;
+
         for (const [date, data] of Object.entries(dailyBreakdownMap)) {
-            if (data.trades > 0) { 
-                currentEquity += data.pnl;
-                if (currentEquity > peakEquity) peakEquity = currentEquity;
-                const drawdown = currentEquity - peakEquity;
-                if (drawdown < maxDrawdown) maxDrawdown = drawdown;
+            // 🔥 FIX 2: Humne 'if (data.trades > 0)' wali condition hata di
+            // Taaki jis din trade nahi hua, wo din bhi Trading Days aur Equity me count ho!
 
-                if (data.pnl > 0) { winDays++; currentWinStreak++; currentLossStreak = 0; if (currentWinStreak > maxWinStreak) maxWinStreak = currentWinStreak; } 
-                else { lossDays++; currentLossStreak++; currentWinStreak = 0; if (currentLossStreak > maxLossStreak) maxLossStreak = currentLossStreak; }
+            currentEquity += data.pnl;
+            if (currentEquity > peakEquity) peakEquity = currentEquity;
+            const drawdown = currentEquity - peakEquity;
+            if (drawdown < maxDrawdown) maxDrawdown = drawdown;
 
-                equityCurve.push({ date, pnl: currentEquity });
-                daywiseBreakdown.push({ date, dailyPnL: data.pnl, tradesTaken: data.trades, tradesList: data.tradesList });
+            if (data.pnl > 0) { 
+                winDays++; currentWinStreak++; currentLossStreak = 0; 
+                if (currentWinStreak > maxWinStreak) maxWinStreak = currentWinStreak; 
+            } 
+            else if (data.pnl < 0) { 
+                lossDays++; currentLossStreak++; currentWinStreak = 0; 
+                if (currentLossStreak > maxLossStreak) maxLossStreak = currentLossStreak; 
+            } 
+            else {
+                // Neutral Day (0 PnL ya 0 Trades) - yaha streak break ho jayegi
+                currentWinStreak = 0; currentLossStreak = 0;
             }
+
+            equityCurve.push({ date, pnl: currentEquity });
+            
+            // Ye table me "0 Trades Executed" wala din bhi show karega, jo transparency ke liye best hai
+            daywiseBreakdown.push({ date, dailyPnL: data.pnl, tradesTaken: data.trades, tradesList: data.tradesList });
         }
 
         const backtestResult = {
-            summary: { totalPnL: currentEquity, maxDrawdown, tradingDays: winDays + lossDays, winDays, lossDays, totalTrades: winTrades + lossTrades, winTrades, lossTrades, maxWinStreak, maxLossStreak, maxProfit: maxProfitTrade, maxLoss: maxLossTrade },
-            equityCurve, daywiseBreakdown: daywiseBreakdown.reverse()
+            summary: { 
+                totalPnL: currentEquity, 
+                maxDrawdown, 
+                tradingDays: totalMarketDays, // 🔥 FIX 3: Ab ye real Market Open Days dikhayega
+                winDays, 
+                lossDays, 
+                totalTrades: winTrades + lossTrades, 
+                winTrades, 
+                lossTrades, 
+                maxWinStreak, 
+                maxLossStreak, 
+                maxProfit: maxProfitTrade, 
+                maxLoss: maxLossTrade 
+            },
+            equityCurve, 
+            daywiseBreakdown: daywiseBreakdown.reverse()
         };
 
         return res.status(200).json({ success: true, data: backtestResult });
