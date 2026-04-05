@@ -1033,7 +1033,9 @@ const runBacktestSimulator = async (req, res) => {
         const { strategyId } = req.params;
         const { period, start, end } = req.query;
         
-        const strategy = await Strategy.findById(strategyId);
+        // 🔥 THE MASTER FIX: .lean() added here to force Mongoose to return ALL hidden fields
+        const strategy = await Strategy.findById(strategyId).lean();
+        
         if (!strategy) return res.status(404).json({ error: "Strategy not found" });
 
         console.log(`\n🚀 Running Real Backtest for: ${strategy.name} | Period: ${period || '1M'}`);
@@ -1162,7 +1164,6 @@ const runBacktestSimulator = async (req, res) => {
 
         console.log(`🧠 Extracted Entry Conditions:`, entryConds ? "✅ FOUND" : "❌ NOT FOUND");
 
-        // 🔥 SMART PARAMETER EXTRACTOR (Agar DB me parameter missing ho to display string se nikalega)
         const extractParams = (ruleInd, fallbackParams) => {
             let p = ruleInd?.params || fallbackParams || {};
             if (!p.Period && ruleInd?.display) {
@@ -1177,11 +1178,11 @@ const runBacktestSimulator = async (req, res) => {
             entryConds.longRules.forEach((rule, idx) => {
                 const params1 = extractParams(rule.ind1, rule.params);
                 calcLongInd1[idx] = calculateIndicator({...rule.ind1, params: params1}, cachedData);
-                console.log(`📈 Ind1 Extracted Period:`, params1.Period);
+                console.log(`📈 Ind1 Extracted Period:`, params1.Period || "None/Static");
 
                 const params2 = extractParams(rule.ind2, null);
                 calcLongInd2[idx] = calculateIndicator({...rule.ind2, params: params2}, cachedData);
-                console.log(`📉 Ind2 Extracted Period:`, params2.Period);
+                console.log(`📉 Ind2 Extracted Period:`, params2.Period || "None/Static");
             });
         }
 
