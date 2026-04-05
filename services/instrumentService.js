@@ -85,6 +85,98 @@
 
 
 
+// const axios = require('axios');
+// const csv = require('csv-parser');
+
+// const DHAN_CSV_URL = "https://images.dhan.co/api-data/api-scrip-master.csv";
+
+// let nfoInstruments = [];
+
+// const downloadAndParseInstruments = async () => {
+//     console.log("📥 Downloading Dhan Scrip Master CSV... Please wait.");
+
+//     try {
+//         const response = await axios({
+//             method: 'get',
+//             url: DHAN_CSV_URL,
+//             responseType: 'stream'
+//         });
+
+//         const tempData = [];
+
+//         response.data
+//             .pipe(csv({ mapHeaders: ({ header }) => header.trim() })) 
+//             .on('data', (row) => {
+//                 const instName = (row.SEM_INSTRUMENT_NAME || "").trim();
+
+//                 // Sirf Options uthao
+//                 if (instName === 'OPTIDX' || instName === 'OPTSTK') {
+//                     tempData.push({
+//                         id: (row.SEM_SMST_SECURITY_ID || "").trim(),
+//                         customSymbol: (row.SEM_CUSTOM_SYMBOL || "").trim().toUpperCase(),
+//                         tradingSymbol: (row.SEM_TRADING_SYMBOL || "").trim().toUpperCase(),
+//                         strike: parseFloat(row.SEM_STRIKE_PRICE),  
+//                         expiry: (row.SEM_EXPIRY_DATE || "").trim()
+//                     });
+//                 }
+//             })
+//             .on('end', () => {
+//                 nfoInstruments = tempData;
+//                 console.log(`✅ Dhan CSV Parsed Successfully! Loaded ${nfoInstruments.length} Options contracts.`);
+//             });
+
+//     } catch (error) {
+//         console.error("❌ Failed to download CSV:", error.message);
+//     }
+// };
+
+// const getOptionSecurityId = (baseSymbol, strike, optionType) => {
+//     const targetBase = baseSymbol.toUpperCase(); 
+//     const targetStrike = parseFloat(strike); 
+//     const suffix = ['CE', 'CALL'].includes(optionType.toUpperCase()) ? 'CE' : 'PE';
+
+//     const matches = nfoInstruments.filter(inst => {
+//         // 1. Strike Check
+//         if (inst.strike !== targetStrike) return false;
+
+//         // 🔥 2. THE MASTER HACK: BSE IDs are 10 digits. NSE IDs are <= 6 digits.
+//         // Ye line BSE (1000728652) ko hamesha ke liye block kar degi!
+//         if (inst.id.length > 7) return false; 
+
+//         // 3. String Match Check (Dhan chahay dash lagaye ya na lagaye, ye pakad lega)
+//         const ts = inst.tradingSymbol;
+//         const cs = inst.customSymbol;
+
+//         // NIFTY se shuru hona chahiye
+//         if (!ts.startsWith(targetBase) && !cs.startsWith(targetBase)) return false;
+//         // CE / PE par khatam hona chahiye
+//         if (!ts.endsWith(suffix) && !cs.endsWith(suffix)) return false;
+
+//         return true;
+//     });
+
+//     if (matches.length === 0) {
+//         console.log(`⚠️ Instrument NOT FOUND for: ${targetBase} ${targetStrike} ${suffix}`);
+//         return null;
+//     }
+
+//     // Sabse kareeb wali expiry ko top par laao
+//     matches.sort((a, b) => new Date(a.expiry) - new Date(b.expiry));
+
+//     return {
+//         id: matches[0].id,
+//         exchange: "NSE_FNO", // Hardcoded safely because BSE is blocked
+//         tradingSymbol: matches[0].customSymbol || matches[0].tradingSymbol, 
+//         expiry: matches[0].expiry.split(' ')[0],       
+//         optionType: suffix === 'CE' ? 'CALL' : 'PUT', // Dhan API format
+//         strike: matches[0].strike  
+//     };
+// };
+
+// module.exports = { downloadAndParseInstruments, getOptionSecurityId };
+
+
+
 const axios = require('axios');
 const csv = require('csv-parser');
 
@@ -94,28 +186,20 @@ let nfoInstruments = [];
 
 const downloadAndParseInstruments = async () => {
     console.log("📥 Downloading Dhan Scrip Master CSV... Please wait.");
-
     try {
-        const response = await axios({
-            method: 'get',
-            url: DHAN_CSV_URL,
-            responseType: 'stream'
-        });
-
+        const response = await axios({ method: 'get', url: DHAN_CSV_URL, responseType: 'stream' });
         const tempData = [];
 
         response.data
-            .pipe(csv({ mapHeaders: ({ header }) => header.trim() })) 
+            .pipe(csv({ mapHeaders: ({ header }) => header.trim() }))
             .on('data', (row) => {
                 const instName = (row.SEM_INSTRUMENT_NAME || "").trim();
-
-                // Sirf Options uthao
                 if (instName === 'OPTIDX' || instName === 'OPTSTK') {
                     tempData.push({
                         id: (row.SEM_SMST_SECURITY_ID || "").trim(),
                         customSymbol: (row.SEM_CUSTOM_SYMBOL || "").trim().toUpperCase(),
                         tradingSymbol: (row.SEM_TRADING_SYMBOL || "").trim().toUpperCase(),
-                        strike: parseFloat(row.SEM_STRIKE_PRICE),  
+                        strike: parseFloat(row.SEM_STRIKE_PRICE),
                         expiry: (row.SEM_EXPIRY_DATE || "").trim()
                     });
                 }
@@ -131,47 +215,40 @@ const downloadAndParseInstruments = async () => {
 };
 
 const getOptionSecurityId = (baseSymbol, strike, optionType) => {
-    const targetBase = baseSymbol.toUpperCase(); 
-    const targetStrike = parseFloat(strike); 
+    // 🔥 THE FIX: Naming Translation for Dhan API
+    let targetBase = baseSymbol.toUpperCase().replace(' 50', '').trim();
+    if (targetBase === "NIFTY BANK") targetBase = "BANKNIFTY";
+    else if (targetBase === "NIFTY FIN SERVICE") targetBase = "FINNIFTY";
+    else if (targetBase === "NIFTY MID SELECT") targetBase = "MIDCPNIFTY";
+
+    const targetStrike = parseFloat(strike);
     const suffix = ['CE', 'CALL'].includes(optionType.toUpperCase()) ? 'CE' : 'PE';
 
     const matches = nfoInstruments.filter(inst => {
-        // 1. Strike Check
         if (inst.strike !== targetStrike) return false;
-
-        // 🔥 2. THE MASTER HACK: BSE IDs are 10 digits. NSE IDs are <= 6 digits.
-        // Ye line BSE (1000728652) ko hamesha ke liye block kar degi!
-        if (inst.id.length > 7) return false; 
-
-        // 3. String Match Check (Dhan chahay dash lagaye ya na lagaye, ye pakad lega)
+        if (inst.id.length > 7) return false; // Block BSE
         const ts = inst.tradingSymbol;
         const cs = inst.customSymbol;
-
-        // NIFTY se shuru hona chahiye
         if (!ts.startsWith(targetBase) && !cs.startsWith(targetBase)) return false;
-        // CE / PE par khatam hona chahiye
         if (!ts.endsWith(suffix) && !cs.endsWith(suffix)) return false;
-
         return true;
     });
 
     if (matches.length === 0) {
-        console.log(`⚠️ Instrument NOT FOUND for: ${targetBase} ${targetStrike} ${suffix}`);
+        console.log(`⚠️ Option Token NOT FOUND in CSV for: ${targetBase} ${targetStrike} ${suffix}`);
         return null;
     }
 
-    // Sabse kareeb wali expiry ko top par laao
     matches.sort((a, b) => new Date(a.expiry) - new Date(b.expiry));
 
     return {
         id: matches[0].id,
-        exchange: "NSE_FNO", // Hardcoded safely because BSE is blocked
-        tradingSymbol: matches[0].customSymbol || matches[0].tradingSymbol, 
-        expiry: matches[0].expiry.split(' ')[0],       
-        optionType: suffix === 'CE' ? 'CALL' : 'PUT', // Dhan API format
-        strike: matches[0].strike  
+        exchange: "NSE_FNO",
+        tradingSymbol: matches[0].customSymbol || matches[0].tradingSymbol,
+        expiry: matches[0].expiry.split(' ')[0],
+        optionType: suffix === 'CE' ? 'CALL' : 'PUT',
+        strike: matches[0].strike
     };
 };
 
 module.exports = { downloadAndParseInstruments, getOptionSecurityId };
-
