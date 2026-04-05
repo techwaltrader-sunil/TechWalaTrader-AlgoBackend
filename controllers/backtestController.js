@@ -1026,7 +1026,6 @@ const HistoricalData = require('../models/HistoricalData');
 const Broker = require('../models/Broker');
 const { fetchDhanHistoricalData } = require('../services/dhanService');
 const { SMA, EMA, RSI, MACD, BollingerBands, ATR } = require('technicalindicators');
-// Make sure this path matches where your instrumentService.js is located
 const { getOptionSecurityId } = require('../services/instrumentService');
 
 const runBacktestSimulator = async (req, res) => {
@@ -1037,7 +1036,7 @@ const runBacktestSimulator = async (req, res) => {
         const strategy = await Strategy.findById(strategyId);
         if (!strategy) return res.status(404).json({ error: "Strategy not found" });
 
-        console.log(`🚀 Running Real Backtest for: ${strategy.name} | Period: ${period || '1M'}`);
+        console.log(`\n🚀 Running Real Backtest for: ${strategy.name} | Period: ${period || '1M'}`);
 
         let endDate = new Date();
         let startDate = new Date();
@@ -1066,10 +1065,8 @@ const runBacktestSimulator = async (req, res) => {
         const symbol = instrumentData.name || instrumentData.symbol || "BANKNIFTY"; 
         const upperSymbol = symbol.toUpperCase().trim(); 
         
-        // Is this strategy for Options or Equity/Spot?
         const isOptionsTrade = instrumentData.segment === "Option" || instrumentData.segment === "NFO";
         
-        // Spot Exchange handling
         let exchangeSegment = "IDX_I"; 
         if (upperSymbol.includes("NIFTY") || upperSymbol.includes("SENSEX") || upperSymbol === "BANKNIFTY" || upperSymbol === "NIFTY BANK") {
             exchangeSegment = "IDX_I";
@@ -1157,16 +1154,34 @@ const runBacktestSimulator = async (req, res) => {
             }
         };
 
+        // 🔥 ROBUST EXTRACTION
         let entryConds = null;
         if (strategy.entryConditions?.length) entryConds = strategy.entryConditions[0];
         else if (strategy.data?.entryConditions?.length) entryConds = strategy.data.entryConditions[0];
+        else if (strategy.entrySettings?.entryConditions?.length) entryConds = strategy.entrySettings.entryConditions[0];
+
+        console.log(`🧠 Extracted Entry Conditions:`, entryConds ? "✅ FOUND" : "❌ NOT FOUND");
+
+        // 🔥 SMART PARAMETER EXTRACTOR (Agar DB me parameter missing ho to display string se nikalega)
+        const extractParams = (ruleInd, fallbackParams) => {
+            let p = ruleInd?.params || fallbackParams || {};
+            if (!p.Period && ruleInd?.display) {
+                const match = ruleInd.display.match(/\((\d+)/);
+                if (match) p.Period = Number(match[1]);
+            }
+            return p;
+        };
 
         const calcLongInd1 = []; const calcLongInd2 = [];
         if (entryConds && entryConds.longRules) {
             entryConds.longRules.forEach((rule, idx) => {
-                const params1 = rule.ind1?.params || rule.params; 
+                const params1 = extractParams(rule.ind1, rule.params);
                 calcLongInd1[idx] = calculateIndicator({...rule.ind1, params: params1}, cachedData);
-                calcLongInd2[idx] = calculateIndicator(rule.ind2, cachedData);
+                console.log(`📈 Ind1 Extracted Period:`, params1.Period);
+
+                const params2 = extractParams(rule.ind2, null);
+                calcLongInd2[idx] = calculateIndicator({...rule.ind2, params: params2}, cachedData);
+                console.log(`📉 Ind2 Extracted Period:`, params2.Period);
             });
         }
 
@@ -1195,22 +1210,21 @@ const runBacktestSimulator = async (req, res) => {
         let isPositionOpen = false; 
         let currentTrade = null; 
         
-        let tradeQuantity = strategy.legs?.[0]?.quantity || 15; 
-        const legData = strategy.legs?.[0] || {};
+        let tradeQuantity = strategy.legs?.[0]?.quantity || strategy.data?.legs?.[0]?.quantity; 
+        if (!tradeQuantity || isNaN(tradeQuantity)) tradeQuantity = upperSymbol.includes("BANK") ? 30 : (upperSymbol.includes("NIFTY") ? 50 : 1);
+
+        const legData = strategy.legs?.[0] || strategy.data?.legs?.[0] || {};
         const optionType = legData.optionType === "Put" ? "PE" : "CE";
         const transactionType = legData.action || "BUY";
-        const strikeCriteria = legData.strikeType || "ATM"; // ATM, ITM, OTM
 
-        // 🔥 Helper: Spot Price se ATM nikalna (Banknifty 100 ka multiple, Nifty 50 ka multiple)
         const calculateATM = (spotPrice, symbolStr) => {
             if(symbolStr.includes("BANK")) return Math.round(spotPrice / 100) * 100;
             return Math.round(spotPrice / 50) * 50;
         };
 
-        // Helper: PnL Calculation based on Buy/Sell
         const calcTradePnL = (entryP, exitP, qty, action) => {
             if(action === "BUY") return (exitP - entryP) * qty;
-            return (entryP - exitP) * qty; // If Short Sold
+            return (entryP - exitP) * qty; 
         };
 
         for (let i = 0; i < cachedData.length; i++) {
@@ -1245,7 +1259,7 @@ const runBacktestSimulator = async (req, res) => {
             }
 
             const isMarketOpen = timeInMinutes >= 555 && timeInMinutes < 915; 
-            const isExitTime = timeInMinutes >= 915; // 3:15 PM Squareoff
+            const isExitTime = timeInMinutes >= 915; 
             
             let isLastCandleOfDay = false;
             if (i === cachedData.length - 1) isLastCandleOfDay = true;
@@ -1263,18 +1277,15 @@ const runBacktestSimulator = async (req, res) => {
                 let tradeSymbol = upperSymbol;
                 let finalEntryPrice = spotClosePrice;
 
-                // 🚀 THE OPTIONS ENGINE MAGIC: Fetching Premium Data
                 if(isOptionsTrade) {
-                    const targetStrike = calculateATM(spotClosePrice, upperSymbol); // Add ITM/OTM logic here later if needed
+                    const targetStrike = calculateATM(spotClosePrice, upperSymbol);
                     const optionConfig = getOptionSecurityId(upperSymbol, targetStrike, optionType);
                     
                     if(optionConfig && broker) {
                         tradeSymbol = optionConfig.tradingSymbol;
                         try {
-                            // Ek hi minute ka data mangwayenge option premium ka
                             const optRes = await fetchDhanHistoricalData(broker.clientId, broker.apiSecret, optionConfig.id, "NSE_FNO", "OPTIDX", dateStr, dateStr, "1");
                             if(optRes.success && optRes.data && optRes.data.close) {
-                                // Find exact minute match, or take first available
                                 const exactMatchIndex = optRes.data.start_Time.findIndex(t => {
                                     const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
                                     return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
@@ -1283,18 +1294,15 @@ const runBacktestSimulator = async (req, res) => {
                             }
                         } catch(e) { console.log("Failed to fetch Option entry premium"); }
                     } else {
-                        console.log(`⚠️ Option Config not found for ${upperSymbol} ${targetStrike} ${optionType}`);
+                        console.log(`⚠️ Option Token not found for ${upperSymbol} ${targetStrike} ${optionType}`);
                     }
                 }
 
                 currentTrade = {
-                    symbol: tradeSymbol,
-                    transaction: transactionType,
-                    quantity: tradeQuantity,
-                    entryTime: `${h}:${m}:00`,
-                    entryPrice: finalEntryPrice,
+                    symbol: tradeSymbol, transaction: transactionType, quantity: tradeQuantity,
+                    entryTime: `${h}:${m}:00`, entryPrice: finalEntryPrice,
                     exitTime: null, exitPrice: null, pnl: null, exitType: null,
-                    optionConfig: isOptionsTrade ? { strike: calculateATM(spotClosePrice, upperSymbol), type: optionType } : null // Store for exit
+                    optionConfig: isOptionsTrade ? { strike: calculateATM(spotClosePrice, upperSymbol), type: optionType } : null 
                 };
                 console.log(`✅ [TRADE OPEN] Date: ${dateStr} | Time: ${h}:${m} | Spot: ${spotClosePrice} | Premium: ${finalEntryPrice}`);
             }
@@ -1305,7 +1313,6 @@ const runBacktestSimulator = async (req, res) => {
                 
                 let finalExitPrice = spotClosePrice;
 
-                // 🚀 THE OPTIONS ENGINE MAGIC: Fetching Premium Exit Data
                 if(isOptionsTrade && currentTrade.optionConfig && broker) {
                     const optionConfig = getOptionSecurityId(upperSymbol, currentTrade.optionConfig.strike, currentTrade.optionConfig.type);
                     if(optionConfig) {
@@ -1316,7 +1323,6 @@ const runBacktestSimulator = async (req, res) => {
                                     const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
                                     return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
                                 });
-                                // M2M Squareoff hai to us minute ka last, nahi to din ka aakhiri rate
                                 finalExitPrice = exactMatchIndex !== -1 ? optRes.data.close[exactMatchIndex] : optRes.data.close[optRes.data.close.length - 1];
                             }
                         } catch(e) { console.log("Failed to fetch Option exit premium"); }
@@ -1342,9 +1348,6 @@ const runBacktestSimulator = async (req, res) => {
             }
         }
 
-        // ==========================================
-        // 5. DAILY LOOP (UI Format Conversion)
-        // ==========================================
         for (const [date, data] of Object.entries(dailyBreakdownMap)) {
             if (data.trades > 0) { 
                 currentEquity += data.pnl;
