@@ -1021,6 +1021,7 @@
 
 
 
+const mongoose = require('mongoose'); // 🔥 NEW: Mongoose required for raw ObjectId conversion
 const Strategy = require('../models/Strategy');
 const HistoricalData = require('../models/HistoricalData');
 const Broker = require('../models/Broker');
@@ -1033,8 +1034,8 @@ const runBacktestSimulator = async (req, res) => {
         const { strategyId } = req.params;
         const { period, start, end } = req.query;
         
-        // 🔥 THE MASTER FIX: .lean() added here to force Mongoose to return ALL hidden fields
-        const strategy = await Strategy.findById(strategyId).lean();
+        // 🔥 THE 1000% BULLETPROOF FIX: Native MongoDB Query (Bypasses Mongoose Schema strictness completely)
+        const strategy = await Strategy.collection.findOne({ _id: new mongoose.Types.ObjectId(strategyId) });
         
         if (!strategy) return res.status(404).json({ error: "Strategy not found" });
 
@@ -1156,13 +1157,32 @@ const runBacktestSimulator = async (req, res) => {
             }
         };
 
-        // 🔥 ROBUST EXTRACTION
-        let entryConds = null;
-        if (strategy.entryConditions?.length) entryConds = strategy.entryConditions[0];
-        else if (strategy.data?.entryConditions?.length) entryConds = strategy.data.entryConditions[0];
-        else if (strategy.entrySettings?.entryConditions?.length) entryConds = strategy.entrySettings.entryConditions[0];
+        // 🔥 THE ULTIMATE DEEP SEARCH EXTRACTOR (Dhoond ke nikalega chahe jahan chhupa ho)
+        const findConditions = (obj) => {
+            if (!obj || typeof obj !== 'object') return null;
+            if (obj.longRules && Array.isArray(obj.longRules)) return obj;
+            if (Array.isArray(obj)) {
+                for (let item of obj) {
+                    const found = findConditions(item);
+                    if (found) return found;
+                }
+            } else {
+                for (let key in obj) {
+                    const found = findConditions(obj[key]);
+                    if (found) return found;
+                }
+            }
+            return null;
+        };
 
+        let entryConds = findConditions(strategy);
+        
         console.log(`🧠 Extracted Entry Conditions:`, entryConds ? "✅ FOUND" : "❌ NOT FOUND");
+        
+        // Agar fir bhi nahi mila, to render me pura JSON print kar denge
+        if (!entryConds) {
+            console.log("⚠️ RAW DB STRATEGY DUMP:", JSON.stringify(strategy, null, 2));
+        }
 
         const extractParams = (ruleInd, fallbackParams) => {
             let p = ruleInd?.params || fallbackParams || {};
@@ -1248,7 +1268,10 @@ const runBacktestSimulator = async (req, res) => {
                     const prevVal1 = (i > 0 && calcLongInd1[idx]) ? calcLongInd1[idx][i-1] : null;
                     const prevVal2 = (i > 0 && calcLongInd2[idx]) ? calcLongInd2[idx][i-1] : null;
 
-                    const ruleResult = evaluateCondition(val1, val2, prevVal1, prevVal2, rule.op || rule.params?.op);
+                    // 🔥 FIX: Ensures operator is found no matter where it's stored in the JSON
+                    const operator = rule.op || rule.params?.op || rule.ind1?.params?.op;
+                    const ruleResult = evaluateCondition(val1, val2, prevVal1, prevVal2, operator);
+                    
                     if (idx === 0) overallResult = ruleResult;
                     else {
                         const logicalOp = entryConds.logicalOps[idx - 1]; 
