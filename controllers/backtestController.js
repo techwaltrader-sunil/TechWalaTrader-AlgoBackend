@@ -1651,8 +1651,25 @@ const runBacktestSimulator = async (req, res) => {
 
             const spotClosePrice = parseFloat(candle.close);
 
+            // --------------------------------------------------------
+            // 🚦 TRANSACTION TYPE FILTER LOGIC
+            // --------------------------------------------------------
+            // Strategy Config se Transaction Type nikalna (Default: Both Side)
+            const txnType = strategy.config?.transactionType || 'Both Side';
+
+            // Signal ko filter karna based on UI selection
+            const finalLongSignal = (txnType === 'Both Side' || txnType === 'Only Long') ? longSignal : false;
+            const finalShortSignal = (txnType === 'Both Side' || txnType === 'Only Short') ? shortSignal : false;
+
+
             // 🟢 TAKE TRADE (ENTRY)
-            if (!isPositionOpen && longSignal && isMarketOpen) {
+            // Ab hum 'longSignal' ki jagah final filtered signals check karenge
+            if (!isPositionOpen && isMarketOpen && (finalLongSignal || finalShortSignal)) {
+                
+                // 🔥 DYNAMIC OPTION TYPE DECISION 🔥
+                // Agar Long Signal aaya hai to CE kharidenge, Short aaya hai to PE
+                const activeOptionType = finalLongSignal ? "CE" : "PE";
+                
                 let tradeSymbol = upperSymbol;
                 let finalEntryPrice = spotClosePrice;
                 let validTrade = true;
@@ -1662,7 +1679,7 @@ const runBacktestSimulator = async (req, res) => {
                     let apiSuccess = false;
                     
                     // 1. Try Standard API (For active/recent contracts)
-                    const optionConfig = getOptionSecurityId(upperSymbol, targetStrike, optionType);
+                    const optionConfig = getOptionSecurityId(upperSymbol, targetStrike, activeOptionType);
                     if(optionConfig) {
                         try {
                             const optRes = await fetchDhanHistoricalData(broker.clientId, broker.apiSecret, optionConfig.id, "NSE_FNO", "OPTIDX", dateStr, dateStr, "1");
@@ -1678,18 +1695,18 @@ const runBacktestSimulator = async (req, res) => {
                         } catch(e) { }
                     } 
                     
-                    // 2. 🔥 THE MASTERSTROKE: If Standard API fails (DH-905), use Expired Options API
+                    // 2. If Standard API fails (DH-905), use Expired Options API
                     if (!apiSuccess) {
-                        console.log(`⚠️ Standard API Failed. Trying Expired Options API for: ${upperSymbol} ${targetStrike} ${optionType}`);
+                        console.log(`⚠️ Standard API Failed. Trying Expired Options API for: ${upperSymbol} ${targetStrike} ${activeOptionType}`);
                         try {
-                            const expRes = await fetchExpiredOptionData(broker.clientId, broker.apiSecret, spotSecurityId, targetStrike, optionType, dateStr, dateStr);
+                            const expRes = await fetchExpiredOptionData(broker.clientId, broker.apiSecret, spotSecurityId, targetStrike, activeOptionType, dateStr, dateStr);
                             if(expRes.success && expRes.data && expRes.data.close) {
                                 const exactMatchIndex = expRes.data.start_Time.findIndex(t => {
                                     const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
                                     return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
                                 });
                                 finalEntryPrice = exactMatchIndex !== -1 ? expRes.data.close[exactMatchIndex] : expRes.data.close[0];
-                                tradeSymbol = `${upperSymbol} ${targetStrike} ${optionType} (EXP)`; // Mark as Expired Contract
+                                tradeSymbol = `${upperSymbol} ${targetStrike} ${activeOptionType} (EXP)`; 
                                 apiSuccess = true;
                             }
                         } catch(e) { }
@@ -1697,7 +1714,7 @@ const runBacktestSimulator = async (req, res) => {
 
                     if (!apiSuccess) {
                         validTrade = false;
-                        console.log(`❌ Trade Canceled: Real Premium Data not available in any API for ${upperSymbol} ${targetStrike} ${optionType}`);
+                        console.log(`❌ Trade Canceled: Real Premium Data not available in any API for ${upperSymbol} ${targetStrike} ${activeOptionType}`);
                     }
                 }
 
@@ -1707,9 +1724,10 @@ const runBacktestSimulator = async (req, res) => {
                         symbol: tradeSymbol, transaction: transactionType, quantity: tradeQuantity,
                         entryTime: `${h}:${m}:00`, entryPrice: finalEntryPrice,
                         exitTime: null, exitPrice: null, pnl: null, exitType: null,
-                        optionConfig: isOptionsTrade ? { strike: calculateATM(spotClosePrice, upperSymbol), type: optionType } : null 
+                        optionConfig: isOptionsTrade ? { strike: calculateATM(spotClosePrice, upperSymbol), type: activeOptionType } : null,
+                        signalType: finalLongSignal ? "LONG" : "SHORT" // Store for debugging
                     };
-                    console.log(`✅ [TRADE OPEN] Date: ${dateStr} | Time: ${h}:${m} | Spot: ${spotClosePrice} | Premium: ${finalEntryPrice}`);
+                    console.log(`✅ [TRADE OPEN] Date: ${dateStr} | Time: ${h}:${m} | Spot: ${spotClosePrice} | Premium: ${finalEntryPrice} | Type: ${activeOptionType}`);
                 }
             }
 
