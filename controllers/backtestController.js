@@ -1640,6 +1640,32 @@ const runBacktestSimulator = async (req, res) => {
                 longSignal = overallResult;
             }
 
+            // 🔴 SHORT SIGNAL CHECK (🔥 YE MISSING THA!)
+            let shortSignal = false;
+            if (entryConds && entryConds.shortRules && entryConds.shortRules.length > 0) {
+                let overallResult = null;
+                entryConds.shortRules.forEach((rule, idx) => {
+                    
+                    // Note: Ensure your indicator calculation logic at the top of the file 
+                    // is also calculating 'calcShortInd1' and 'calcShortInd2' correctly.
+                    const val1 = calcShortInd1[idx] ? calcShortInd1[idx][i] : null; 
+                    const val2 = calcShortInd2[idx] ? calcShortInd2[idx][i] : null;
+                    const prevVal1 = (i > 0 && calcShortInd1[idx]) ? calcShortInd1[idx][i-1] : null;
+                    const prevVal2 = (i > 0 && calcShortInd2[idx]) ? calcShortInd2[idx][i-1] : null;
+
+                    const operator = rule.op || rule.params?.op || rule.ind1?.params?.op;
+                    const ruleResult = evaluateCondition(val1, val2, prevVal1, prevVal2, operator);
+                    
+                    if (idx === 0) overallResult = ruleResult;
+                    else {
+                        const logicalOp = entryConds.logicalOps[idx - 1]; 
+                        if (logicalOp === 'AND') overallResult = overallResult && ruleResult;
+                        else if (logicalOp === 'OR') overallResult = overallResult || ruleResult;
+                    }
+                });
+                shortSignal = overallResult;
+            }
+
             const isMarketOpen = timeInMinutes >= 555 && timeInMinutes < 915; 
             const isExitTime = timeInMinutes >= 915; 
             let isLastCandleOfDay = false;
