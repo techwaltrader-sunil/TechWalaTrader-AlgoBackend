@@ -1194,6 +1194,14 @@ const runBacktestSimulator = async (req, res) => {
         const legData = strategy.legs?.[0] || strategy.data?.legs?.[0] || {};
         const transactionType = legData.action || "BUY";
 
+        // 🔥 NEW 1: Global Risk Settings nikal lein
+        const riskSettings = strategy.data?.riskManagement || strategy.riskManagement || {};
+        const globalMaxProfit = Number(riskSettings.maxProfit) || 0;
+        const globalMaxLoss = Number(riskSettings.maxLoss) || 0;
+        let isTradingHaltedForDay = false; // Aaj ka din block karne ke liye flag
+        let currentDayTracker = ""; // Din track karne ke liye
+
+
         const calculateATM = (spotPrice, symbolStr) => {
             if(symbolStr.includes("BANK")) return Math.round(spotPrice / 100) * 100;
             return Math.round(spotPrice / 50) * 50;
@@ -1215,6 +1223,12 @@ const runBacktestSimulator = async (req, res) => {
             const m = String(istDate.getUTCMinutes()).padStart(2, '0');
             const timeInMinutes = (istDate.getUTCHours() * 60) + istDate.getUTCMinutes(); 
             const dateStr = istDate.toISOString().split('T')[0];
+
+            // 🔥 NEW 2: Agar naya din shuru hua, to "Halt Flag" reset kar do
+            if (dateStr !== currentDayTracker) {
+                currentDayTracker = dateStr;
+                isTradingHaltedForDay = false; // Naye din ki nayi shuruaat
+            }
 
             if (!dailyBreakdownMap[dateStr]) dailyBreakdownMap[dateStr] = { pnl: 0, trades: 0, tradesList: [] };
 
@@ -1283,25 +1297,25 @@ const runBacktestSimulator = async (req, res) => {
             const finalShortSignal = (txnType === 'Both Side' || txnType === 'Only Short') ? shortSignal : false;
 
             // =========================================================
-            // 5. 🛑 M2M RISK CHECK (SL & TP Check per candle)
+            // 5. 🛑 M2M RISK CHECK (SL/TP & Global Max Profit/Loss Check)
             // =========================================================
             if (isPositionOpen && currentTrade) {
                 let hitSL = false;
                 let hitTP = false;
+                let hitMaxProfit = false;
+                let hitMaxLoss = false;
                 let exitPrice = 0;
+                let exitReason = "";
 
-                // Stoploss Value (e.g. 30%)
                 const slValue = legData.slValue || 0;
                 const slPrice = currentTrade.entryPrice * (1 - slValue / 100);
-                
-                // Target Value (e.g. 50%)
                 const tpValue = legData.tpValue || 0;
                 const tpPrice = currentTrade.entryPrice * (1 + tpValue / 100);
 
                 let currentHigh = spotClosePrice; 
                 let currentLow = spotClosePrice;  
+                let currentClose = spotClosePrice; // M2M PnL ke liye
 
-                // 🔥 THE FIX: Get exact Premium High/Low for THIS specific minute
                 if (isOptionsTrade && currentTrade.premiumChart && currentTrade.premiumChart.start_Time) {
                     const exactMatchIndex = currentTrade.premiumChart.start_Time.findIndex(t => {
                         const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
@@ -1311,39 +1325,56 @@ const runBacktestSimulator = async (req, res) => {
                     if (exactMatchIndex !== -1) {
                         currentHigh = currentTrade.premiumChart.high[exactMatchIndex];
                         currentLow = currentTrade.premiumChart.low[exactMatchIndex];
+                        currentClose = currentTrade.premiumChart.close[exactMatchIndex];
                     } else {
-                        continue; // Agar is minute ka premium data nahi hai, to next minute check karo
+                        continue; 
                     }
                 } else if (!isOptionsTrade) {
                     currentHigh = parseFloat(candle.high);
                     currentLow = parseFloat(candle.low);
+                    currentClose = parseFloat(candle.close);
                 }
 
-                // 🛑 CHECK STOPLOSS (Low price se check karenge)
+                // 🛑 1. CHECK LEG STOPLOSS & TARGET
                 if (slValue > 0 && currentTrade.entryPrice > 0) {
                     if (currentTrade.transaction === "BUY" && currentLow <= slPrice) {
-                        hitSL = true;
-                        exitPrice = slPrice; // SL price par hi nikal gaye
+                        hitSL = true; exitPrice = slPrice; exitReason = "STOPLOSS";
+                    }
+                }
+                if (tpValue > 0 && currentTrade.entryPrice > 0) {
+                    if (currentTrade.transaction === "BUY" && currentHigh >= tpPrice) {
+                        hitTP = true; exitPrice = tpPrice; exitReason = "TARGET";
                     }
                 }
 
-                // 🎯 CHECK TARGET (High price se check karenge)
-                if (tpValue > 0 && currentTrade.entryPrice > 0) {
-                    if (currentTrade.transaction === "BUY" && currentHigh >= tpPrice) {
-                        hitTP = true;
-                        exitPrice = tpPrice; // Target price par profit book
+                // 🔥 2. CHECK GLOBAL MAX PROFIT / MAX LOSS
+                if (!hitSL && !hitTP) { // Agar SL/TP hit nahi hua tabhi global check karo
+                    const openTradePnL = calcTradePnL(currentTrade.entryPrice, currentClose, tradeQuantity, currentTrade.transaction);
+                    const runningDailyPnL = dailyBreakdownMap[dateStr].pnl + openTradePnL; // Realized + Unrealized
+
+                    if (globalMaxProfit > 0 && runningDailyPnL >= globalMaxProfit) {
+                        hitMaxProfit = true;
+                        exitPrice = currentClose;
+                        exitReason = "MAX_PROFIT";
+                        isTradingHaltedForDay = true; // Aaj ke liye terminal band!
+                    } 
+                    else if (globalMaxLoss > 0 && runningDailyPnL <= -globalMaxLoss) {
+                        hitMaxLoss = true;
+                        exitPrice = currentClose;
+                        exitReason = "MAX_LOSS";
+                        isTradingHaltedForDay = true; // Aaj ke liye terminal band!
                     }
                 }
 
                 // 🚀 EXIT EXECUTION
-                if (hitSL || hitTP) {
+                if (hitSL || hitTP || hitMaxProfit || hitMaxLoss) {
                     isPositionOpen = false;
                     const pnl = calcTradePnL(currentTrade.entryPrice, exitPrice, tradeQuantity, currentTrade.transaction);
 
                     currentTrade.exitTime = `${h}:${m}:00`;
                     currentTrade.exitPrice = exitPrice;
                     currentTrade.pnl = pnl;
-                    currentTrade.exitType = hitSL ? "STOPLOSS" : "TARGET";
+                    currentTrade.exitType = exitReason;
                     
                     dailyBreakdownMap[dateStr].tradesList.push(currentTrade);
                     dailyBreakdownMap[dateStr].pnl += pnl;
@@ -1355,12 +1386,19 @@ const runBacktestSimulator = async (req, res) => {
                     currentTrade = null;
                     continue; 
                 }
+            } 
+            else if (!isTradingHaltedForDay) {
+                // 🔥 NEW 3: Agar position open nahi hai, fir bhi check karo kya purane trades se profit/loss limit pahuch gayi hai
+                const realizedDailyPnL = dailyBreakdownMap[dateStr].pnl;
+                if (globalMaxProfit > 0 && realizedDailyPnL >= globalMaxProfit) isTradingHaltedForDay = true;
+                if (globalMaxLoss > 0 && realizedDailyPnL <= -globalMaxLoss) isTradingHaltedForDay = true;
             }
+
 
             // =========================================================
             // 🟢 TAKE TRADE (ENTRY)
             // =========================================================
-           if (!isPositionOpen && isMarketOpen && (finalLongSignal || finalShortSignal)) {
+           if (!isPositionOpen && isMarketOpen && !isTradingHaltedForDay && (finalLongSignal || finalShortSignal)) {
                 
                 const activeOptionType = finalLongSignal ? "CE" : "PE";
                 const transActionTypeStr = legData.action || "BUY";
