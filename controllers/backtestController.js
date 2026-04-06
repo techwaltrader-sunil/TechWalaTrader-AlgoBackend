@@ -1558,15 +1558,33 @@ const runBacktestSimulator = async (req, res) => {
             return p;
         };
 
-        const calcLongInd1 = []; const calcLongInd2 = [];
-        if (entryConds && entryConds.longRules) {
-            entryConds.longRules.forEach((rule, idx) => {
-                const params1 = extractParams(rule.ind1, rule.params);
-                calcLongInd1[idx] = calculateIndicator({...rule.ind1, params: params1}, cachedData);
-                const params2 = extractParams(rule.ind2, null);
-                calcLongInd2[idx] = calculateIndicator({...rule.ind2, params: params2}, cachedData);
-            });
-        }
+        // 🔴 PRE-CALCULATE SHORT INDICATORS (🔥 Ye missing tha!)
+            const calcShortInd1 = [];
+            const calcShortInd2 = [];
+
+            if (entryConds && entryConds.shortRules && entryConds.shortRules.length > 0) {
+                for (const rule of entryConds.shortRules) {
+                    
+                    // Ind 1 calculate karein
+                    if (rule.ind1) {
+                        const ind1Data = await calculateIndicator(cachedData, rule.ind1); // function ka naam apne hisaab se check kar lein agar alag ho
+                        calcShortInd1.push(ind1Data);
+                    } else {
+                        calcShortInd1.push(null);
+                    }
+
+                    // Ind 2 calculate karein (Ya to indicator hoga ya static number)
+                    if (rule.ind2 && typeof rule.ind2 === 'object') {
+                        const ind2Data = await calculateIndicator(cachedData, rule.ind2);
+                        calcShortInd2.push(ind2Data);
+                    } else if (rule.ind2 !== null && rule.ind2 !== undefined && rule.ind2 !== "") {
+                        const staticArr = new Array(cachedData.length).fill(Number(rule.ind2));
+                        calcShortInd2.push(staticArr);
+                    } else {
+                        calcShortInd2.push(null);
+                    }
+                }
+            }
 
         const evaluateCondition = (val1, val2, prevVal1, prevVal2, operator) => {
             if (val1 === null || val2 === null) return false;
