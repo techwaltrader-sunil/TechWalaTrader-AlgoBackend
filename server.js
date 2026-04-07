@@ -93,6 +93,162 @@
 
 
 
+// const express = require('express');
+// const dotenv = require('dotenv');
+// const cors = require('cors');
+// const http = require('http'); // ✅ Import HTTP
+// const { Server } = require('socket.io'); // ✅ Import Socket.io
+// const connectDB = require('./config/db');
+// const colors = require('colors');
+
+// // Config
+// dotenv.config();
+// connectDB();
+
+// // 🔥 BACKEND ENGINE START (Cron Jobs ke liye ye zaroori hai)
+// require('./engine/tradingEngine');
+
+// const webhookRoutes = require('./routes/webhookRoutes');
+// const algoLogRoutes = require('./routes/algoLogRoutes');
+// const backtestRoutes = require('./routes/backtestRoutes');
+// const { downloadAndParseInstruments } = require('./services//instrumentService');
+
+// const app = express();
+
+// // App start hone par ye function call karein
+// downloadAndParseInstruments();
+
+// // Middlewares
+// app.use(express.json());
+// // 🔥 FIX: 'orgins' ki jagah 'origin' hoga
+// app.use(cors({ origin: '*' }));
+
+// // ✅ 1. HTTP Server Create (Socket.io ke liye)
+// const server = http.createServer(app);
+
+// // ✅ 2. Socket.io Setup
+// const io = new Server(server, {
+//   cors: {
+//     origin: "*", // Frontend URL allow karein
+//     methods: ["GET", "POST"]
+//   }
+// });
+
+// // 🔥 io ko app me save kar rahe hain taaki dusri files isko use kar sakein
+// global.io = io;
+// app.set('io', io);
+
+
+// // ==========================================
+// // 🔥 PHASE 1: REAL LIVE P&L CALCULATOR 🔥
+// // ==========================================
+// const Deployment = require('./models/Deployment'); 
+// const Broker = require('./models/Broker'); 
+// const { fetchLiveLTP } = require('./services/dhanService'); // Dhan feed API
+
+// setInterval(async () => {
+//     if (global.io) {
+//         try {
+//             // Sirf wahi ACTIVE strategies uthao jinka order lag chuka hai (yani tradedSecurityId mojood hai)
+//             const activeDeployments = await Deployment.find({ status: 'ACTIVE', tradedSecurityId: { $ne: null } });
+            
+//             if (activeDeployments.length > 0) {
+//                 const pnlData = {};
+                
+//                 for (const dep of activeDeployments) {
+//                     try {
+//                         // Broker ki details nikalo (Dhan API token ke liye)
+//                         const broker = await Broker.findById(dep.brokers[0]);
+//                         if (!broker) continue;
+
+//                         // 🎯 Dhan API se Live Premium (LTP) fetch karo
+//                         const liveLtp = await fetchLiveLTP(broker.clientId, broker.apiSecret, dep.tradedExchange, dep.tradedSecurityId);
+
+//                         // Agar LTP mil gaya aur Entry Price save hai
+//                         if (liveLtp && dep.entryPrice > 0) {
+//                             let currentPnl = 0;
+                            
+//                             // 🧠 THE REAL MATH
+//                             if (dep.tradeAction === 'BUY') {
+//                                 currentPnl = (liveLtp - dep.entryPrice) * dep.tradedQty;
+//                             } else if (dep.tradeAction === 'SELL') {
+//                                 currentPnl = (dep.entryPrice - liveLtp) * dep.tradedQty;
+//                             }
+                            
+//                             // DB me save kar do taaki page refresh hone par zero na ho jaye
+//                             dep.pnl = parseFloat(currentPnl.toFixed(2));
+//                             await dep.save(); 
+
+//                             pnlData[dep._id.toString()] = dep.pnl;
+//                         }
+//                     } catch(err) {
+//                         console.log(`P&L Calc Error for ${dep._id}:`, err.message);
+//                     }
+//                 }
+
+//                 // Frontend ko saare active algos ka REAL P&L ek sath bhej do
+//                 if (Object.keys(pnlData).length > 0) {
+//                     global.io.emit('live-pnl-update', pnlData);
+//                 }
+//             }
+//         } catch (error) {
+//             console.log("Real P&L Loop Error:", error.message);
+//         }
+//     }
+// }, 2500); // 2.5 second delay (Taaki Dhan API par Rate Limit/Blockage ka issue na aaye)
+
+
+// // ==========================================
+// // ✅ ROUTES DEFINITION
+// // ==========================================
+// app.use('/api/brokers', require('./routes/brokerRoutes'));
+// app.use('/api/strategies', require('./routes/strategyRoutes')); 
+
+// // 🔥 THE MISSING LINE: Yehi chhut gaya tha! 👇
+// app.use('/api/deployments', require('./routes/deploymentRoutes'));
+
+// app.use('/api/webhook', webhookRoutes);
+// app.use('/api/algo-logs', algoLogRoutes);
+// app.use('/api/backtest', backtestRoutes);
+// // ==========================================
+
+
+// // ✅ 3. Real-time Connection Logic
+// io.on('connection', (socket) => {
+//   console.log(`User Connected: ${socket.id}`.green);
+
+//   // 🔥 MARKET SIMULATOR (Har 1 second me fake P&L bhejo)
+//   const interval = setInterval(() => {
+//     // Random P&L between -500 to +1500
+//     const fakePnL = (Math.random() * 2000 - 500).toFixed(2);
+    
+//     // Frontend ko data bhejo
+//     socket.emit('market-update', {
+//       pnl: fakePnL,
+//       message: 'Live Data from Market'
+//     });
+//   }, 1000); // 1 Second interval
+
+//   socket.on('disconnect', () => {
+//     console.log('User Disconnected'.red);
+//     clearInterval(interval); // Connection tootne par loop band karo
+//   });
+// });
+
+// // Test Route
+// app.get('/', (req, res) => {
+//   res.send('API & Socket Server Running...');
+// });
+
+// const PORT = process.env.PORT || 6000;
+
+// // ✅ Note: app.listen ki jagah server.listen use karein
+// server.listen(PORT, () => {
+//   console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`.yellow.bold);
+// });
+
+
+
 const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
@@ -100,6 +256,7 @@ const http = require('http'); // ✅ Import HTTP
 const { Server } = require('socket.io'); // ✅ Import Socket.io
 const connectDB = require('./config/db');
 const colors = require('colors');
+const cron = require('node-cron'); // 🔥 ADDED: Cron job package
 
 // Config
 dotenv.config();
@@ -111,12 +268,24 @@ require('./engine/tradingEngine');
 const webhookRoutes = require('./routes/webhookRoutes');
 const algoLogRoutes = require('./routes/algoLogRoutes');
 const backtestRoutes = require('./routes/backtestRoutes');
-const { downloadAndParseInstruments } = require('./services//instrumentService');
+const { downloadAndParseInstruments } = require('./services/instrumentService'); // 🔥 FIXED: Double slash removed
 
 const app = express();
 
-// App start hone par ye function call karein
+// ==========================================
+// ⏰ AUTOMATIC CSV UPDATER (CRON JOB)
+// ==========================================
+// 1. App start hone par ek baar data load karein
 downloadAndParseInstruments();
+
+// 2. 🔥 ADDED: Har din subah 08:00 AM (IST) par auto-update
+cron.schedule('0 8 * * *', async () => {
+    console.log("⏰ Running Daily Dhan CSV Updater Task...");
+    await downloadAndParseInstruments(); // Ye purane data ko naye data se replace kar dega
+}, {
+    timezone: "Asia/Kolkata"
+});
+// ==========================================
 
 // Middlewares
 app.use(express.json());
@@ -139,38 +308,8 @@ global.io = io;
 app.set('io', io);
 
 
-// // ==========================================
-// // 🔥 PHASE 1: DUMMY LIVE P&L SIMULATOR 🔥
-// // ==========================================
-// const Deployment = require('./models/Deployment'); // Model ka path check kar lijiyega
-
-// setInterval(async () => {
-//     if (global.io) {
-//         try {
-//             // Sirf ACTIVE strategies ko dhundho
-//             const activeDeployments = await Deployment.find({ status: 'ACTIVE' });
-            
-//             if (activeDeployments.length > 0) {
-//                 const pnlData = {};
-                
-//                 activeDeployments.forEach(dep => {
-//                     // Har active strategy ke liye -500 se +1500 ke beech ka random P&L
-//                     const randomPnl = (Math.random() * 2000 - 500).toFixed(2); 
-//                     pnlData[dep._id.toString()] = parseFloat(randomPnl);
-//                 });
-
-//                 // Frontend ko saare active algos ka P&L ek sath bhej do
-//                 global.io.emit('live-pnl-update', pnlData);
-//             }
-//         } catch (error) {
-//             console.log("Dummy P&L Error:", error.message);
-//         }
-//     }
-// }, 2000); // Har 2 second me update hoga
-
-
 // ==========================================
-// 🔥 PHASE 2: REAL LIVE P&L CALCULATOR 🔥
+// 🔥 PHASE 1: REAL LIVE P&L CALCULATOR 🔥
 // ==========================================
 const Deployment = require('./models/Deployment'); 
 const Broker = require('./models/Broker'); 
@@ -226,7 +365,6 @@ setInterval(async () => {
         }
     }
 }, 2500); // 2.5 second delay (Taaki Dhan API par Rate Limit/Blockage ka issue na aaye)
-// ==========================================
 
 
 // ==========================================
@@ -234,35 +372,20 @@ setInterval(async () => {
 // ==========================================
 app.use('/api/brokers', require('./routes/brokerRoutes'));
 app.use('/api/strategies', require('./routes/strategyRoutes')); 
-
-// 🔥 THE MISSING LINE: Yehi chhut gaya tha! 👇
 app.use('/api/deployments', require('./routes/deploymentRoutes'));
-
 app.use('/api/webhook', webhookRoutes);
 app.use('/api/algo-logs', algoLogRoutes);
 app.use('/api/backtest', backtestRoutes);
 // ==========================================
 
 
-// ✅ 3. Real-time Connection Logic
+// ✅ 3. Real-time Connection Logic (CLEANED UP)
 io.on('connection', (socket) => {
   console.log(`User Connected: ${socket.id}`.green);
-
-  // 🔥 MARKET SIMULATOR (Har 1 second me fake P&L bhejo)
-  const interval = setInterval(() => {
-    // Random P&L between -500 to +1500
-    const fakePnL = (Math.random() * 2000 - 500).toFixed(2);
-    
-    // Frontend ko data bhejo
-    socket.emit('market-update', {
-      pnl: fakePnL,
-      message: 'Live Data from Market'
-    });
-  }, 1000); // 1 Second interval
-
+  // 🔥 DELETED: Wo fake PnL wala setInterval humne yahan se hata diya hai.
+  
   socket.on('disconnect', () => {
     console.log('User Disconnected'.red);
-    clearInterval(interval); // Connection tootne par loop band karo
   });
 });
 
