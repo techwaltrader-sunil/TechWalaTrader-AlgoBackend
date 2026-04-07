@@ -1400,8 +1400,17 @@ const runBacktestSimulator = async (req, res) => {
             // =========================================================
            if (!isPositionOpen && isMarketOpen && !isTradingHaltedForDay && (finalLongSignal || finalShortSignal)) {
                 
-                const activeOptionType = finalLongSignal ? "CE" : "PE";
                 const transActionTypeStr = legData.action || "BUY";
+                
+                // 🔥 THE FIX: Option Type selection based on BUY vs SELL
+                let activeOptionType = "";
+                if (transActionTypeStr === "BUY") {
+                    // Buyer: Bullish me CE, Bearish me PE
+                    activeOptionType = finalLongSignal ? "CE" : "PE";
+                } else if (transActionTypeStr === "SELL") {
+                    // Seller: Bullish me PE sell karega, Bearish me CE sell karega
+                    activeOptionType = finalLongSignal ? "PE" : "CE"; 
+                }
                 
                 let tradeSymbol = upperSymbol;
                 let finalEntryPrice = spotClosePrice;
