@@ -1359,6 +1359,12 @@ const runBacktestSimulator = async (req, res) => {
         // 🔄 MAIN BACKTEST LOOP
         // =========================================================
         for (let i = 0; i < cachedData.length; i++) {
+
+            // 🔥 THE BREATHER FIX: Har 500 candle ke baad event loop ko free karo
+            if (i % 500 === 0) {
+                await new Promise(resolve => setImmediate(resolve));
+            }
+
             const candle = cachedData[i];
             const candleTime = new Date(candle.timestamp).getTime();
             const istDate = new Date(candleTime + (5.5 * 60 * 60 * 1000));
