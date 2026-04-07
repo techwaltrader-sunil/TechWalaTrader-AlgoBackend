@@ -1355,6 +1355,7 @@ const runBacktestSimulator = async (req, res) => {
             return (entryP - exitP) * qty; 
         };
 
+
         // 🔥 NEW: SEBI Updated Expiry Calculator with 'Upcoming' vs 'Expired' Tag
         const getNearestExpiryString = (tradeDateStr, symbolStr) => {
             const d = new Date(tradeDateStr);
@@ -1406,6 +1407,8 @@ const runBacktestSimulator = async (req, res) => {
 
             return `${prefix} ${formattedDate}`; 
         };
+
+        
 
         // =========================================================
         // 🔄 MAIN BACKTEST LOOP
@@ -1652,7 +1655,6 @@ const runBacktestSimulator = async (req, res) => {
                     
                     // 2. Use Expired Options API (Fallback)
                     if (!apiSuccess) {
-                        console.log(`⚠️ Standard API Failed. Trying Expired Options API for: ${upperSymbol} ${targetStrike} ${activeOptionType}`);
                         try {
                             const expRes = await fetchExpiredOptionData(broker.clientId, broker.apiSecret, spotSecurityId, targetStrike, activeOptionType, dateStr, dateStr);
                             if(expRes.success && expRes.data && expRes.data.close) {
@@ -1664,8 +1666,9 @@ const runBacktestSimulator = async (req, res) => {
                                 
                                 // 🔥 THE FIX: Yahan brackets hata diye kyunki prefix function se hi aa raha hai
                                 const expiryLabel = getNearestExpiryString(dateStr, upperSymbol);
-                                tradeSymbol = `${upperSymbol} ${targetStrike} ${activeOptionType} (${expiryLabel})`; 
-                                
+                                tradeSymbol = `${upperSymbol} ${targetStrike} ${activeOptionType} (${expiryLabel})`;
+
+                                premiumChartData = expRes.data; // 🔥 NEW: Save Data
                                 apiSuccess = true;
                             }
                         } catch(e) { }
