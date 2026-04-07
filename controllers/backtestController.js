@@ -1355,6 +1355,58 @@ const runBacktestSimulator = async (req, res) => {
             return (entryP - exitP) * qty; 
         };
 
+        // 🔥 NEW: SEBI Updated Expiry Calculator with 'Upcoming' vs 'Expired' Tag
+        const getNearestExpiryString = (tradeDateStr, symbolStr) => {
+            const d = new Date(tradeDateStr);
+            const upSym = symbolStr.toUpperCase();
+            let expiryDate = new Date(d);
+            
+            // 1. 🟢 NIFTY 50: Weekly (Har Tuesday)
+            if (upSym.includes("NIFTY") && !upSym.includes("BANK") && !upSym.includes("FIN") && !upSym.includes("MID")) {
+                let targetDay = 2; // 2 = Tuesday
+                while (expiryDate.getDay() !== targetDay) {
+                    expiryDate.setDate(expiryDate.getDate() + 1);
+                }
+            } 
+            // 2. 🔴 OTHERS (BankNifty etc.): Monthly (Mahine ka Aakhiri Tuesday/Monday)
+            else {
+                let targetDay = 2; // Default Last Tuesday
+                if (upSym.includes("MID")) targetDay = 1; // Last Monday
+                
+                const lastDayOfMonth = new Date(expiryDate.getFullYear(), expiryDate.getMonth() + 1, 0);
+                expiryDate = new Date(lastDayOfMonth);
+                while (expiryDate.getDay() !== targetDay) {
+                    expiryDate.setDate(expiryDate.getDate() - 1);
+                }
+                
+                if (d > expiryDate) {
+                    const lastDayOfNextMonth = new Date(d.getFullYear(), d.getMonth() + 2, 0);
+                    expiryDate = new Date(lastDayOfNextMonth);
+                    while (expiryDate.getDay() !== targetDay) {
+                        expiryDate.setDate(expiryDate.getDate() - 1);
+                    }
+                }
+            }
+
+            // Date Formatting: "28APR26"
+            const day = String(expiryDate.getDate()).padStart(2, '0');
+            const month = expiryDate.toLocaleString('en-US', { month: 'short' }).toUpperCase();
+            const year = String(expiryDate.getFullYear()).slice(-2);
+            const formattedDate = `${day}${month}${year}`;
+
+            // 🔥 THE MAGIC: Real World Today se compare karna
+            const today = new Date();
+            today.setHours(0, 0, 0, 0); // Sirf date check karne ke liye time zero kar do
+            
+            const expDateForCheck = new Date(expiryDate);
+            expDateForCheck.setHours(0, 0, 0, 0);
+
+            // Agar expiry Date nikal chuki hai -> "EXP", warna -> "Upcoming EXP"
+            const prefix = (expDateForCheck < today) ? "EXP" : "Upcoming EXP";
+
+            return `${prefix} ${formattedDate}`; 
+        };
+
         // =========================================================
         // 🔄 MAIN BACKTEST LOOP
         // =========================================================
@@ -1600,6 +1652,7 @@ const runBacktestSimulator = async (req, res) => {
                     
                     // 2. Use Expired Options API (Fallback)
                     if (!apiSuccess) {
+                        console.log(`⚠️ Standard API Failed. Trying Expired Options API for: ${upperSymbol} ${targetStrike} ${activeOptionType}`);
                         try {
                             const expRes = await fetchExpiredOptionData(broker.clientId, broker.apiSecret, spotSecurityId, targetStrike, activeOptionType, dateStr, dateStr);
                             if(expRes.success && expRes.data && expRes.data.close) {
@@ -1608,8 +1661,11 @@ const runBacktestSimulator = async (req, res) => {
                                     return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
                                 });
                                 finalEntryPrice = exactMatchIndex !== -1 ? expRes.data.close[exactMatchIndex] : expRes.data.close[0];
-                                tradeSymbol = `${upperSymbol} ${targetStrike} ${activeOptionType} (EXP)`; 
-                                premiumChartData = expRes.data; // 🔥 NEW: Save Data
+                                
+                                // 🔥 THE FIX: Yahan brackets hata diye kyunki prefix function se hi aa raha hai
+                                const expiryLabel = getNearestExpiryString(dateStr, upperSymbol);
+                                tradeSymbol = `${upperSymbol} ${targetStrike} ${activeOptionType} (${expiryLabel})`; 
+                                
                                 apiSuccess = true;
                             }
                         } catch(e) { }
