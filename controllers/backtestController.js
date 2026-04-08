@@ -682,9 +682,6 @@
 // };
 
 // module.exports = { runBacktestSimulator };
-
-
-
 const mongoose = require('mongoose'); 
 const Strategy = require('../models/Strategy');
 const HistoricalData = require('../models/HistoricalData');
@@ -878,7 +875,6 @@ const runBacktestSimulator = async (req, res) => {
         const exitLogicalOpsLong = exitConds.longLogicalOps || exitConds.logicalOps || [];
         const exitLogicalOpsShort = exitConds.shortLogicalOps || exitConds.logicalOps || [];
 
-        // 🔥 SAFETY FILTER
         const exitLongRules = rawExitLongRules.filter(rule => rule.ind1 && rule.ind1.id);
         const exitShortRules = rawExitShortRules.filter(rule => rule.ind1 && rule.ind1.id);
 
@@ -1026,7 +1022,8 @@ const runBacktestSimulator = async (req, res) => {
                     const prevVal1 = (i > 0 && calcLongInd1[idx]) ? calcLongInd1[idx][i-1] : null;
                     const prevVal2 = (i > 0 && calcLongInd2[idx]) ? calcLongInd2[idx][i-1] : null;
 
-                    const operator = rule.op || rule.params?.op || rule.ind1?.params?.op;
+                    // 🔥 FIX 1: Operator extraction made bulletproof for manual MongoDB edits
+                    const operator = rule.op || rule.params?.op || rule.ind1?.params?.op || rule.ind1?.op;
                     const ruleResult = evaluateCondition(val1, val2, prevVal1, prevVal2, operator);
                     
                     if (idx === 0) overallResult = ruleResult;
@@ -1049,7 +1046,7 @@ const runBacktestSimulator = async (req, res) => {
                     const prevVal1 = (i > 0 && calcShortInd1[idx]) ? calcShortInd1[idx][i-1] : null;
                     const prevVal2 = (i > 0 && calcShortInd2[idx]) ? calcShortInd2[idx][i-1] : null;
 
-                    const operator = rule.op || rule.params?.op || rule.ind1?.params?.op;
+                    const operator = rule.op || rule.params?.op || rule.ind1?.params?.op || rule.ind1?.op;
                     const ruleResult = evaluateCondition(val1, val2, prevVal1, prevVal2, operator);
                     
                     if (idx === 0) overallResult = ruleResult;
@@ -1079,7 +1076,7 @@ const runBacktestSimulator = async (req, res) => {
                     const prevVal1 = (i > 0 && calcExitLongInd1[idx]) ? calcExitLongInd1[idx][i-1] : null;
                     const prevVal2 = (i > 0 && calcExitLongInd2[idx]) ? calcExitLongInd2[idx][i-1] : null;
 
-                    const operator = rule.op || rule.params?.op || rule.ind1?.params?.op;
+                    const operator = rule.op || rule.params?.op || rule.ind1?.params?.op || rule.ind1?.op;
                     const ruleResult = evaluateCondition(val1, val2, prevVal1, prevVal2, operator);
                     
                     if (idx === 0) overallResult = ruleResult;
@@ -1102,7 +1099,7 @@ const runBacktestSimulator = async (req, res) => {
                     const prevVal1 = (i > 0 && calcExitShortInd1[idx]) ? calcExitShortInd1[idx][i-1] : null;
                     const prevVal2 = (i > 0 && calcExitShortInd2[idx]) ? calcExitShortInd2[idx][i-1] : null;
 
-                    const operator = rule.op || rule.params?.op || rule.ind1?.params?.op;
+                    const operator = rule.op || rule.params?.op || rule.ind1?.params?.op || rule.ind1?.op;
                     const ruleResult = evaluateCondition(val1, val2, prevVal1, prevVal2, operator);
                     
                     if (idx === 0) overallResult = ruleResult;
@@ -1134,7 +1131,7 @@ const runBacktestSimulator = async (req, res) => {
                 let hitTP = false;
                 let hitMaxProfit = false;
                 let hitMaxLoss = false;
-                let hitIndicatorExit = false; // 🔥 NEW
+                let hitIndicatorExit = false;
 
                 let exitPrice = 0;
                 let exitReason = "";
@@ -1156,6 +1153,7 @@ const runBacktestSimulator = async (req, res) => {
                 let currentLow = spotClosePrice;  
                 let currentClose = spotClosePrice; 
 
+                // 🔥 FIX 2: Missing Option Candle bug removed! Flatline logic applied instead of skipping.
                 if (isOptionsTrade && currentTrade.premiumChart && currentTrade.premiumChart.start_Time) {
                     const exactMatchIndex = currentTrade.premiumChart.start_Time.findIndex(t => {
                         const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
@@ -1163,17 +1161,23 @@ const runBacktestSimulator = async (req, res) => {
                     });
                     
                     if (exactMatchIndex !== -1) {
-                        currentHigh = currentTrade.premiumChart.high[exactMatchIndex];
-                        currentLow = currentTrade.premiumChart.low[exactMatchIndex];
-                        currentClose = currentTrade.premiumChart.close[exactMatchIndex];
-
-                        // 🔥 GARBAGE DATA FILTER RESTORED
-                        if (currentClose > spotClosePrice * 0.5) {
-                            console.log(`⚠️ Dhan API Glitch: Garbage Premium Detected (${currentClose}). Ignoring candle.`);
-                            continue; 
+                        let tempClose = currentTrade.premiumChart.close[exactMatchIndex];
+                        if (tempClose > spotClosePrice * 0.5) {
+                            currentClose = currentTrade.lastKnownPremium || currentTrade.entryPrice;
+                            currentHigh = currentClose;
+                            currentLow = currentClose;
+                        } else {
+                            currentClose = tempClose;
+                            currentHigh = currentTrade.premiumChart.high[exactMatchIndex];
+                            currentLow = currentTrade.premiumChart.low[exactMatchIndex];
+                            currentTrade.lastKnownPremium = currentClose; 
                         }
                     } else {
-                        continue; 
+                        // Agar dhan ne is 1 minute ki option candle nahi bheji, to skip nahi karna hai!
+                        // Balke purana premium use karke EXIT check karna hai.
+                        currentClose = currentTrade.lastKnownPremium || currentTrade.entryPrice;
+                        currentHigh = currentClose;
+                        currentLow = currentClose;
                     }
                 } else if (!isOptionsTrade) {
                     currentHigh = parseFloat(candle.high);
@@ -1313,7 +1317,6 @@ const runBacktestSimulator = async (req, res) => {
                         } catch(e) { }
                     }
 
-                    // 🔥 GARBAGE DATA FILTER FOR ENTRY RESTORED
                     if (apiSuccess && finalEntryPrice > spotClosePrice * 0.5) {
                         apiSuccess = false;
                         validTrade = false;
@@ -1334,7 +1337,8 @@ const runBacktestSimulator = async (req, res) => {
                         exitTime: null, exitPrice: null, pnl: null, exitType: null,
                         optionConfig: isOptionsTrade ? { strike: calculateATM(spotClosePrice, upperSymbol), type: activeOptionType } : null,
                         premiumChart: premiumChartData,
-                        signalType: finalLongSignal ? "LONG" : "SHORT" // 🔥 ADDED THIS SO EXIT KNOWS WHAT TO CHECK
+                        signalType: finalLongSignal ? "LONG" : "SHORT",
+                        lastKnownPremium: finalEntryPrice // 🔥 FIX 3: Initialize last known premium
                     };
                     console.log(`✅ [TRADE OPEN] Date: ${dateStr} | Time: ${h}:${m} | Spot: ${spotClosePrice} | Premium: ${finalEntryPrice} | Type: ${activeOptionType}`);
                 }
@@ -1459,3 +1463,4 @@ const runBacktestSimulator = async (req, res) => {
 };
 
 module.exports = { runBacktestSimulator };
+
