@@ -1231,6 +1231,9 @@ const runBacktestSimulator = async (req, res) => {
                     }
                 }
 
+                // 🔥 X-RAY DEBUGGER (Trade open hone par har minute batayega ki exit signal kya hai)
+                console.log(`🔍 [X-RAY] Time: ${h}:${m} | Trade Type: ${currentTrade.signalType} | LongExitSignal: ${exitLongSignal} | ShortExitSignal: ${exitShortSignal}`);
+
                 // 🚀 EXIT EXECUTION
                 if (hitSL || hitTP || hitMaxProfit || hitMaxLoss || hitIndicatorExit) {
                     isPositionOpen = false;
