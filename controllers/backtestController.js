@@ -1231,9 +1231,16 @@ const runBacktestSimulator = async (req, res) => {
                     }
                 }
 
-                // 🔥 X-RAY DEBUGGER (Trade open hone par har minute batayega ki exit signal kya hai)
-                console.log(`🔍 [X-RAY] Time: ${h}:${m} | Trade Type: ${currentTrade.signalType} | LongExitSignal: ${exitLongSignal} | ShortExitSignal: ${exitShortSignal}`);
+                // 🔥 ULTRA X-RAY DEBUGGER (Sath me Indicator ki value bhi dikhayega)
+                if (currentTrade.signalType === "SHORT" && calcExitShortInd1.length > 0) {
+                    const v1 = calcExitShortInd1[0][i]; const v2 = calcExitShortInd2[0][i];
+                    console.log(`🔍 [X-RAY] Time: ${h}:${m} | Type: SHORT | Ind1: ${v1 ? v1.toFixed(2) : 'null'} | Ind2: ${v2 ? v2.toFixed(2) : 'null'} | Signal: ${exitShortSignal}`);
+                } else if (currentTrade.signalType === "LONG" && calcExitLongInd1.length > 0) {
+                    const v1 = calcExitLongInd1[0][i]; const v2 = calcExitLongInd2[0][i];
+                    console.log(`🔍 [X-RAY] Time: ${h}:${m} | Type: LONG | Ind1: ${v1 ? v1.toFixed(2) : 'null'} | Ind2: ${v2 ? v2.toFixed(2) : 'null'} | Signal: ${exitLongSignal}`);
+                }
 
+                
                 // 🚀 EXIT EXECUTION
                 if (hitSL || hitTP || hitMaxProfit || hitMaxLoss || hitIndicatorExit) {
                     isPositionOpen = false;
