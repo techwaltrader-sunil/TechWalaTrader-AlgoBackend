@@ -1659,16 +1659,23 @@ const runBacktestSimulator = async (req, res) => {
             });
         }
 
-        // =========================================================
+       // =========================================================
         // 📊 PRE-CALCULATE EXIT INDICATORS (LONG & SHORT EXIT)
         // =========================================================
         let exitConds = {};
         
-        // 🔥 AGGRESSIVE EXTRACTION
-        const possibleExits = strategy.exitConditions || strategy.data?.exitConditions || [];
+        // 🔥 THE ULTIMATE AGGRESSIVE EXTRACTION (Har path check karega)
+        const possibleExits = strategy.exitConditions 
+                           || strategy.data?.exitConditions 
+                           || strategy.data?.entrySettings?.exitConditions  // 👈 NAYA RASTA (From your latest screenshot)
+                           || strategy.entrySettings?.exitConditions
+                           || strategy.entryConditions?.[0]?.exitConditions 
+                           || strategy.data?.entryConditions?.[0]?.exitConditions 
+                           || [];
+
         if (Array.isArray(possibleExits) && possibleExits.length > 0) {
             exitConds = possibleExits[0];
-        } else if (typeof possibleExits === 'object') {
+        } else if (possibleExits && typeof possibleExits === 'object' && !Array.isArray(possibleExits)) {
             exitConds = possibleExits;
         }
 
@@ -1678,7 +1685,7 @@ const runBacktestSimulator = async (req, res) => {
         // Debug Log: Server batayega ki usne DB se kya padha
         console.log(`\n🚨 [DEBUG DB] Exit Rules Found -> Long: ${rawExitLongRules.length}, Short: ${rawExitShortRules.length}`);
 
-        // 🔥 SAFETY FILTER (Ab yeh aur bhi smart hai)
+        // 🔥 SAFETY FILTER 
         const exitLongRules = rawExitLongRules.filter(rule => rule.ind1 && (rule.ind1.id || rule.ind1.display));
         const exitShortRules = rawExitShortRules.filter(rule => rule.ind1 && (rule.ind1.id || rule.ind1.display));
         
