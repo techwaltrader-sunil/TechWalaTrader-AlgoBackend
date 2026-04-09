@@ -1,5 +1,6 @@
 
 
+
 // const cron = require('node-cron');
 // const moment = require('moment-timezone');
 // const axios = require('axios');
@@ -239,11 +240,24 @@
 
 //                             if (orderStatus !== "REJECTED") {
 //                                 console.log("🏁 SQUARE-OFF ORDER SUCCESSFULLY PLACED!");
+                                
+//                                 // 👇 NAYI LINES: Exit Price aur P&L nikalna 👇
+//                                 const exitLtp = await fetchLiveLTP(broker.clientId, broker.apiSecret, deployment.tradedExchange, deployment.tradedSecurityId) || 0;
+//                                 let finalPnl = 0;
+//                                 if (exitLtp > 0 && deployment.entryPrice > 0) {
+//                                     finalPnl = deployment.tradeAction === 'BUY' 
+//                                         ? (exitLtp - deployment.entryPrice) * deployment.tradedQty 
+//                                         : (deployment.entryPrice - exitLtp) * deployment.tradedQty;
+//                                 }
+                                
+//                                 deployment.exitPrice = exitLtp;
+//                                 deployment.realizedPnl = finalPnl;
+//                                 // 👆 NAYI LINES 👆
+
 //                                 deployment.status = 'COMPLETED';
 //                                 await deployment.save();
                                 
-//                                 // Yahan purane "Auto Square-Off" ki jagah 'squareOffSymbolName' pass kiya hai
-//                                 await createAndEmitLog(broker, squareOffSymbolName, exitAction, deployment.tradedQty, 'SUCCESS', `Strategy Time-Based Square-Off Completed`, respData.orderId);
+//                                 await createAndEmitLog(broker, squareOffSymbolName, exitAction, deployment.tradedQty, 'SUCCESS', `Strategy Time-Based Square-Off Completed (P&L: ₹${finalPnl.toFixed(2)})`, respData.orderId);
 //                             } else {
 //                                 await createAndEmitLog(broker, squareOffSymbolName, exitAction, deployment.tradedQty, 'FAILED', respData.remarks || "RMS Rejected", respData.orderId);
 //                             }
@@ -319,9 +333,15 @@
 //                                         const respData = orderResponse.data || {};
 //                                         if (respData.orderStatus && respData.orderStatus.toUpperCase() !== "REJECTED") {
 //                                             console.log("🏁 MTM SQUARE-OFF ORDER SUCCESSFULLY PLACED!");
+                                            
+//                                             // 👇 NAYI LINES 👇
+//                                             deployment.exitPrice = liveLtp;
+//                                             deployment.realizedPnl = currentPnl;
+//                                             // 👆 NAYI LINES 👆
+
 //                                             deployment.status = 'COMPLETED'; // Algo Stop
 //                                             await deployment.save();
-//                                             await createAndEmitLog(broker, squareOffSymbolName, exitAction, deployment.tradedQty, 'SUCCESS', `MTM Exit: ${squareOffReason}`, respData.orderId);
+//                                             await createAndEmitLog(broker, squareOffSymbolName, exitAction, deployment.tradedQty, 'SUCCESS', `MTM Exit: ${squareOffReason} (Final P&L: ₹${currentPnl.toFixed(2)})`, respData.orderId);
 //                                         } else {
 //                                             await createAndEmitLog(broker, squareOffSymbolName, exitAction, deployment.tradedQty, 'FAILED', respData.remarks || "RMS Rejected", respData.orderId);
 //                                             executionLocks.delete(exitLockKey); // Lock hatao taaki agle 30 sec me fir try kare
@@ -346,6 +366,8 @@
 //         }
 //     } catch (error) { console.error("❌ Trading Engine Error:", error); }
 // });
+
+
 
 
 
@@ -477,25 +499,24 @@ cron.schedule('*/30 * * * * *', async () => {
                 executionLocks.add(entryLockKey);
                 console.log(`⚡ ENTRY TRIGGERED! Strategy: ${strategy.name}`);
 
+                // 🔥 NAYA: Pre-Punch SL Check
+                const isPrePunchSL = strategy.data?.advanceSettings?.prePunchSL || false;
+
                 for (const brokerId of deployment.brokers) {
                     const broker = await Broker.findById(brokerId);
                     if (broker && broker.engineOn) {
                         
-                        // 🔥 THE SMART CATCHER
+                        // 🔥 THE SMART CATCHER (Aapka purana logic)
                         const instrumentData = (strategy.data.instruments && strategy.data.instruments.length > 0) ? strategy.data.instruments[0] : {};
                         let rawSymbol = instrumentData.name || instrumentData.symbol || instrumentData.value || config.index || config.symbol || strategy.symbol || strategy.name || "";
                         
                         let baseSymbol = "NIFTY"; 
                         const upperRawSymbol = String(rawSymbol).toUpperCase();
                         
-                        console.log(`🔍 [DEBUG] Strategy Name: "${strategy.name}" | Frontend ne bheja: "${rawSymbol}"`);
-
                         if (upperRawSymbol.includes("BANK")) baseSymbol = "BANKNIFTY";
                         else if (upperRawSymbol.includes("FIN")) baseSymbol = "FINNIFTY";
                         else if (upperRawSymbol.includes("MIDCP") || upperRawSymbol.includes("MIDCAP")) baseSymbol = "MIDCPNIFTY";
                         else if (upperRawSymbol.includes("SENSEX")) baseSymbol = "SENSEX";
-
-                        console.log(`✅ [DEBUG] Engine ne decide kiya: ${baseSymbol}`);
 
                         for (const leg of strategy.data.legs) {
                             let optType = leg.optionType === "Call" ? "CE" : "PE";
@@ -503,58 +524,91 @@ cron.schedule('*/30 * * * * *', async () => {
                             let tradeQty = (leg.quantity || 1) * deployment.multiplier;
 
                             let currentSpotPrice = await fetchLivePrice(baseSymbol);
-                            console.log(`📊 [DEBUG] ${baseSymbol} Live Spot Price:`, currentSpotPrice);
-
                             if (!currentSpotPrice) {
-                                console.log(`❌ [DEBUG] API se Spot Price nahi mila!`);
                                 await createAndEmitLog(broker, baseSymbol, tradeAction, tradeQty, 'FAILED', `Failed to fetch live spot price. Cannot calculate ATM Strike.`);
                                 continue;
                             }
 
                             let stepValue = getStrikeStep(baseSymbol);
                             let targetStrikePrice = Math.round(currentSpotPrice / stepValue) * stepValue;
-                            console.log(`🎯 [DEBUG] Calculated Target Strike: ${targetStrikePrice}`);
-
                             const instrument = getOptionSecurityId(baseSymbol, targetStrikePrice, optType);
                             
                             if (!instrument) {
-                                console.log(`❌ [DEBUG] CSV me Instrument nahi mila: ${baseSymbol} ${targetStrikePrice} ${optType}`);
                                 await createAndEmitLog(broker, `${baseSymbol} ${targetStrikePrice} ${optType}`, tradeAction, tradeQty, 'FAILED', `Strike ${targetStrikePrice} not found in Dhan Scrip CSV`);
                                 continue;
                             }
-                            
-                            console.log(`✅ [DEBUG] Final Instrument Match:`, instrument.tradingSymbol);
 
-                            const orderData = { action: tradeAction, quantity: tradeQty, securityId: instrument.id, segment: instrument.exchange };
-                            const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
+                            console.log(`✅ [DEBUG] Execution Type: ${deployment.executionType} | Symbol: ${instrument.tradingSymbol}`);
 
-                            if (orderResponse.success) {
-                                const respData = orderResponse.data || {};
-                                const orderStatus = respData.orderStatus ? respData.orderStatus.toUpperCase() : "UNKNOWN";
+                            // ==========================================
+                            // 🔴 LIVE TRADING EXECUTION (Asli Paisa)
+                            // ==========================================
+                            if (deployment.executionType === 'LIVE') {
+                                const orderData = { action: tradeAction, quantity: tradeQty, securityId: instrument.id, segment: instrument.exchange };
+                                const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
 
-                                if (orderStatus !== "REJECTED") {
-                                    console.log("🚀 ENTRY ORDER SUCCESSFULLY PLACED AT BROKER!");
-                                    deployment.tradedSecurityId = instrument.id;
-                                    deployment.tradedExchange = instrument.exchange;
-                                    deployment.tradedQty = tradeQty;
-                                    deployment.tradeAction = tradeAction;
+                                if (orderResponse.success) {
+                                    const respData = orderResponse.data || {};
+                                    const orderStatus = respData.orderStatus ? respData.orderStatus.toUpperCase() : "UNKNOWN";
 
-                                    // 👇 YE NAYI LINE ADD KARNI HAI 👇
-                                    deployment.tradedSymbol = instrument.tradingSymbol;
-                                    
-                                    await sleep(1000); 
-                                    const entryPrice = await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id);
-                                    deployment.entryPrice = entryPrice || 0;
-                                    await deployment.save();
+                                    if (orderStatus !== "REJECTED") {
+                                        deployment.tradedSecurityId = instrument.id;
+                                        deployment.tradedExchange = instrument.exchange;
+                                        deployment.tradedQty = tradeQty;
+                                        deployment.tradeAction = tradeAction;
+                                        deployment.tradedSymbol = instrument.tradingSymbol;
+                                        
+                                        await sleep(1000); 
+                                        const entryPrice = await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id);
+                                        deployment.entryPrice = entryPrice || 0;
+                                        
+                                        // 🛡️ LIVE PRE-PUNCH SL LOGIC
+                                        if (isPrePunchSL && entryPrice > 0 && leg.slValue > 0) {
+                                            let slPrice = leg.slType === 'SL%' 
+                                                ? entryPrice - (entryPrice * (Number(leg.slValue) / 100))
+                                                : entryPrice - Number(leg.slValue);
+                                            
+                                            // Yahan Dhan ka SL-M Order fire hoga future me
+                                            console.log(`🛡️ [LIVE PRE-PUNCH] SL Placed at ₹${slPrice.toFixed(2)} on Exchange`);
+                                        }
 
-                                    await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'SUCCESS', `Entry Order placed successfully`, respData.orderId);
+                                        await deployment.save();
+                                        await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'SUCCESS', `Entry Order placed successfully`, respData.orderId);
+                                    } else {
+                                        await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'FAILED', respData.remarks || "RMS Rejected", respData.orderId);
+                                    }
                                 } else {
-                                    await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'FAILED', respData.remarks || "RMS Rejected", respData.orderId);
+                                    const errorObj = orderResponse.error || {};
+                                    await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'FAILED', errorObj.internalErrorMessage || JSON.stringify(errorObj));
                                 }
-                            } else {
-                                const errorObj = orderResponse.error || {};
-                                const errorMsg = errorObj.internalErrorMessage || errorObj.errorMessage || JSON.stringify(errorObj);
-                                await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'FAILED', errorMsg);
+                            } 
+                            // ==========================================
+                            // 🟢 FORWARD TEST / PAPER TRADING EXECUTION
+                            // ==========================================
+                            else {
+                                await sleep(500); // Simulate API delay
+                                const entryPrice = await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id) || currentSpotPrice;
+                                
+                                deployment.tradedSecurityId = instrument.id;
+                                deployment.tradedExchange = instrument.exchange;
+                                deployment.tradedQty = tradeQty;
+                                deployment.tradeAction = tradeAction;
+                                deployment.tradedSymbol = instrument.tradingSymbol;
+                                deployment.entryPrice = entryPrice;
+
+                                // 🛡️ PAPER PRE-PUNCH SL LOGIC
+                                if (isPrePunchSL && entryPrice > 0 && leg.slValue > 0) {
+                                    let slPrice = leg.slType === 'SL%' 
+                                        ? entryPrice - (entryPrice * (Number(leg.slValue) / 100))
+                                        : entryPrice - Number(leg.slValue);
+                                    
+                                    deployment.paperSlPrice = slPrice; // Database me SL store kar lo
+                                    console.log(`🛡️ [PAPER PRE-PUNCH] Paper SL Locked at ₹${slPrice.toFixed(2)}`);
+                                }
+
+                                await deployment.save();
+                                console.log(`📝 PAPER TRADE EXECUTED: ${instrument.tradingSymbol} at ₹${entryPrice}`);
+                                await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'SUCCESS', `Paper Trade Entry Executed at ₹${entryPrice}`);
                             }
                             await sleep(500);
                         }

@@ -72,6 +72,7 @@ const deploymentSchema = new mongoose.Schema({
     tradeAction: { type: String, enum: ['BUY', 'SELL'], default: 'BUY' }, // BUY ya SELL
     tradedSymbol: { type: String },
     exitPrice: { type: Number, default: 0 },
+    paperSlPrice: { type: Number, default: 0 }, // 👈 NEW: For Paper Trade Pre-Punch SL
     realizedPnl: { type: Number, default: 0 },
     
 }, { timestamps: true });
