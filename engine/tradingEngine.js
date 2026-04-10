@@ -1651,7 +1651,9 @@ cron.schedule('*/30 * * * * *', async () => {
                 }
             }
 
+            // 2. // ==========================================
             // 2. AUTO SQUARE-OFF LOGIC ⏰
+            // ==========================================
             if (squareOffTime === currentTime && !executionLocks.has(exitLockKey) && deployment.tradedSecurityId) {
                 executionLocks.add(exitLockKey);
                 console.log(`⏰ SQUARE-OFF TRIGGERED! Strategy: ${strategy.name}`);
@@ -1660,51 +1662,61 @@ cron.schedule('*/30 * * * * *', async () => {
                     const broker = await Broker.findById(brokerId);
                     if (broker && broker.engineOn) {
                         const exitAction = deployment.tradeAction === 'BUY' ? 'SELL' : 'BUY';
-                        const orderData = {
-                            action: exitAction,
-                            quantity: deployment.tradedQty,
-                            securityId: deployment.tradedSecurityId,
-                            segment: deployment.tradedExchange
-                        };
+                        const squareOffSymbolName = deployment.tradedSymbol ? `${deployment.tradedSymbol} (Auto-Exit)` : "Auto Square-Off";
 
-                        const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
+                        let isExitSuccessful = false;
+                        let exitLtp = 0;
+                        let exitRemarks = "Square-Off Completed";
+                        let orderIdToSave = "N/A";
 
-                        if (orderResponse.success) {
-                            const respData = orderResponse.data || {};
-                            const orderStatus = respData.orderStatus ? respData.orderStatus.toUpperCase() : "UNKNOWN";
+                        // 🟢 PAPER TRADE EXIT LOGIC
+                        if (deployment.executionType === 'FORWARD_TEST' || deployment.executionType === 'PAPER') {
+                            await sleep(500);
+                            exitLtp = await fetchLiveLTP(broker.clientId, broker.apiSecret, deployment.tradedExchange, deployment.tradedSecurityId) || 0;
+                            isExitSuccessful = true;
+                            exitRemarks = "Paper Trade Auto-Exit Executed";
+                        }
+                        // 🔴 LIVE TRADE EXIT LOGIC
+                        else if (deployment.executionType === 'LIVE') {
+                            const orderData = { action: exitAction, quantity: deployment.tradedQty, securityId: deployment.tradedSecurityId, segment: deployment.tradedExchange };
+                            const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
 
-                            // 👇 UI par dikhane ke liye mast format: "NIFTY 30 MAR 22950 CALL (Auto-Exit)"
-                            const squareOffSymbolName = deployment.tradedSymbol ? `${deployment.tradedSymbol} (Auto-Exit)` : "Auto Square-Off";
-
-                            if (orderStatus !== "REJECTED") {
-                                console.log("🏁 SQUARE-OFF ORDER SUCCESSFULLY PLACED!");
-
-                                // 👇 NAYI LINES: Exit Price aur P&L nikalna 👇
-                                const exitLtp = await fetchLiveLTP(broker.clientId, broker.apiSecret, deployment.tradedExchange, deployment.tradedSecurityId) || 0;
-                                let finalPnl = 0;
-                                if (exitLtp > 0 && deployment.entryPrice > 0) {
-                                    finalPnl = deployment.tradeAction === 'BUY'
-                                        ? (exitLtp - deployment.entryPrice) * deployment.tradedQty
-                                        : (deployment.entryPrice - exitLtp) * deployment.tradedQty;
+                            if (orderResponse.success) {
+                                const respData = orderResponse.data || {};
+                                if (respData.orderStatus && respData.orderStatus.toUpperCase() !== "REJECTED") {
+                                    await sleep(1000);
+                                    exitLtp = await fetchLiveLTP(broker.clientId, broker.apiSecret, deployment.tradedExchange, deployment.tradedSecurityId) || 0;
+                                    isExitSuccessful = true;
+                                    orderIdToSave = respData.orderId;
+                                    exitRemarks = `Live Auto-Exit Successful`;
+                                } else {
+                                    exitRemarks = respData.remarks || "RMS Rejected";
                                 }
-
-                                deployment.exitPrice = exitLtp;
-                                deployment.realizedPnl = finalPnl;
-                                // 👆 NAYI LINES 👆
-
-                                deployment.status = 'COMPLETED';
-                                await deployment.save();
-
-                                await createAndEmitLog(broker, squareOffSymbolName, exitAction, deployment.tradedQty, 'SUCCESS', `Strategy Time-Based Square-Off Completed (P&L: ₹${finalPnl.toFixed(2)})`, respData.orderId);
                             } else {
-                                await createAndEmitLog(broker, squareOffSymbolName, exitAction, deployment.tradedQty, 'FAILED', respData.remarks || "RMS Rejected", respData.orderId);
+                                exitRemarks = orderResponse.error?.errorMessage || "API Order Failed";
                             }
-                        } else {
-                            const errorObj = orderResponse.error || {};
-                            const errorMsg = errorObj.internalErrorMessage || errorObj.errorMessage || JSON.stringify(errorObj);
+                        }
 
-                            const squareOffSymbolName = deployment.tradedSymbol ? `${deployment.tradedSymbol} (Auto-Exit)` : "Auto Square-Off";
-                            await createAndEmitLog(broker, squareOffSymbolName, exitAction, deployment.tradedQty, 'FAILED', errorMsg);
+                        // 🧮 FINAL P&L CALCULATION & DB SAVE
+                        if (isExitSuccessful) {
+                            let finalPnl = 0;
+                            if (exitLtp > 0 && deployment.entryPrice > 0) {
+                                finalPnl = deployment.tradeAction === 'BUY'
+                                    ? (exitLtp - deployment.entryPrice) * deployment.tradedQty
+                                    : (deployment.entryPrice - exitLtp) * deployment.tradedQty;
+                            }
+
+                            deployment.exitPrice = exitLtp;
+                            deployment.pnl = finalPnl;          // 🔥 FIX: Frontend isko padhta hai
+                            deployment.realizedPnl = finalPnl; 
+                            deployment.status = 'COMPLETED';
+                            await deployment.save();
+
+                            console.log(`🏁 [EXIT SUCCESS] ${exitRemarks} | P&L: ₹${finalPnl.toFixed(2)}`);
+                            await createAndEmitLog(broker, squareOffSymbolName, exitAction, deployment.tradedQty, 'SUCCESS', `${exitRemarks} (P&L: ₹${finalPnl.toFixed(2)})`, orderIdToSave);
+                        } else {
+                            await createAndEmitLog(broker, squareOffSymbolName, exitAction, deployment.tradedQty, 'FAILED', `Exit Failed: ${exitRemarks}`, orderIdToSave);
+                            executionLocks.delete(exitLockKey); // Failed hua to aagle loop me fir try karega
                         }
                     }
                 }
@@ -1717,84 +1729,67 @@ cron.schedule('*/30 * * * * *', async () => {
             const maxProfit = parseFloat(riskData.maxProfit) || 0;
             const maxLoss = parseFloat(riskData.maxLoss) || 0;
 
-            // Sirf tabhi check karo jab trade open ho, Entry Price mil chuka ho, aur MaxProfit/MaxLoss set ho (0 se zyada ho)
             if (!executionLocks.has(exitLockKey) && deployment.tradedSecurityId && deployment.entryPrice > 0 && (maxProfit > 0 || maxLoss > 0)) {
-
                 for (const brokerId of deployment.brokers) {
                     const broker = await Broker.findById(brokerId);
                     if (broker && broker.engineOn) {
-
                         try {
-                            // Dhan API se Contract ka Live Price (LTP) nikalo
                             const liveLtp = await fetchLiveLTP(broker.clientId, broker.apiSecret, deployment.tradedExchange, deployment.tradedSecurityId);
-
+                            
                             if (liveLtp && liveLtp > 0) {
-                                let currentPnl = 0;
-
-                                // P&L Calculation: (Live Price - Entry Price) * Qty
-                                if (deployment.tradeAction === 'BUY') {
-                                    currentPnl = (liveLtp - deployment.entryPrice) * deployment.tradedQty;
-                                } else {
-                                    currentPnl = (deployment.entryPrice - liveLtp) * deployment.tradedQty;
-                                }
-
-                                console.log(`📊 [MTM Tracker] Strategy: ${strategy.name} | Live P&L: ₹${currentPnl.toFixed(2)} (LTP: ${liveLtp}, Entry: ${deployment.entryPrice})`);
+                                let currentPnl = deployment.tradeAction === 'BUY' 
+                                    ? (liveLtp - deployment.entryPrice) * deployment.tradedQty 
+                                    : (deployment.entryPrice - liveLtp) * deployment.tradedQty;
 
                                 let squareOffReason = null;
+                                if (maxProfit > 0 && currentPnl >= maxProfit) squareOffReason = `Target Reached (Max Profit: ₹${maxProfit})`;
+                                else if (maxLoss > 0 && currentPnl <= -Math.abs(maxLoss)) squareOffReason = `Stop-Loss Hit (Max Loss: ₹${Math.abs(maxLoss)})`;
 
-                                // Condition 1: Max Profit Hit (Target)
-                                if (maxProfit > 0 && currentPnl >= maxProfit) {
-                                    squareOffReason = `Target Reached (Max Profit: ₹${maxProfit})`;
-                                }
-                                // Condition 2: Max Loss Hit (Stop-Loss) - Math.abs ensures it works even if user puts 500 or -500
-                                else if (maxLoss > 0 && currentPnl <= -Math.abs(maxLoss)) {
-                                    squareOffReason = `Stop-Loss Hit (Max Loss: ₹${Math.abs(maxLoss)})`;
-                                }
-
-                                // Agar Target ya SL hit hua to Order fire karo!
                                 if (squareOffReason) {
                                     executionLocks.add(exitLockKey);
                                     console.log(`🚨 MTM SQUARE-OFF TRIGGERED! Reason: ${squareOffReason}`);
 
                                     const exitAction = deployment.tradeAction === 'BUY' ? 'SELL' : 'BUY';
-                                    const orderData = {
-                                        action: exitAction,
-                                        quantity: deployment.tradedQty,
-                                        securityId: deployment.tradedSecurityId,
-                                        segment: deployment.tradedExchange
-                                    };
-
-                                    const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
                                     const squareOffSymbolName = deployment.tradedSymbol ? `${deployment.tradedSymbol} (MTM-Exit)` : "MTM Square-Off";
 
-                                    if (orderResponse.success) {
-                                        const respData = orderResponse.data || {};
-                                        if (respData.orderStatus && respData.orderStatus.toUpperCase() !== "REJECTED") {
-                                            console.log("🏁 MTM SQUARE-OFF ORDER SUCCESSFULLY PLACED!");
+                                    let isExitSuccessful = false;
+                                    let exitRemarks = squareOffReason;
+                                    let orderIdToSave = "N/A";
 
-                                            // 👇 NAYI LINES 👇
-                                            deployment.exitPrice = liveLtp;
-                                            deployment.realizedPnl = currentPnl;
-                                            // 👆 NAYI LINES 👆
-
-                                            deployment.status = 'COMPLETED'; // Algo Stop
-                                            await deployment.save();
-                                            await createAndEmitLog(broker, squareOffSymbolName, exitAction, deployment.tradedQty, 'SUCCESS', `MTM Exit: ${squareOffReason} (Final P&L: ₹${currentPnl.toFixed(2)})`, respData.orderId);
+                                    // 🟢 PAPER TRADE MTM EXIT
+                                    if (deployment.executionType === 'FORWARD_TEST' || deployment.executionType === 'PAPER') {
+                                        isExitSuccessful = true;
+                                        exitRemarks = `Paper Trade MTM Exit: ${squareOffReason}`;
+                                    } 
+                                    // 🔴 LIVE TRADE MTM EXIT
+                                    else if (deployment.executionType === 'LIVE') {
+                                        const orderData = { action: exitAction, quantity: deployment.tradedQty, securityId: deployment.tradedSecurityId, segment: deployment.tradedExchange };
+                                        const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
+                                        
+                                        if (orderResponse.success && orderResponse.data?.orderStatus?.toUpperCase() !== "REJECTED") {
+                                            isExitSuccessful = true;
+                                            orderIdToSave = orderResponse.data.orderId;
+                                            exitRemarks = `Live MTM Exit: ${squareOffReason}`;
                                         } else {
-                                            await createAndEmitLog(broker, squareOffSymbolName, exitAction, deployment.tradedQty, 'FAILED', respData.remarks || "RMS Rejected", respData.orderId);
-                                            executionLocks.delete(exitLockKey); // Lock hatao taaki agle 30 sec me fir try kare
+                                            exitRemarks = orderResponse.data?.remarks || orderResponse.error?.errorMessage || "RMS Rejected";
                                         }
+                                    }
+
+                                    // 🧮 FINAL P&L CALCULATION & DB SAVE
+                                    if (isExitSuccessful) {
+                                        deployment.exitPrice = liveLtp;
+                                        deployment.pnl = currentPnl;         // 🔥 FIX
+                                        deployment.realizedPnl = currentPnl;
+                                        deployment.status = 'COMPLETED';
+                                        await deployment.save();
+
+                                        await createAndEmitLog(broker, squareOffSymbolName, exitAction, deployment.tradedQty, 'SUCCESS', `${exitRemarks} (Final P&L: ₹${currentPnl.toFixed(2)})`, orderIdToSave);
                                     } else {
-                                        const errorMsg = orderResponse.error?.errorMessage || orderResponse.data?.remarks || JSON.stringify(orderResponse.error || {});
-                                        await createAndEmitLog(broker, squareOffSymbolName, exitAction, deployment.tradedQty, 'FAILED', `MTM Exit Failed: ${errorMsg}`);
+                                        await createAndEmitLog(broker, squareOffSymbolName, exitAction, deployment.tradedQty, 'FAILED', `MTM Exit Failed: ${exitRemarks}`, orderIdToSave);
                                         executionLocks.delete(exitLockKey);
                                     }
                                 }
                             }
-
-                            // 🔥 Dhan API Block (805 Error) se bachne ke liye 1 second ka delay
-                            await sleep(1000);
-
                         } catch (err) {
                             console.log(`⚠️ MTM Check Failed for ${strategy.name}: ${err.message}`);
                         }
@@ -1804,3 +1799,5 @@ cron.schedule('*/30 * * * * *', async () => {
         }
     } catch (error) { console.error("❌ Trading Engine Error:", error); }
 });
+
+
