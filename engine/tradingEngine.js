@@ -1474,6 +1474,9 @@ cron.schedule('*/30 * * * * *', async () => {
         if (currentTime === "00:00" && executionLocks.size > 0) executionLocks.clear();
 
         for (const deployment of activeDeployments) {
+
+            await sleep(1000);
+
             const strategy = deployment.strategyId;
             if (!strategy) continue;
 
