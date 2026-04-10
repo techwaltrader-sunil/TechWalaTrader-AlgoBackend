@@ -1398,7 +1398,8 @@ const getIndicatorSignal = async (strategy, broker, baseSymbol) => {
             else { for (let key in obj) { const f = findConditions(obj[key]); if (f) return f; } }
             return null;
         };
-        const entryConds = findConditions(strategy);
+        // Mongoose document ko plain object me convert karke bhejo taaki loop na phase
+        const entryConds = findConditions(strategy.toObject ? strategy.toObject() : strategy);
         if (!entryConds) return { long: false, short: false };
 
         // 3. 🚨 HAMESHA LAST CLOSED CANDLE PAR CHECK KAREIN (Repainting se bachne ke liye)
