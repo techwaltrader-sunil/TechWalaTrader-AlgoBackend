@@ -2045,13 +2045,23 @@ const findStrikeByLivePremium = async (baseSymbol, currentSpotPrice, optType, re
 
         if (chainTokens.length === 0) return null;
 
-        // 3. Ek sath (Parallel) sabhi 20 strikes ka LIVE LTP mangayein
-        const ltpPromises = chainTokens.map(async (inst) => {
-            const ltp = await fetchLiveLTP(broker.clientId, broker.apiSecret, inst.exchange, inst.id);
-            return { ...inst, ltp: ltp || 0 };
-        });
+        // 3. 🔥 THE ULTIMATE FIX: Fully Sequential Fetching (One by One)
+        // Dhan API ke strict rate limit se bachne ke liye hum ek-ek karke request bhejenge
+        const liveChain = [];
 
-        const liveChain = await Promise.all(ltpPromises);
+        for (const inst of chainTokens) {
+            try {
+                // Ek request jayegi, uska response aayega, tabhi dusri jayegi
+                const ltp = await fetchLiveLTP(broker.clientId, broker.apiSecret, inst.exchange, inst.id);
+                liveChain.push({ ...inst, ltp: ltp || 0 });
+            } catch (err) {
+                liveChain.push({ ...inst, ltp: 0 });
+            }
+            
+            // Dhan API ko lagna chahiye ki normal traffic hai (100 millisecond ka chhota gap)
+            await new Promise(resolve => setTimeout(resolve, 100)); 
+        }
+
         const validOptions = liveChain.filter(o => o.ltp > 0);
 
         if (validOptions.length === 0) {
