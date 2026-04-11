@@ -1828,6 +1828,9 @@ const { placeDhanOrder, fetchLiveLTP, fetchDhanHistoricalData } = require('../se
 const { calculateIndicator, extractParams, evaluateCondition } = require('../services/indicatorService'); // 👈 NAYA
 const { getOptionSecurityId } = require('../services/instrumentService');
 
+const { getImpliedVolatility } = require('implied-volatility');
+const { getDelta } = require('greeks');
+
 
 console.log("🚀 Trading Engine Initialized...");
 
@@ -2077,10 +2080,43 @@ const findStrikeByLivePremium = async (baseSymbol, currentSpotPrice, optType, re
             selectedOption = filtered.length > 0 ? filtered[0] : null;
         }
         else if (criteria === 'Delta') {
-            // 🔥 NOTE: Exact Delta ke liye Black-Scholes formula lagana padta hai.
-            // Abhi ke liye hum ise 'ATM' pe bhej rahe hain. Ise hum aage chal kar external library (implied-volatility) se banayenge.
-            console.log("⚠️ Delta calculation requires Greeks library. Using ATM for now.");
-            return getOptionSecurityId(baseSymbol, currentSpotPrice, "ATM pt", "ATM", optType, requestedExpiry);
+            // 🔥 ADVANCED BLACK-SCHOLES DELTA SCANNER 🔥
+            console.log("🧮 Calculating Live Delta using Black-Scholes Model...");
+            
+            // 1. Time to Expiry (T) nikaalein (Saalo me, e.g., 5 days = 5/365)
+            // Dhan API ya format ke hisab se requestedExpiry ko parse karein
+            const expiryDate = new Date(requestedExpiry);
+            const today = new Date();
+            // Agar expiry aaj hi hai, toh kam se kam 0.5 day maan lete hain taaki math crash na ho
+            const daysToExpiry = Math.max(0.5, (expiryDate - today) / (1000 * 60 * 60 * 24)); 
+            const t = daysToExpiry / 365;
+            
+            const riskFreeRate = 0.10; // India me 10% risk-free rate standard maana jata hai
+            const callPutParam = optType.toUpperCase() === 'CE' ? 'call' : 'put';
+
+            // 2. Har strike ka IV aur Delta calculate karein
+            const optionsWithDelta = validOptions.map(opt => {
+                // A. Calculate Implied Volatility (IV) from Live Premium (LTP)
+                let iv = getImpliedVolatility(opt.ltp, currentSpotPrice, opt.strike, t, riskFreeRate, callPutParam);
+                
+                // Deep ITM/OTM me math kabhi fail ho sakta hai, toh fallback 20% IV rakhenge
+                if (isNaN(iv) || iv === 0) iv = 0.20; 
+
+                // B. Calculate Delta
+                let delta = getDelta(currentSpotPrice, opt.strike, t, iv, riskFreeRate, callPutParam);
+                
+                // Put ka delta negative hota hai (-0.5), compare karne ke liye ise absolute (positive) bana lenge
+                const absDelta = Math.abs(delta);
+                
+                return { ...opt, iv, delta: absDelta, rawDelta: delta };
+            });
+
+            // 3. User ke target Delta ke sabse kareeb (closest) wali strike dhundhein
+            selectedOption = optionsWithDelta.reduce((prev, curr) => 
+                Math.abs(curr.delta - targetVal) < Math.abs(prev.delta - targetVal) ? curr : prev
+            );
+
+            console.log(`✅ Delta Matched! Target: ${targetVal} | Found: ${selectedOption.delta.toFixed(2)} (Strike: ${selectedOption.strike})`);
         }
 
         if (selectedOption) {

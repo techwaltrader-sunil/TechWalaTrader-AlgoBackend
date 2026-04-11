@@ -18,6 +18,8 @@
     "csv-parser": "^3.2.0",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
+    "greeks": "^1.0.0",
+    "implied-volatility": "^1.0.0",
     "moment-timezone": "^0.6.1",
     "mongoose": "^9.1.5",
     "node-cron": "^4.2.1",
