@@ -2020,6 +2020,23 @@ const getIndicatorSignal = async (strategy, broker, baseSymbol) => {
 
 
 // ==========================================
+// 🧮 NATIVE BLACK-SCHOLES MATH HELPERS (No External Lib Needed for Delta)
+// ==========================================
+const normalCDF = (x) => {
+    const t = 1 / (1 + 0.2316419 * Math.abs(x));
+    const d = 0.39894228 * Math.exp(-x * x / 2);
+    const prob = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+    return x > 0 ? 1 - prob : prob;
+};
+
+const calculateBSDelta = (S, K, t, v, r, type) => {
+    if (v <= 0 || t <= 0) return type === 'call' ? (S > K ? 1 : 0) : (S < K ? -1 : 0);
+    const d1 = (Math.log(S / K) + (r + (v * v) / 2) * t) / (v * Math.sqrt(t));
+    const delta = normalCDF(d1);
+    return type === 'call' ? delta : delta - 1;
+};
+
+// ==========================================
 // 🔍 LIVE OPTION CHAIN SCANNER (For CP & Delta)
 // ==========================================
 const findStrikeByLivePremium = async (baseSymbol, currentSpotPrice, optType, requestedExpiry, criteria, targetValue, broker) => {
@@ -2029,14 +2046,13 @@ const findStrikeByLivePremium = async (baseSymbol, currentSpotPrice, optType, re
         const step = getStrikeStep(baseSymbol);
         const atmStrike = Math.round(currentSpotPrice / step) * step;
 
-        // 1. ATM ke aas-paas ab sirf 13 Strikes ki list banayein (6 ITM, 6 OTM, 1 ATM)
-        // Range kam karne se requests aadhi ho jayengi
+        // 1. ATM ke aas-paas sirf 13 Strikes ki list banayein (6 ITM, 6 OTM)
         const strikesToCheck = [];
         for (let i = -6; i <= 6; i++) {
             strikesToCheck.push(atmStrike + (i * step));
         }
 
-        // 2. In sabhi 13 strikes ka Security ID (Token) nikalein
+        // 2. Security ID (Token) nikalein
         const chainTokens = [];
         for (const strike of strikesToCheck) {
             const inst = getOptionSecurityId(baseSymbol, strike, "ATM pt", "ATM", optType, requestedExpiry);
@@ -2045,9 +2061,8 @@ const findStrikeByLivePremium = async (baseSymbol, currentSpotPrice, optType, re
 
         if (chainTokens.length === 0) return null;
 
-        // 3. 🔥 THE GUARANTEED FIX: 350ms Delay (Max 3 req/sec)
+        // 3. 🔥 THE GUARANTEED RATE LIMIT FIX: 1000ms (1 Second) Delay per request
         const liveChain = [];
-
         for (const inst of chainTokens) {
             try {
                 const ltp = await fetchLiveLTP(broker.clientId, broker.apiSecret, inst.exchange, inst.id);
@@ -2056,70 +2071,58 @@ const findStrikeByLivePremium = async (baseSymbol, currentSpotPrice, optType, re
                 liveChain.push({ ...inst, ltp: 0 });
             }
             
-            // Dhan API ko normal human traffic dikhane ke liye 350 millisecond ka delay
-            await new Promise(resolve => setTimeout(resolve, 350)); 
+            // Dhan API ko lagna chahiye ki manual click ho raha hai (1 second ka gap)
+            await new Promise(resolve => setTimeout(resolve, 1000)); 
         }
 
         const validOptions = liveChain.filter(o => o.ltp > 0);
 
         if (validOptions.length === 0) {
-            console.log("⚠️ Option chain ke live prices nahi mile.");
+            console.log("⚠️ Option chain ke live prices nahi mile (Rate Limit or Weekend).");
             return null;
         }
 
-        // 4. User ke Criteria ke hisab se best Premium dhundhein
+        // 4. User ke Criteria ke hisab se best Strike dhundhein
         let selectedOption = null;
         const targetVal = parseFloat(targetValue);
 
         if (criteria === 'CP') {
-            // Jo target ke sabse kareeb (closest) ho
-            selectedOption = validOptions.reduce((prev, curr) => 
-                Math.abs(curr.ltp - targetVal) < Math.abs(prev.ltp - targetVal) ? curr : prev
-            );
+            selectedOption = validOptions.reduce((prev, curr) => Math.abs(curr.ltp - targetVal) < Math.abs(prev.ltp - targetVal) ? curr : prev);
         } 
         else if (criteria === 'CP >=') {
-            // Target se bada ya barabar, aur usme sabse sasta
             const filtered = validOptions.filter(o => o.ltp >= targetVal).sort((a, b) => a.ltp - b.ltp);
             selectedOption = filtered.length > 0 ? filtered[0] : null;
         } 
         else if (criteria === 'CP <=') {
-            // Target se chhota ya barabar, aur usme sabse mehanga
             const filtered = validOptions.filter(o => o.ltp <= targetVal).sort((a, b) => b.ltp - a.ltp);
             selectedOption = filtered.length > 0 ? filtered[0] : null;
         }
         else if (criteria === 'Delta') {
-            // 🔥 ADVANCED BLACK-SCHOLES DELTA SCANNER 🔥
-            console.log("🧮 Calculating Live Delta using Black-Scholes Model...");
+            // 🔥 NATIVE BLACK-SCHOLES CALCULATION (Never Returns 0.00 by mistake)
+            console.log("🧮 Calculating Live Delta using Native Black-Scholes Math...");
             
-            // 1. Time to Expiry (T) nikaalein (Saalo me, e.g., 5 days = 5/365)
-            // Dhan API ya format ke hisab se requestedExpiry ko parse karein
             const expiryDate = new Date(requestedExpiry);
             const today = new Date();
-            // Agar expiry aaj hi hai, toh kam se kam 0.5 day maan lete hain taaki math crash na ho
             const daysToExpiry = Math.max(0.5, (expiryDate - today) / (1000 * 60 * 60 * 24)); 
             const t = daysToExpiry / 365;
-            
-            const riskFreeRate = 0.10; // India me 10% risk-free rate standard maana jata hai
+            const riskFreeRate = 0.10; 
             const callPutParam = optType.toUpperCase() === 'CE' ? 'call' : 'put';
 
-            // 2. Har strike ka IV aur Delta calculate karein
             const optionsWithDelta = validOptions.map(opt => {
-                // A. Calculate Implied Volatility (IV) from Live Premium (LTP)
-                let iv = getImpliedVolatility(opt.ltp, currentSpotPrice, opt.strike, t, riskFreeRate, callPutParam);
-                
-                // Deep ITM/OTM me math kabhi fail ho sakta hai, toh fallback 20% IV rakhenge
-                if (isNaN(iv) || iv === 0) iv = 0.20; 
+                let iv = 0.15; // Default 15% IV (Safe fallback)
+                try {
+                    // Try getting exact IV from library
+                    const calcIv = getImpliedVolatility(opt.ltp, currentSpotPrice, opt.strike, t, riskFreeRate, callPutParam);
+                    if (!isNaN(calcIv) && calcIv > 0) iv = calcIv;
+                } catch(e) { /* Ignore IV calculation errors */ }
 
-                // B. Calculate Delta
-                let delta = getDelta(currentSpotPrice, opt.strike, t, iv, riskFreeRate, callPutParam);
-                
-                // Put ka delta negative hota hai (-0.5), compare karne ke liye ise absolute (positive) bana lenge
+                // Use Native BS Formula for bulletproof Delta
+                let delta = calculateBSDelta(currentSpotPrice, opt.strike, t, iv, riskFreeRate, callPutParam);
                 const absDelta = Math.abs(delta);
                 
                 return { ...opt, iv, delta: absDelta, rawDelta: delta };
             });
 
-            // 3. User ke target Delta ke sabse kareeb (closest) wali strike dhundhein
             selectedOption = optionsWithDelta.reduce((prev, curr) => 
                 Math.abs(curr.delta - targetVal) < Math.abs(prev.delta - targetVal) ? curr : prev
             );
@@ -2128,11 +2131,10 @@ const findStrikeByLivePremium = async (baseSymbol, currentSpotPrice, optType, re
         }
 
         if (selectedOption) {
-            console.log(`✅ Premium Matched! Strike: ${selectedOption.strike} ${optType} | LTP: ₹${selectedOption.ltp}`);
+            console.log(`✅ Premium/Delta Matched! Strike: ${selectedOption.strike} ${optType} | LTP: ₹${selectedOption.ltp}`);
             return selectedOption;
         }
 
-        console.log(`❌ No strike matched the premium criteria.`);
         return null;
 
     } catch (error) {
@@ -2140,6 +2142,7 @@ const findStrikeByLivePremium = async (baseSymbol, currentSpotPrice, optType, re
         return null;
     }
 };
+
 
 // ==========================================
 // ⚙️ MAIN CRON JOB
