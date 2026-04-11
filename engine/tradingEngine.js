@@ -1572,7 +1572,21 @@ cron.schedule('*/30 * * * * *', async () => {
 
                                 let stepValue = getStrikeStep(baseSymbol);
                                 let targetStrikePrice = Math.round(currentSpotPrice / stepValue) * stepValue;
-                                const instrument = getOptionSecurityId(baseSymbol, targetStrikePrice, optType);
+                                // const instrument = getOptionSecurityId(baseSymbol, targetStrikePrice, optType);
+
+                                // 🔥 THE FIX: Passed all required parameters to getOptionSecurityId
+                                const strikeCriteria = leg.strikeCriteria || "ATM pt";
+                                const strikeType = leg.strikeType || "ATM";
+                                const requestedExpiry = leg.expiry || "WEEKLY";
+
+                                const instrument = getOptionSecurityId(
+                                    baseSymbol, 
+                                    currentSpotPrice, // Dhyaan dein: Yahan targetStrikePrice nahi, sidha Spot Price bhejna hai
+                                    strikeCriteria, 
+                                    strikeType, 
+                                    optType, 
+                                    requestedExpiry
+                                );
                                 
                                 if (!instrument) continue;
 
