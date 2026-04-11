@@ -2098,17 +2098,19 @@ const findStrikeByLivePremium = async (baseSymbol, currentSpotPrice, optType, re
             selectedOption = filtered.length > 0 ? filtered[0] : null;
         }
         else if (criteria === 'Delta') {
-            // 🔥 NATIVE BLACK-SCHOLES CALCULATION (Never Returns 0.00 by mistake)
+            // 🔥 NATIVE BLACK-SCHOLES CALCULATION
             console.log("🧮 Calculating Live Delta using Native Black-Scholes Math...");
             
-            const expiryDate = new Date(requestedExpiry);
-            const today = new Date();
-            const daysToExpiry = Math.max(0.5, (expiryDate - today) / (1000 * 60 * 60 * 24)); 
-            const t = daysToExpiry / 365;
             const riskFreeRate = 0.10; 
             const callPutParam = optType.toUpperCase() === 'CE' ? 'call' : 'put';
+            const today = new Date();
 
             const optionsWithDelta = validOptions.map(opt => {
+                // 🔥 THE FIX: Yahan "MONTHLY/WEEKLY" ke badle actual resolved date (opt.expiry) use karenge
+                const expiryDate = new Date(opt.expiry);
+                const daysToExpiry = Math.max(0.5, (expiryDate - today) / (1000 * 60 * 60 * 24)); 
+                const t = daysToExpiry / 365;
+
                 let iv = 0.15; // Default 15% IV (Safe fallback)
                 try {
                     // Try getting exact IV from library
