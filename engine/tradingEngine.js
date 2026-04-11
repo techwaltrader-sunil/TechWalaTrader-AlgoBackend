@@ -2029,37 +2029,35 @@ const findStrikeByLivePremium = async (baseSymbol, currentSpotPrice, optType, re
         const step = getStrikeStep(baseSymbol);
         const atmStrike = Math.round(currentSpotPrice / step) * step;
 
-        // 1. ATM ke aas-paas 20 Strikes ki list banayein (10 ITM, 10 OTM)
+        // 1. ATM ke aas-paas ab sirf 13 Strikes ki list banayein (6 ITM, 6 OTM, 1 ATM)
+        // Range kam karne se requests aadhi ho jayengi
         const strikesToCheck = [];
-        for (let i = -10; i <= 10; i++) {
+        for (let i = -6; i <= 6; i++) {
             strikesToCheck.push(atmStrike + (i * step));
         }
 
-        // 2. In sabhi 20 strikes ka Security ID (Token) nikalein
+        // 2. In sabhi 13 strikes ka Security ID (Token) nikalein
         const chainTokens = [];
         for (const strike of strikesToCheck) {
-            // Yahan hum trick use kar rahe hain: Forcefully us exact strike ka token nikalne ke liye
             const inst = getOptionSecurityId(baseSymbol, strike, "ATM pt", "ATM", optType, requestedExpiry);
             if (inst) chainTokens.push(inst);
         }
 
         if (chainTokens.length === 0) return null;
 
-        // 3. 🔥 THE ULTIMATE FIX: Fully Sequential Fetching (One by One)
-        // Dhan API ke strict rate limit se bachne ke liye hum ek-ek karke request bhejenge
+        // 3. 🔥 THE GUARANTEED FIX: 350ms Delay (Max 3 req/sec)
         const liveChain = [];
 
         for (const inst of chainTokens) {
             try {
-                // Ek request jayegi, uska response aayega, tabhi dusri jayegi
                 const ltp = await fetchLiveLTP(broker.clientId, broker.apiSecret, inst.exchange, inst.id);
                 liveChain.push({ ...inst, ltp: ltp || 0 });
             } catch (err) {
                 liveChain.push({ ...inst, ltp: 0 });
             }
             
-            // Dhan API ko lagna chahiye ki normal traffic hai (100 millisecond ka chhota gap)
-            await new Promise(resolve => setTimeout(resolve, 100)); 
+            // Dhan API ko normal human traffic dikhane ke liye 350 millisecond ka delay
+            await new Promise(resolve => setTimeout(resolve, 350)); 
         }
 
         const validOptions = liveChain.filter(o => o.ltp > 0);
