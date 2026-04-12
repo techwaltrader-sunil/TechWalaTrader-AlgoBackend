@@ -257,6 +257,9 @@
 const axios = require('axios');
 const csv = require('csv-parser');
 
+// 🔥 THE FIX: Sleep function add karein
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 const DHAN_CSV_URL = "https://images.dhan.co/api-data/api-scrip-master.csv";
 
 let nfoInstruments = [];
@@ -406,4 +409,4 @@ const getOptionSecurityId = (baseSymbol, spotPrice, strikeCriteria, strikeType, 
     };
 };
 
-module.exports = { downloadAndParseInstruments, getOptionSecurityId, getStrikeStep };
+module.exports = { downloadAndParseInstruments, getOptionSecurityId, getStrikeStep, sleep};
