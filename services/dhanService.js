@@ -161,27 +161,7 @@ const fetchDhanHistoricalData = async (clientId, accessToken, securityId, exchan
     try {
         // 🔥 FIX: Check karo ki Timeframe Daily (1D) hai ya Intraday (5m, 15m)
         const isDaily = (interval.toUpperCase() === "D" || interval.toUpperCase() === "1D");
-        
-        // Daily aur Intraday ke endpoints alag hote hain
-        // const url = isDaily 
-        //     ? 'https://api.dhan.co/charts/historical' 
-        //     : 'https://api.dhan.co/charts/intraday';
-        
-        // const payload = {
-        //     securityId: securityId.toString(),
-        //     exchangeSegment: exchangeSegment, 
-        //     instrument: instrumentType,       
-        //     fromDate: fromDate,               
-        //     toDate: toDate,
-        // };
-
-        // // Dhan ko Daily me 'expiryCode' chahiye hota hai, aur Intraday me 'interval'
-        // if (isDaily) {
-        //     payload.expiryCode = 0; 
-        // } else {
-        //     payload.interval = interval;
-        // }
-
+       
         const url = isDaily 
             ? 'https://api.dhan.co/v2/charts/historical' 
             : 'https://api.dhan.co/v2/charts/intraday';

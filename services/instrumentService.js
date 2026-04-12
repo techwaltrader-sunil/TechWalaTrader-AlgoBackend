@@ -406,4 +406,4 @@ const getOptionSecurityId = (baseSymbol, spotPrice, strikeCriteria, strikeType, 
     };
 };
 
-module.exports = { downloadAndParseInstruments, getOptionSecurityId };
+module.exports = { downloadAndParseInstruments, getOptionSecurityId, getStrikeStep };
