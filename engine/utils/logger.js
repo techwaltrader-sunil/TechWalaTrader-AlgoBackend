@@ -1,7 +1,8 @@
 // File: src/engine/utils/logger.js
 const AlgoTradeLog = require('../../models/AlgoTradeLog'); // Apne DB model ka sahi path daalein
 
-export const createAndEmitLog = async (broker, symbol, action, quantity, status, message, orderId = "N/A") => {
+// 🔥 Yahan se 'export' hata diya gaya hai
+const createAndEmitLog = async (broker, symbol, action, quantity, status, message, orderId = "N/A") => {
     try {
         const newLog = await AlgoTradeLog.create({ 
             brokerId: broker._id, 
@@ -18,4 +19,9 @@ export const createAndEmitLog = async (broker, symbol, action, quantity, status,
     } catch (err) { 
         console.error("❌ Log Error:", err.message); 
     }
+};
+
+// 🔥 Niche module.exports laga diya gaya hai
+module.exports = {
+    createAndEmitLog
 };

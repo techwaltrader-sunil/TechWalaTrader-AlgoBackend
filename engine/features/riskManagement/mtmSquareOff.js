@@ -9,7 +9,8 @@ const { createAndEmitLog } = require('../../utils/logger.js');
  * 💰 MTM (MAX PROFIT / MAX LOSS) SQUARE-OFF LOGIC
  * Ye function check karta hai ki user ka target ya stop-loss hit hua ya nahi.
  */
-export const handleMtmSquareOff = async (deployment, strategy, executionLocks, exitLockKey) => {
+// 🔥 Yahan se 'export' hata diya gaya hai
+const handleMtmSquareOff = async (deployment, strategy, executionLocks, exitLockKey) => {
     try {
         const riskData = strategy.data?.riskManagement || {};
         const maxProfit = parseFloat(riskData.maxProfit) || 0;
@@ -110,4 +111,9 @@ export const handleMtmSquareOff = async (deployment, strategy, executionLocks, e
     } catch (error) {
         console.error("❌ MTM Module Error:", error.message);
     }
+};
+
+// 🔥 Niche module.exports laga diya gaya hai
+module.exports = {
+    handleMtmSquareOff
 };

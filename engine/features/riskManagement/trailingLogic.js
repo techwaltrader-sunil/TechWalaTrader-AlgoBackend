@@ -6,8 +6,8 @@ const { createAndEmitLog } = require('../../utils/logger.js');
 /**
  * 📈 PROFIT TRAILING LOGIC (Lock, Trail, Lock & Trail)
  */
-// 🔥 2. FUNCTION SIGNATURE ME 'broker' ADD KIYA
-export const processTrailingLogic = async (deployment, strategy, liveLtp, broker) => {
+// 🔥 Yahan se 'export' hata diya gaya hai
+const processTrailingLogic = async (deployment, strategy, liveLtp, broker) => {
     try {
         const riskData = strategy.data?.riskManagement || {};
         const trailType = riskData.profitTrailing;
@@ -91,4 +91,9 @@ export const processTrailingLogic = async (deployment, strategy, liveLtp, broker
     } catch (error) {
         console.error("❌ Trailing Module Error:", error.message);
     }
+};
+
+// 🔥 Niche module.exports laga diya gaya hai
+module.exports = {
+    processTrailingLogic
 };

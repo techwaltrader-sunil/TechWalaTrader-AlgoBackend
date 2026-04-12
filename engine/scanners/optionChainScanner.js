@@ -9,14 +9,11 @@ const { fetchLiveLTP } = require('../../services/dhanService.js');
 // 3. 🔥 THE FIX: Strike aur Option ID nikalne ke liye humara naya Helper
 const { getStrikeStep, getOptionSecurityId } = require('../../services/instrumentService.js');
 
-// (Note: Agar 'getImpliedVolatility' ka function aapke paas hai, to usko bhi helpers.js me daal kar yahan import kar lijiye. Agar nahi hai, to engine waise bhi default 0.15 IV use kar lega, isliye koi dikkat nahi hai!)
-
-
-
 /**
  * 🔍 LIVE OPTION CHAIN SCANNER (For CP & Delta)
  */
-export const findStrikeByLivePremium = async (baseSymbol, currentSpotPrice, optType, requestedExpiry, criteria, targetValue, broker) => {
+// 🔥 Yahan se 'export' hata diya gaya hai
+const findStrikeByLivePremium = async (baseSymbol, currentSpotPrice, optType, requestedExpiry, criteria, targetValue, broker) => {
     try {
         console.log(`🔍 Scanning Live Option Chain for ${baseSymbol} | Target: ${criteria} ${targetValue}`);
         
@@ -110,4 +107,9 @@ export const findStrikeByLivePremium = async (baseSymbol, currentSpotPrice, optT
         console.error("❌ Option Chain Scanner Error:", error.message);
         return null;
     }
+};
+
+// 🔥 Niche module.exports laga diya gaya hai
+module.exports = {
+    findStrikeByLivePremium
 };

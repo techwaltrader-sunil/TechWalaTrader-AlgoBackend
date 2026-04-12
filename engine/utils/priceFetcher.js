@@ -4,7 +4,7 @@ const axios = require('axios');
 /**
  * 🚀 THE FINAL PRICE FETCHER (TradingView + Yahoo Fallback)
  */
-export const fetchLivePrice = async (symbol) => {
+const fetchLivePrice = async (symbol) => {
     const baseSymbol = symbol.toUpperCase();
     try {
         console.log(`📡 Fetching Live Price for ${baseSymbol}...`);
@@ -68,4 +68,9 @@ export const fetchLivePrice = async (symbol) => {
         console.error(`❌ [DEBUG] Code Crash in fetchLivePrice:`, error.message);
         return null;
     }
+};
+
+// 🔥 YAHAN EXPORT KARNA HAI
+module.exports = {
+    fetchLivePrice
 };

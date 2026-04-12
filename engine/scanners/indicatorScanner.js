@@ -9,7 +9,8 @@ const { extractParams, calculateIndicator, evaluateCondition } = require('../../
 /**
  * 🧠 INDICATOR SIGNAL CHECKER
  */
-export const getIndicatorSignal = async (strategy, broker, baseSymbol) => {
+// 🔥 Yahan se 'export' hata diya gaya hai
+const getIndicatorSignal = async (strategy, broker, baseSymbol) => {
     try {
         const dhanIdMap = { "NIFTY": "13", "BANKNIFTY": "25", "FINNIFTY": "27", "MIDCPNIFTY": "118", "SENSEX": "51" };
         const spotSecurityId = dhanIdMap[baseSymbol] || "25";
@@ -91,4 +92,9 @@ export const getIndicatorSignal = async (strategy, broker, baseSymbol) => {
         console.error("❌ Indicator Eval Error:", e.message);
         return { long: false, short: false };
     }
+};
+
+// 🔥 Niche module.exports laga diya gaya hai
+module.exports = {
+    getIndicatorSignal
 };
