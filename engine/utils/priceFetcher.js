@@ -1,5 +1,5 @@
 // File: src/engine/utils/priceFetcher.js
-import axios from 'axios';
+const axios = require('axios');
 
 /**
  * 🚀 THE FINAL PRICE FETCHER (TradingView + Yahoo Fallback)

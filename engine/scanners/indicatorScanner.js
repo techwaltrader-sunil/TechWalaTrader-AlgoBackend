@@ -1,10 +1,10 @@
 // File: src/engine/scanners/indicatorScanner.js
 
 // 1. Dhan historical data
-import { fetchDhanHistoricalData } from '../../services/dhanService.js'; 
+const { fetchDhanHistoricalData } = require('../../services/dhanService.js'); 
 
 // 2. 🔥 THE FIX: Aapka pehle se bana hua Indicator Service!
-import { extractParams, calculateIndicator, evaluateCondition } from '../../services/indicatorService.js';
+const { extractParams, calculateIndicator, evaluateCondition } = require('../../services/indicatorService.js');
 
 /**
  * 🧠 INDICATOR SIGNAL CHECKER

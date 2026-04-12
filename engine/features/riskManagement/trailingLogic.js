@@ -1,7 +1,7 @@
 // File: src/engine/features/riskManagement/trailingLogic.js
 
 // 🔥 1. IMPORT LOGGER
-import { createAndEmitLog } from '../../utils/logger.js';
+const { createAndEmitLog } = require('../../utils/logger.js');
 
 /**
  * 📈 PROFIT TRAILING LOGIC (Lock, Trail, Lock & Trail)

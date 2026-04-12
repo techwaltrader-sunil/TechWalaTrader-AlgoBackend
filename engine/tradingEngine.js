@@ -1889,27 +1889,27 @@
 // ==========================================
 // 🌟 MAIN TRADING ENGINE (THE MANAGER) 🌟
 // ==========================================
-import cron from 'node-cron';
-import moment from 'moment-timezone';
+const cron = require('node-cron');
+const moment = require('moment-timezone');
 
 // 📂 Models
-import Deployment from '../models/Deployment.js';
-import Broker from '../models/Broker.js';
+const Deployment = require('../models/Deployment.js');
+const Broker = require('../models/Broker.js');
 
 // 🛠️ Utilities & APIs (Inhe apne path ke hisab se set karein)
-import { sleep, getStrikeStep, getOptionSecurityId } from '../services/instrumentService.js';
-import { placeDhanOrder, fetchLiveLTP } from '../services/dhanService.js';
-import { fetchLivePrice } from './utils/priceFetcher.js';
-import { createAndEmitLog } from './utils/logger.js'; // Log function ko ek file me dal diya hai
+const { sleep, getStrikeStep, getOptionSecurityId } = require('../services/instrumentService.js');
+const { placeDhanOrder, fetchLiveLTP } = require('../services/dhanService.js');
+const { fetchLivePrice } = require('./utils/priceFetcher.js');
+const { createAndEmitLog } = require('./utils/logger.js'); // Log function ko ek file me dal diya hai
 
 // 🔍 Scanners
-import { findStrikeByLivePremium } from './scanners/optionChainScanner.js';
-import { getIndicatorSignal } from './scanners/indicatorScanner.js';  
+const { findStrikeByLivePremium } = require('./scanners/optionChainScanner.js');
+const { getIndicatorSignal } = require('./scanners/indicatorScanner.js');  
 
 // 🛡️ Risk Management & Advance Features
-import { handleMtmSquareOff } from './features/riskManagement/mtmSquareOff.js';
-import { processTrailingLogic } from './features/riskManagement/trailingLogic.js';
-import { handleMoveSlToCost } from './features/advanceFeatures/moveSlToCost.js';
+const { handleMtmSquareOff } = require('./features/riskManagement/mtmSquareOff.js');
+const { processTrailingLogic } = require('./features/riskManagement/trailingLogic.js');
+const { handleMoveSlToCost } = require('./features/advanceFeatures/moveSlToCost.js');
 
 // Global execution locks (Double entry se bachne ke liye)
 const executionLocks = new Set();

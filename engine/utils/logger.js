@@ -1,5 +1,5 @@
 // File: src/engine/utils/logger.js
-import AlgoTradeLog from '../../models/AlgoTradeLog'; // Apne DB model ka sahi path daalein
+const AlgoTradeLog = require('../../models/AlgoTradeLog'); // Apne DB model ka sahi path daalein
 
 export const createAndEmitLog = async (broker, symbol, action, quantity, status, message, orderId = "N/A") => {
     try {

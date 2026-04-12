@@ -1,9 +1,9 @@
 // File: src/engine/features/riskManagement/mtmSquareOff.js
 
 // 📌 IMPORTS (Apne folder structure ke hisab se '../' adjust kar lijiyega agar zarurat pade)
-import Broker from '../../../models/Broker.js'; 
-import { fetchLiveLTP, placeDhanOrder } from '../../../services/dhanService.js'; 
-import { createAndEmitLog } from '../../utils/logger.js';
+const Broker = require('../../../models/Broker.js'); 
+const { fetchLiveLTP, placeDhanOrder } = require('../../../services/dhanService.js'); 
+const { createAndEmitLog } = require('../../utils/logger.js');
 
 /**
  * 💰 MTM (MAX PROFIT / MAX LOSS) SQUARE-OFF LOGIC

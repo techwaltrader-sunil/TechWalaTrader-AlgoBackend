@@ -1,13 +1,13 @@
 // File: src/engine/scanners/optionChainScanner.js
 
 // 1. Delta calculate karne ka math
-import { calculateBSDelta, getImpliedVolatility } from '../utils/blackScholes.js';
+const { calculateBSDelta, getImpliedVolatility } = require('../utils/blackScholes.js');
 
 // 2. 🔥 THE FIX: Live LTP mangane ke liye humara main Dhan Service
-import { fetchLiveLTP } from '../../services/dhanService.js';
+const { fetchLiveLTP } = require('../../services/dhanService.js');
 
 // 3. 🔥 THE FIX: Strike aur Option ID nikalne ke liye humara naya Helper
-import { getStrikeStep, getOptionSecurityId } from '../../services/instrumentService.js';
+const { getStrikeStep, getOptionSecurityId } = require('../../services/instrumentService.js');
 
 // (Note: Agar 'getImpliedVolatility' ka function aapke paas hai, to usko bhi helpers.js me daal kar yahan import kar lijiye. Agar nahi hai, to engine waise bhi default 0.15 IV use kar lega, isliye koi dikkat nahi hai!)
 
