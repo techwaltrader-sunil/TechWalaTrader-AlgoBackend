@@ -2121,7 +2121,6 @@
 // });
 
 
-
 // ==========================================
 // 🌟 MAIN TRADING ENGINE (THE MANAGER) 🌟
 // ==========================================
@@ -2153,16 +2152,17 @@ const { handleExitAllOnSlTgt } = require('./features/advanceFeatures/exitAllOnSl
 
 // Global execution locks (Double entry se bachne ke liye)
 const executionLocks = new Set();
-let isEngineRunning = false; // 🔥 FIX: Overlapping Cron Job Lock
+let isEngineRunning = false; // 🔥 MASTER LOCK: Overlapping Cron Job ko rokne ke liye
 
 // ==========================================
 // ⚙️ THE CORE CRON JOB LOOP (Runs every 30s)
 // ==========================================
 cron.schedule('*/30 * * * * *', async () => {
     
-    // 🔥 THE 805 FIX: Agar purana loop abhi chal raha hai, to naya loop skip kar do!
+    // 🔥 THE ULTIMATE 805 FIX: Agar purana loop chal raha hai (kyunki usme sleep delays hain), 
+    // to naye 30-second wale trigger ko ignore maro, taaki Dhan API par double attack na ho.
     if (isEngineRunning) {
-        console.log("⏳ Engine already processing, skipping overlapping tick...");
+        console.log("⏳ Engine is taking time (Processing active trades), skipping overlapping tick...");
         return; 
     }
     
@@ -2212,7 +2212,7 @@ cron.schedule('*/30 * * * * *', async () => {
                 let currentSignalType = "NONE";
                 const strategyType = strategy.type || "Time Based"; 
 
-                // 🟢 A. INDICATOR BASED CHECK (Delegated to Scanner)
+                // 🟢 A. INDICATOR BASED CHECK
                 if (strategyType === "Indicator Based") {
                     const broker = await Broker.findById(deployment.brokers[0]);
                     if (broker && broker.engineOn) {
@@ -2250,7 +2250,7 @@ cron.schedule('*/30 * * * * *', async () => {
                                 // 🎯 STRIKE SELECTION & API REUSE
                                 const strikeCriteria = leg.strikeCriteria || "ATM pt";
                                 let instrument = null;
-                                let preFetchedLtp = null; // 🔥 FIX: Save API Call
+                                let preFetchedLtp = null; // 🔥 SMART FIX: Save API Call
 
                                 if (["CP", "CP >=", "CP <=", "Delta"].includes(strikeCriteria)) {
                                     instrument = await findStrikeByLivePremium(baseSymbol, currentSpotPrice, optType, leg.expiry || "WEEKLY", strikeCriteria, leg.strikeType || "ATM", broker);
@@ -2264,7 +2264,7 @@ cron.schedule('*/30 * * * * *', async () => {
                                 // 🟢 PAPER TRADE EXECUTION
                                 if (deployment.executionType === 'FORWARD_TEST' || deployment.executionType === 'PAPER') {
                                     await sleep(500); 
-                                    // 🔥 API REUSE: Agar Scanner ne LTP nikal liya hai to wahi use karo
+                                    // 🔥 API REUSE: Agar Scanner ne Premium pehle hi nikal liya hai, to Dhan ko dobara API mat maro!
                                     const entryPrice = preFetchedLtp || await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id) || currentSpotPrice;
                                     
                                     deployment.tradedSecurityId = instrument.id;
@@ -2295,7 +2295,7 @@ cron.schedule('*/30 * * * * *', async () => {
                                         deployment.tradeAction = tradeAction;
                                         deployment.tradedSymbol = instrument.tradingSymbol;
 
-                                        await sleep(2000); // 🔥 805 FIX: 2 Seconds gap
+                                        await sleep(2000); // GAP Before checking Status
                                         const entryPrice = await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id);
                                         deployment.entryPrice = entryPrice || 0;
 
@@ -2329,13 +2329,10 @@ cron.schedule('*/30 * * * * *', async () => {
                     if (broker && broker.engineOn) {
                         const exitAction = deployment.tradeAction === 'BUY' ? 'SELL' : 'BUY';
                         
-                        // Paper Exit
                         if (deployment.executionType === 'FORWARD_TEST' || deployment.executionType === 'PAPER') {
                             await sleep(500); 
                             const exitLtp = await fetchLiveLTP(broker.clientId, broker.apiSecret, deployment.tradedExchange, deployment.tradedSecurityId) || 0;
-                            // PnL Logic yahan aayega...
                         } 
-                        // Live Exit
                         else if (deployment.executionType === 'LIVE') {
                             const orderData = { action: exitAction, quantity: deployment.tradedQty, securityId: deployment.tradedSecurityId, segment: deployment.tradedExchange };
                             await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
@@ -2349,13 +2346,13 @@ cron.schedule('*/30 * * * * *', async () => {
             // ==============================================================
             if (deployment.tradedSecurityId && deployment.status === 'ACTIVE') {
                 
-                // MTM Max Profit / Loss Check
+                // Risk Management: MTM Max Profit / Loss Check
                 await handleMtmSquareOff(deployment, strategy, executionLocks, exitLockKey);
 
-                // Trailing SL & Profit Lock Check
+                // Risk Management: Trailing SL & Profit Lock Check
                 const broker = await Broker.findById(deployment.brokers[0]); 
                 if (broker) {
-                    await sleep(2000); // 🔥 805 FIX: 2 Seconds gap before hitting Dhan again
+                    await sleep(2000); // 🔥 805 FIX: Gap before fetching LTP for Trailing
                     
                     const liveLtp = await fetchLiveLTP(broker.clientId, broker.apiSecret, deployment.tradedExchange, deployment.tradedSecurityId);
                     
@@ -2380,14 +2377,16 @@ cron.schedule('*/30 * * * * *', async () => {
                         }
                     }
                 }
-
-                // Future Advance Features:
-                // if (strategy.data?.advanceSettings?.waitAndTrade) await handleWaitAndTrade(deployment, strategy, liveLtp);
             }
         }
     } catch (error) { 
         console.error("❌ Trading Engine Core Error:", error); 
     } finally {
-        isEngineRunning = false; // 🔥 Engine loop khatam, lock khol diya!
+        isEngineRunning = false; // 🔥 CHABI: Engine ka kaam khatam, lock khol diya naye loop ke liye!
     }
 });
+
+
+
+
+
