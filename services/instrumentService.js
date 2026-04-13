@@ -254,6 +254,169 @@
 // module.exports = { downloadAndParseInstruments, getOptionSecurityId };
 
 
+
+
+
+// const axios = require('axios');
+// const csv = require('csv-parser');
+
+// // 🔥 THE FIX: Sleep function add karein
+// const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// const DHAN_CSV_URL = "https://images.dhan.co/api-data/api-scrip-master.csv";
+
+// let nfoInstruments = [];
+
+// const downloadAndParseInstruments = async () => {
+//     console.log("📥 Downloading Dhan Scrip Master CSV... Please wait.");
+//     try {
+//         const response = await axios({ method: 'get', url: DHAN_CSV_URL, responseType: 'stream' });
+//         const tempData = [];
+
+//         response.data
+//             .pipe(csv({ mapHeaders: ({ header }) => header.trim() }))
+//             .on('data', (row) => {
+//                 const instName = (row.SEM_INSTRUMENT_NAME || "").trim();
+//                 if (instName === 'OPTIDX' || instName === 'OPTSTK') {
+//                     tempData.push({
+//                         id: (row.SEM_SMST_SECURITY_ID || "").trim(),
+//                         customSymbol: (row.SEM_CUSTOM_SYMBOL || "").trim().toUpperCase(),
+//                         tradingSymbol: (row.SEM_TRADING_SYMBOL || "").trim().toUpperCase(),
+//                         strike: parseFloat(row.SEM_STRIKE_PRICE),
+//                         expiry: (row.SEM_EXPIRY_DATE || "").trim()
+//                     });
+//                 }
+//             })
+//             .on('end', () => {
+//                 nfoInstruments = tempData;
+//                 console.log(`✅ Dhan CSV Parsed Successfully! Loaded ${nfoInstruments.length} Options contracts.`);
+//             });
+
+//     } catch (error) {
+//         console.error("❌ Failed to download CSV:", error.message);
+//     }
+// };
+
+// // 🔥 NAYA HELPER: Instrument ke hisab se Strike Step nikalna
+// const getStrikeStep = (symbol) => {
+//     const sym = symbol.toUpperCase();
+//     if (sym.includes("BANKNIFTY") || sym.includes("SENSEX") || sym.includes("BANKEX")) return 100;
+//     if (sym.includes("FINNIFTY") || sym.includes("NIFTY")) return 50;
+//     if (sym.includes("MIDCPNIFTY") || sym.includes("MIDCAP")) return 25;
+//     return 50;
+// };
+
+// // 🔥 NAYA HELPER: OTM/ITM aur % ka Math karke exact Strike Price nikalna
+// const calculateTargetStrike = (spotPrice, baseSymbol, strikeCriteria, strikeType, optionType) => {
+//     const step = getStrikeStep(baseSymbol);
+//     const atmStrike = Math.round(spotPrice / step) * step; // Sabse pehle ATM nikalo
+
+//     if (!strikeType || strikeType === "ATM") return atmStrike;
+
+//     const isCall = ['CE', 'CALL'].includes(optionType.toUpperCase());
+//     const parts = strikeType.split(' '); // Example: ["ITM", "100"] ya ["OTM", "1.5%"]
+
+//     if (parts.length === 2) {
+//         const type = parts[0].toUpperCase(); // ITM ya OTM
+//         let offsetVal = parseFloat(parts[1].replace('%', '')); // 100 ya 1.5 nikal liya
+
+//         let offsetPoints = 0;
+        
+//         // 1. Agar Points me hai
+//         if (strikeCriteria === "ATM pt") {
+//             offsetPoints = offsetVal;
+//         } 
+//         // 2. Agar Percentage (%) me hai
+//         else if (strikeCriteria === "ATM %") {
+//             offsetPoints = (atmStrike * offsetVal) / 100;
+//         }
+
+//         // Offset ko round off karo step size ke hisab se (jaise 48 points aaya to 50 kar do)
+//         const steppedOffset = Math.round(offsetPoints / step) * step;
+
+//         // Math Logic: Call me ITM minus hota hai, Put me ITM plus hota hai
+//         if (type === 'ITM') {
+//             return isCall ? (atmStrike - steppedOffset) : (atmStrike + steppedOffset);
+//         } else if (type === 'OTM') {
+//             return isCall ? (atmStrike + steppedOffset) : (atmStrike - steppedOffset);
+//         }
+//     }
+    
+//     // Agar kuch samajh na aaye (Delta, CP wagera jo yahan handle nahi hote), to ATM bhej do
+//     return atmStrike; 
+// };
+
+// // 🔥 UPDATED FUNCTION: Ab ye Expiry aur Strike Criteria bhi handle karega
+// const getOptionSecurityId = (baseSymbol, spotPrice, strikeCriteria, strikeType, optionType, requestedExpiry = "WEEKLY") => {
+    
+//     // Naming Translation for Dhan API
+//     let targetBase = baseSymbol.toUpperCase().replace(' 50', '').trim();
+//     if (targetBase === "NIFTY BANK") targetBase = "BANKNIFTY";
+//     else if (targetBase === "NIFTY FIN SERVICE") targetBase = "FINNIFTY";
+//     else if (targetBase === "NIFTY MID SELECT") targetBase = "MIDCPNIFTY";
+
+//     const suffix = ['CE', 'CALL'].includes(optionType.toUpperCase()) ? 'CE' : 'PE';
+
+//     // 1. Pehle OTM/ITM ka Math lagakar exact strike dhundo
+//     const targetStrike = calculateTargetStrike(spotPrice, targetBase, strikeCriteria, strikeType, suffix);
+//     console.log(`🎯 Calculated Target Strike for ${targetBase} (Spot: ${spotPrice}): ${targetStrike} (${strikeType})`);
+
+//     // 2. CSV me matches filter karo
+//     const matches = nfoInstruments.filter(inst => {
+//         if (inst.strike !== targetStrike) return false;
+//         if (inst.id.length > 7) return false; // Block BSE for now (if not Bankex/Sensex)
+//         const ts = inst.tradingSymbol;
+//         const cs = inst.customSymbol;
+//         if (!ts.startsWith(targetBase) && !cs.startsWith(targetBase)) return false;
+//         if (!ts.endsWith(suffix) && !cs.endsWith(suffix)) return false;
+//         return true;
+//     });
+
+//     if (matches.length === 0) {
+//         console.log(`⚠️ Option Token NOT FOUND for: ${targetBase} ${targetStrike} ${suffix}`);
+//         return null;
+//     }
+
+//     // 3. 🔥 EXPIRY LOGIC 🔥
+//     // Saari unique expiries nikalo aur date ke hisab se sort karo
+//     const uniqueExpiries = [...new Set(matches.map(inst => inst.expiry.split(' ')[0]))]
+//                             .sort((a, b) => new Date(a) - new Date(b));
+
+//     let selectedExpiry = uniqueExpiries[0]; // Default: Current Weekly
+
+//     if (requestedExpiry === "NEXT WEEKLY" && uniqueExpiries.length > 1) {
+//         selectedExpiry = uniqueExpiries[1]; // Agle hafte wali
+//     } 
+//     else if (requestedExpiry === "MONTHLY") {
+//         // Current month ki aakhiri expiry dhundo
+//         const currentMonth = new Date(uniqueExpiries[0]).getMonth();
+//         const currentMonthExpiries = uniqueExpiries.filter(d => new Date(d).getMonth() === currentMonth);
+//         selectedExpiry = currentMonthExpiries[currentMonthExpiries.length - 1]; 
+        
+//         // Failsafe: Agar array khali ho jaye
+//         if (!selectedExpiry) selectedExpiry = uniqueExpiries[uniqueExpiries.length - 1];
+//     }
+
+//     console.log(`📅 Selecting Expiry: ${selectedExpiry} (Requested: ${requestedExpiry})`);
+
+//     // 4. Final Data dhundo jo hamari Selected Expiry se match kare
+//     const finalMatch = matches.find(m => m.expiry.startsWith(selectedExpiry)) || matches[0];
+
+//     return {
+//         id: finalMatch.id,
+//         exchange: "NSE_FNO", // Yahan BSE ka logic future me add kar sakte hain Sensex ke liye
+//         tradingSymbol: finalMatch.customSymbol || finalMatch.tradingSymbol,
+//         expiry: finalMatch.expiry.split(' ')[0],
+//         optionType: suffix === 'CE' ? 'CALL' : 'PUT',
+//         strike: finalMatch.strike
+//     };
+// };
+
+// module.exports = { downloadAndParseInstruments, getOptionSecurityId, getStrikeStep, sleep};
+
+
+
+
 const axios = require('axios');
 const csv = require('csv-parser');
 
@@ -296,7 +459,7 @@ const downloadAndParseInstruments = async () => {
 
 // 🔥 NAYA HELPER: Instrument ke hisab se Strike Step nikalna
 const getStrikeStep = (symbol) => {
-    const sym = symbol.toUpperCase();
+    const sym = (symbol || "").toUpperCase(); // Failsafe added
     if (sym.includes("BANKNIFTY") || sym.includes("SENSEX") || sym.includes("BANKEX")) return 100;
     if (sym.includes("FINNIFTY") || sym.includes("NIFTY")) return 50;
     if (sym.includes("MIDCPNIFTY") || sym.includes("MIDCAP")) return 25;
@@ -306,62 +469,57 @@ const getStrikeStep = (symbol) => {
 // 🔥 NAYA HELPER: OTM/ITM aur % ka Math karke exact Strike Price nikalna
 const calculateTargetStrike = (spotPrice, baseSymbol, strikeCriteria, strikeType, optionType) => {
     const step = getStrikeStep(baseSymbol);
-    const atmStrike = Math.round(spotPrice / step) * step; // Sabse pehle ATM nikalo
+    const atmStrike = Math.round(spotPrice / step) * step; 
 
-    if (!strikeType || strikeType === "ATM") return atmStrike;
+    if (!strikeType || String(strikeType).trim() === "ATM" || String(strikeType).trim() === "") return atmStrike;
 
-    const isCall = ['CE', 'CALL'].includes(optionType.toUpperCase());
-    const parts = strikeType.split(' '); // Example: ["ITM", "100"] ya ["OTM", "1.5%"]
+    const isCall = ['CE', 'CALL'].includes((optionType || "").toUpperCase());
+    const parts = String(strikeType).split(' '); 
 
-    if (parts.length === 2) {
-        const type = parts[0].toUpperCase(); // ITM ya OTM
-        let offsetVal = parseFloat(parts[1].replace('%', '')); // 100 ya 1.5 nikal liya
+    if (parts.length >= 2) {
+        const type = (parts[0] || "").toUpperCase(); 
+        let offsetVal = parseFloat(String(parts[1]).replace('%', '')) || 0; 
 
         let offsetPoints = 0;
-        
-        // 1. Agar Points me hai
         if (strikeCriteria === "ATM pt") {
             offsetPoints = offsetVal;
-        } 
-        // 2. Agar Percentage (%) me hai
-        else if (strikeCriteria === "ATM %") {
+        } else if (strikeCriteria === "ATM %") {
             offsetPoints = (atmStrike * offsetVal) / 100;
         }
 
-        // Offset ko round off karo step size ke hisab se (jaise 48 points aaya to 50 kar do)
         const steppedOffset = Math.round(offsetPoints / step) * step;
 
-        // Math Logic: Call me ITM minus hota hai, Put me ITM plus hota hai
         if (type === 'ITM') {
             return isCall ? (atmStrike - steppedOffset) : (atmStrike + steppedOffset);
         } else if (type === 'OTM') {
             return isCall ? (atmStrike + steppedOffset) : (atmStrike - steppedOffset);
         }
     }
-    
-    // Agar kuch samajh na aaye (Delta, CP wagera jo yahan handle nahi hote), to ATM bhej do
     return atmStrike; 
 };
 
 // 🔥 UPDATED FUNCTION: Ab ye Expiry aur Strike Criteria bhi handle karega
 const getOptionSecurityId = (baseSymbol, spotPrice, strikeCriteria, strikeType, optionType, requestedExpiry = "WEEKLY") => {
     
-    // Naming Translation for Dhan API
-    let targetBase = baseSymbol.toUpperCase().replace(' 50', '').trim();
+    // Failsafe: Agar backtest se symbol ya option type gayab ho
+    if (!baseSymbol || !optionType) {
+        console.log(`⚠️ Invalid Input in getOptionSecurityId: Base=${baseSymbol}, Opt=${optionType}`);
+        return null;
+    }
+
+    let targetBase = String(baseSymbol).toUpperCase().replace(' 50', '').trim();
     if (targetBase === "NIFTY BANK") targetBase = "BANKNIFTY";
     else if (targetBase === "NIFTY FIN SERVICE") targetBase = "FINNIFTY";
     else if (targetBase === "NIFTY MID SELECT") targetBase = "MIDCPNIFTY";
 
-    const suffix = ['CE', 'CALL'].includes(optionType.toUpperCase()) ? 'CE' : 'PE';
+    const suffix = ['CE', 'CALL'].includes(String(optionType).toUpperCase()) ? 'CE' : 'PE';
 
-    // 1. Pehle OTM/ITM ka Math lagakar exact strike dhundo
     const targetStrike = calculateTargetStrike(spotPrice, targetBase, strikeCriteria, strikeType, suffix);
-    console.log(`🎯 Calculated Target Strike for ${targetBase} (Spot: ${spotPrice}): ${targetStrike} (${strikeType})`);
+    // console.log(`🎯 Calculated Target Strike for ${targetBase} (Spot: ${spotPrice}): ${targetStrike} (${strikeType})`);
 
-    // 2. CSV me matches filter karo
     const matches = nfoInstruments.filter(inst => {
         if (inst.strike !== targetStrike) return false;
-        if (inst.id.length > 7) return false; // Block BSE for now (if not Bankex/Sensex)
+        if (inst.id.length > 7) return false; 
         const ts = inst.tradingSymbol;
         const cs = inst.customSymbol;
         if (!ts.startsWith(targetBase) && !cs.startsWith(targetBase)) return false;
@@ -369,39 +527,28 @@ const getOptionSecurityId = (baseSymbol, spotPrice, strikeCriteria, strikeType, 
         return true;
     });
 
-    if (matches.length === 0) {
-        console.log(`⚠️ Option Token NOT FOUND for: ${targetBase} ${targetStrike} ${suffix}`);
-        return null;
-    }
+    if (matches.length === 0) return null;
 
-    // 3. 🔥 EXPIRY LOGIC 🔥
-    // Saari unique expiries nikalo aur date ke hisab se sort karo
     const uniqueExpiries = [...new Set(matches.map(inst => inst.expiry.split(' ')[0]))]
                             .sort((a, b) => new Date(a) - new Date(b));
 
-    let selectedExpiry = uniqueExpiries[0]; // Default: Current Weekly
+    let selectedExpiry = uniqueExpiries[0]; 
 
     if (requestedExpiry === "NEXT WEEKLY" && uniqueExpiries.length > 1) {
-        selectedExpiry = uniqueExpiries[1]; // Agle hafte wali
+        selectedExpiry = uniqueExpiries[1]; 
     } 
     else if (requestedExpiry === "MONTHLY") {
-        // Current month ki aakhiri expiry dhundo
         const currentMonth = new Date(uniqueExpiries[0]).getMonth();
         const currentMonthExpiries = uniqueExpiries.filter(d => new Date(d).getMonth() === currentMonth);
         selectedExpiry = currentMonthExpiries[currentMonthExpiries.length - 1]; 
-        
-        // Failsafe: Agar array khali ho jaye
         if (!selectedExpiry) selectedExpiry = uniqueExpiries[uniqueExpiries.length - 1];
     }
 
-    console.log(`📅 Selecting Expiry: ${selectedExpiry} (Requested: ${requestedExpiry})`);
-
-    // 4. Final Data dhundo jo hamari Selected Expiry se match kare
     const finalMatch = matches.find(m => m.expiry.startsWith(selectedExpiry)) || matches[0];
 
     return {
         id: finalMatch.id,
-        exchange: "NSE_FNO", // Yahan BSE ka logic future me add kar sakte hain Sensex ke liye
+        exchange: "NSE_FNO", 
         tradingSymbol: finalMatch.customSymbol || finalMatch.tradingSymbol,
         expiry: finalMatch.expiry.split(' ')[0],
         optionType: suffix === 'CE' ? 'CALL' : 'PUT',
