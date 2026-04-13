@@ -1886,6 +1886,242 @@
 
 
 
+// // ==========================================
+// // 🌟 MAIN TRADING ENGINE (THE MANAGER) 🌟
+// // ==========================================
+// const cron = require('node-cron');
+// const moment = require('moment-timezone');
+
+// // 📂 Models
+// const Deployment = require('../models/Deployment.js');
+// const Broker = require('../models/Broker.js');
+
+// // 🛠️ Utilities & APIs (Inhe apne path ke hisab se set karein)
+// const { sleep, getStrikeStep, getOptionSecurityId } = require('../services/instrumentService.js');
+// const { placeDhanOrder, fetchLiveLTP } = require('../services/dhanService.js');
+// const { fetchLivePrice } = require('./utils/priceFetcher.js');
+// const { createAndEmitLog } = require('./utils/logger.js'); // Log function ko ek file me dal diya hai
+
+// // 🔍 Scanners
+// const { findStrikeByLivePremium } = require('./scanners/optionChainScanner.js');
+// const { getIndicatorSignal } = require('./scanners/indicatorScanner.js');  
+
+// // 🛡️ Risk Management & Advance Features
+// const { handleMtmSquareOff } = require('./features/riskManagement/mtmSquareOff.js');
+// const { processTrailingLogic } = require('./features/riskManagement/trailingLogic.js');
+// const { handleMoveSlToCost } = require('./features/advanceFeatures/moveSlToCost.js');
+
+// // Global execution locks (Double entry se bachne ke liye)
+// const executionLocks = new Set();
+
+// // ==========================================
+// // ⚙️ THE CORE CRON JOB LOOP (Runs every 30s)
+// // ==========================================
+// cron.schedule('*/30 * * * * *', async () => {
+//     try {
+//         const currentTime = moment().tz("Asia/Kolkata").format("HH:mm");
+//         const activeDeployments = await Deployment.find({ status: 'ACTIVE' }).populate('strategyId');
+
+//         if (activeDeployments.length === 0) return;
+
+//         // Reset locks at midnight
+//         if (currentTime === "00:00" && executionLocks.size > 0) executionLocks.clear();
+
+//         for (const deployment of activeDeployments) {
+//             await sleep(1000);
+
+//             const strategy = deployment.strategyId;
+//             if (!strategy) continue;
+
+//             const config = strategy.data?.config || {};
+//             const entryLockKey = `ENTRY_${deployment._id.toString()}_${currentTime}`;
+//             const exitLockKey = `EXIT_${deployment._id.toString()}_${currentTime}`;
+//             const squareOffTime = deployment.squareOffTime || config.squareOffTime;
+
+//             // ==============================================================
+//             // 🛑 THE SHIELD: STRICT SYMBOL VALIDATION 
+//             // ==============================================================
+//             const instrumentData = (strategy.data.instruments && strategy.data.instruments.length > 0) ? strategy.data.instruments[0] : {};
+//             let rawSymbol = instrumentData.name || config.index || strategy.symbol || strategy.name;
+//             if (!rawSymbol) continue;
+
+//             let baseSymbol = "";
+//             const upperRawSymbol = String(rawSymbol).toUpperCase();
+//             if (upperRawSymbol.includes("BANK")) baseSymbol = "BANKNIFTY";
+//             else if (upperRawSymbol.includes("FIN")) baseSymbol = "FINNIFTY";
+//             else if (upperRawSymbol.includes("MID")) baseSymbol = "MIDCPNIFTY";
+//             else if (upperRawSymbol.includes("NIFTY")) baseSymbol = "NIFTY";
+//             else if (upperRawSymbol.includes("SENSEX")) baseSymbol = "SENSEX";
+//             else continue; // Invalid symbol skip
+
+//             // ==============================================================
+//             // ⚡ 1. ENTRY LOGIC 
+//             // ==============================================================
+//             if (!executionLocks.has(entryLockKey) && !deployment.tradedSecurityId) {
+//                 let shouldEnter = false;
+//                 let currentSignalType = "NONE";
+//                 const strategyType = strategy.type || "Time Based"; 
+
+//                 // 🟢 A. INDICATOR BASED CHECK (Delegated to Scanner)
+//                 if (strategyType === "Indicator Based") {
+//                     const broker = await Broker.findById(deployment.brokers[0]);
+//                     if (broker && broker.engineOn) {
+//                         const signal = await getIndicatorSignal(strategy, broker, baseSymbol);
+//                         if (signal.long) { shouldEnter = true; currentSignalType = "LONG"; } 
+//                         else if (signal.short) { shouldEnter = true; currentSignalType = "SHORT"; }
+//                     }
+//                 } 
+//                 // ⏰ B. TIME BASED CHECK
+//                 else {
+//                     if (config.startTime === currentTime) { shouldEnter = true; currentSignalType = "TIME"; }
+//                 }
+
+//                 // 🚀 C. EXECUTE ENTRY
+//                 if (shouldEnter) {
+//                     executionLocks.add(entryLockKey);
+//                     const isPrePunchSL = strategy.data?.advanceSettings?.prePunchSL || false;
+
+//                     for (const brokerId of deployment.brokers) {
+//                         const broker = await Broker.findById(brokerId);
+//                         if (broker && broker.engineOn) {
+                            
+//                             for (const leg of strategy.data.legs) {
+//                                 let tradeAction = (leg.action || "BUY").toUpperCase(); 
+//                                 let tradeQty = (leg.quantity || 1) * deployment.multiplier;
+
+//                                 // Option Type Selection
+//                                 let optType = leg.optionType === "Call" ? "CE" : "PE"; 
+//                                 if (currentSignalType === "LONG") optType = (tradeAction === "BUY") ? "CE" : "PE"; 
+//                                 else if (currentSignalType === "SHORT") optType = (tradeAction === "BUY") ? "PE" : "CE"; 
+
+//                                 let currentSpotPrice = await fetchLivePrice(baseSymbol);
+//                                 if (!currentSpotPrice) continue;
+
+//                                 // 🎯 STRIKE SELECTION
+//                                 const strikeCriteria = leg.strikeCriteria || "ATM pt";
+//                                 let instrument = null;
+
+//                                 if (["CP", "CP >=", "CP <=", "Delta"].includes(strikeCriteria)) {
+//                                     // Delegated to Scanner
+//                                     instrument = await findStrikeByLivePremium(baseSymbol, currentSpotPrice, optType, leg.expiry || "WEEKLY", strikeCriteria, leg.strikeType || "ATM", broker);
+//                                 } else {
+//                                     instrument = getOptionSecurityId(baseSymbol, currentSpotPrice, strikeCriteria, leg.strikeType || "ATM", optType, leg.expiry || "WEEKLY");
+//                                 }
+                                
+//                                 if (!instrument) continue;
+
+//                                 // 🟢 PAPER TRADE EXECUTION
+//                                 if (deployment.executionType === 'FORWARD_TEST' || deployment.executionType === 'PAPER') {
+//                                     await sleep(500); 
+//                                     const entryPrice = await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id) || currentSpotPrice;
+                                    
+//                                     deployment.tradedSecurityId = instrument.id;
+//                                     deployment.tradedExchange = instrument.exchange;
+//                                     deployment.tradedQty = tradeQty;
+//                                     deployment.tradeAction = tradeAction;
+//                                     deployment.tradedSymbol = instrument.tradingSymbol;
+//                                     deployment.entryPrice = entryPrice;
+
+//                                     if (isPrePunchSL && entryPrice > 0 && leg.slValue > 0) {
+//                                         deployment.paperSlPrice = tradeAction === "BUY" 
+//                                             ? (leg.slType === 'SL%' ? entryPrice - (entryPrice * (Number(leg.slValue)/100)) : entryPrice - Number(leg.slValue))
+//                                             : (leg.slType === 'SL%' ? entryPrice + (entryPrice * (Number(leg.slValue)/100)) : entryPrice + Number(leg.slValue));
+//                                     }
+
+//                                     await deployment.save();
+//                                     await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'SUCCESS', `Paper Entry at ₹${entryPrice}`);
+//                                 } 
+//                                 // 🔴 LIVE TRADE EXECUTION
+//                                 else if (deployment.executionType === 'LIVE') {
+//                                     const orderData = { action: tradeAction, quantity: tradeQty, securityId: instrument.id, segment: instrument.exchange };
+//                                     const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
+
+//                                     if (orderResponse.success && orderResponse.data?.orderStatus?.toUpperCase() !== "REJECTED") {
+//                                         deployment.tradedSecurityId = instrument.id;
+//                                         deployment.tradedExchange = instrument.exchange;
+//                                         deployment.tradedQty = tradeQty;
+//                                         deployment.tradeAction = tradeAction;
+//                                         deployment.tradedSymbol = instrument.tradingSymbol;
+
+//                                         await sleep(1000);
+//                                         const entryPrice = await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id);
+//                                         deployment.entryPrice = entryPrice || 0;
+
+//                                         if (isPrePunchSL) console.log(`🛡️ [LIVE PRE-PUNCH] SL Placed on Exchange`); // (SL order logic yahan lagayenge)
+
+//                                         await deployment.save();
+//                                         await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'SUCCESS', `Live Entry Executed`, orderResponse.data.orderId);
+//                                     } else {
+//                                         await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'FAILED', orderResponse.data?.remarks || "Order Failed");
+//                                     }
+//                                 }
+//                             }
+//                         }
+//                     }
+//                 }
+//             }
+
+//             // ==============================================================
+//             // ⏰ 2. TIME-BASED AUTO SQUARE-OFF LOGIC
+//             // ==============================================================
+//             if (squareOffTime === currentTime && !executionLocks.has(exitLockKey) && deployment.tradedSecurityId) {
+//                 executionLocks.add(exitLockKey);
+//                 console.log(`⏰ TIME SQUARE-OFF TRIGGERED! Strategy: ${strategy.name}`);
+
+//                 for (const brokerId of deployment.brokers) {
+//                     const broker = await Broker.findById(brokerId);
+//                     if (broker && broker.engineOn) {
+//                         const exitAction = deployment.tradeAction === 'BUY' ? 'SELL' : 'BUY';
+                        
+//                         // Paper Exit
+//                         if (deployment.executionType === 'FORWARD_TEST' || deployment.executionType === 'PAPER') {
+//                             const exitLtp = await fetchLiveLTP(broker.clientId, broker.apiSecret, deployment.tradedExchange, deployment.tradedSecurityId) || 0;
+//                             // PnL Logic yahan aayega...
+//                         } 
+//                         // Live Exit
+//                         else if (deployment.executionType === 'LIVE') {
+//                             const orderData = { action: exitAction, quantity: deployment.tradedQty, securityId: deployment.tradedSecurityId, segment: deployment.tradedExchange };
+//                             await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
+//                         }
+//                     }
+//                 }
+//             }
+
+//             // ==============================================================
+//             // 💰 3. RISK MANAGEMENT & ADVANCE FEATURES DELEGATION (Workers)
+//             // ==============================================================
+//             if (deployment.tradedSecurityId && deployment.status === 'ACTIVE') {
+                
+//                 // MTM Max Profit / Loss Check
+//                 await handleMtmSquareOff(deployment, strategy, executionLocks, exitLockKey);
+
+//                 // Trailing SL & Profit Lock Check
+//                 const broker = await Broker.findById(deployment.brokers[0]); // Fetching for LTP check
+//                 if (broker) {
+//                     const liveLtp = await fetchLiveLTP(broker.clientId, broker.apiSecret, deployment.tradedExchange, deployment.tradedSecurityId);
+                    
+//                     if (liveLtp && liveLtp > 0) {
+//                         // Trail Profit
+//                         await processTrailingLogic(deployment, strategy, liveLtp, broker);
+//                     }
+//                 }
+
+//                 // Advance Features Check
+//                 if (strategy.data?.advanceSettings?.moveSLToCost) {
+//                     await handleMoveSlToCost(strategy);
+//                 }
+                
+//                 // Future Advance Features:
+//                 // if (strategy.data?.advanceSettings?.waitAndTrade) await handleWaitAndTrade(deployment, strategy, liveLtp);
+//             }
+//         }
+//     } catch (error) { 
+//         console.error("❌ Trading Engine Core Error:", error); 
+//     }
+// });
+
+
+
 // ==========================================
 // 🌟 MAIN TRADING ENGINE (THE MANAGER) 🌟
 // ==========================================
@@ -1896,28 +2132,42 @@ const moment = require('moment-timezone');
 const Deployment = require('../models/Deployment.js');
 const Broker = require('../models/Broker.js');
 
-// 🛠️ Utilities & APIs (Inhe apne path ke hisab se set karein)
+// 🛠️ Utilities & APIs 
 const { sleep, getStrikeStep, getOptionSecurityId } = require('../services/instrumentService.js');
 const { placeDhanOrder, fetchLiveLTP } = require('../services/dhanService.js');
 const { fetchLivePrice } = require('./utils/priceFetcher.js');
-const { createAndEmitLog } = require('./utils/logger.js'); // Log function ko ek file me dal diya hai
+const { createAndEmitLog } = require('./utils/logger.js'); 
 
 // 🔍 Scanners
 const { findStrikeByLivePremium } = require('./scanners/optionChainScanner.js');
 const { getIndicatorSignal } = require('./scanners/indicatorScanner.js');  
 
-// 🛡️ Risk Management & Advance Features
+// 🛡️ Risk Management
 const { handleMtmSquareOff } = require('./features/riskManagement/mtmSquareOff.js');
 const { processTrailingLogic } = require('./features/riskManagement/trailingLogic.js');
+
+// 🚀 ADVANCE FEATURES (The Brahmastras)
 const { handleMoveSlToCost } = require('./features/advanceFeatures/moveSlToCost.js');
+const { handlePrePunchSl } = require('./features/advanceFeatures/prePunchSl.js');
+const { handleExitAllOnSlTgt } = require('./features/advanceFeatures/exitAllOnSlTgt.js');
 
 // Global execution locks (Double entry se bachne ke liye)
 const executionLocks = new Set();
+let isEngineRunning = false; // 🔥 FIX: Overlapping Cron Job Lock
 
 // ==========================================
 // ⚙️ THE CORE CRON JOB LOOP (Runs every 30s)
 // ==========================================
 cron.schedule('*/30 * * * * *', async () => {
+    
+    // 🔥 THE 805 FIX: Agar purana loop abhi chal raha hai, to naya loop skip kar do!
+    if (isEngineRunning) {
+        console.log("⏳ Engine already processing, skipping overlapping tick...");
+        return; 
+    }
+    
+    isEngineRunning = true; // Lock laga diya
+
     try {
         const currentTime = moment().tz("Asia/Kolkata").format("HH:mm");
         const activeDeployments = await Deployment.find({ status: 'ACTIVE' }).populate('strategyId');
@@ -1997,13 +2247,14 @@ cron.schedule('*/30 * * * * *', async () => {
                                 let currentSpotPrice = await fetchLivePrice(baseSymbol);
                                 if (!currentSpotPrice) continue;
 
-                                // 🎯 STRIKE SELECTION
+                                // 🎯 STRIKE SELECTION & API REUSE
                                 const strikeCriteria = leg.strikeCriteria || "ATM pt";
                                 let instrument = null;
+                                let preFetchedLtp = null; // 🔥 FIX: Save API Call
 
                                 if (["CP", "CP >=", "CP <=", "Delta"].includes(strikeCriteria)) {
-                                    // Delegated to Scanner
                                     instrument = await findStrikeByLivePremium(baseSymbol, currentSpotPrice, optType, leg.expiry || "WEEKLY", strikeCriteria, leg.strikeType || "ATM", broker);
+                                    if (instrument && instrument.ltp) preFetchedLtp = instrument.ltp;
                                 } else {
                                     instrument = getOptionSecurityId(baseSymbol, currentSpotPrice, strikeCriteria, leg.strikeType || "ATM", optType, leg.expiry || "WEEKLY");
                                 }
@@ -2013,7 +2264,8 @@ cron.schedule('*/30 * * * * *', async () => {
                                 // 🟢 PAPER TRADE EXECUTION
                                 if (deployment.executionType === 'FORWARD_TEST' || deployment.executionType === 'PAPER') {
                                     await sleep(500); 
-                                    const entryPrice = await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id) || currentSpotPrice;
+                                    // 🔥 API REUSE: Agar Scanner ne LTP nikal liya hai to wahi use karo
+                                    const entryPrice = preFetchedLtp || await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id) || currentSpotPrice;
                                     
                                     deployment.tradedSecurityId = instrument.id;
                                     deployment.tradedExchange = instrument.exchange;
@@ -2043,11 +2295,15 @@ cron.schedule('*/30 * * * * *', async () => {
                                         deployment.tradeAction = tradeAction;
                                         deployment.tradedSymbol = instrument.tradingSymbol;
 
-                                        await sleep(1000);
+                                        await sleep(2000); // 🔥 805 FIX: 2 Seconds gap
                                         const entryPrice = await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id);
                                         deployment.entryPrice = entryPrice || 0;
 
-                                        if (isPrePunchSL) console.log(`🛡️ [LIVE PRE-PUNCH] SL Placed on Exchange`); // (SL order logic yahan lagayenge)
+                                        // 🔥 ADVANCE FEATURE 3: PRE-PUNCH SL
+                                        if (isPrePunchSL) {
+                                            console.log(`🛡️ [LIVE PRE-PUNCH] Executing Pre-Punch SL on Exchange...`);
+                                            await handlePrePunchSl(deployment, broker, leg, deployment.entryPrice);
+                                        }
 
                                         await deployment.save();
                                         await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'SUCCESS', `Live Entry Executed`, orderResponse.data.orderId);
@@ -2075,6 +2331,7 @@ cron.schedule('*/30 * * * * *', async () => {
                         
                         // Paper Exit
                         if (deployment.executionType === 'FORWARD_TEST' || deployment.executionType === 'PAPER') {
+                            await sleep(500); 
                             const exitLtp = await fetchLiveLTP(broker.clientId, broker.apiSecret, deployment.tradedExchange, deployment.tradedSecurityId) || 0;
                             // PnL Logic yahan aayega...
                         } 
@@ -2096,26 +2353,41 @@ cron.schedule('*/30 * * * * *', async () => {
                 await handleMtmSquareOff(deployment, strategy, executionLocks, exitLockKey);
 
                 // Trailing SL & Profit Lock Check
-                const broker = await Broker.findById(deployment.brokers[0]); // Fetching for LTP check
+                const broker = await Broker.findById(deployment.brokers[0]); 
                 if (broker) {
+                    await sleep(2000); // 🔥 805 FIX: 2 Seconds gap before hitting Dhan again
+                    
                     const liveLtp = await fetchLiveLTP(broker.clientId, broker.apiSecret, deployment.tradedExchange, deployment.tradedSecurityId);
                     
                     if (liveLtp && liveLtp > 0) {
                         // Trail Profit
                         await processTrailingLogic(deployment, strategy, liveLtp, broker);
+
+                        // 🔥 ADVANCE FEATURES 1 & 2: EXIT ALL & MOVE SL TO COST
+                        const checkExitStatus = await Deployment.findById(deployment._id);
+                        if (checkExitStatus && checkExitStatus.status === 'COMPLETED') {
+                            const triggerReason = checkExitStatus.exitRemarks || "Target/SL Hit";
+
+                            // 🚨 Exit All
+                            if (strategy.data?.advanceSettings?.exitAllOnSlTgt) {
+                                await handleExitAllOnSlTgt(strategy, checkExitStatus, broker, triggerReason);
+                            }
+                            
+                            // 🛡️ Move SL to Cost
+                            if (strategy.data?.advanceSettings?.moveSLToCost) {
+                                await handleMoveSlToCost(strategy, checkExitStatus, broker);
+                            }
+                        }
                     }
                 }
 
-                // Advance Features Check
-                if (strategy.data?.advanceSettings?.moveSLToCost) {
-                    await handleMoveSlToCost(strategy);
-                }
-                
                 // Future Advance Features:
                 // if (strategy.data?.advanceSettings?.waitAndTrade) await handleWaitAndTrade(deployment, strategy, liveLtp);
             }
         }
     } catch (error) { 
         console.error("❌ Trading Engine Core Error:", error); 
+    } finally {
+        isEngineRunning = false; // 🔥 Engine loop khatam, lock khol diya!
     }
 });

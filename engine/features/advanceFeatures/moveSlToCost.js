@@ -1,63 +1,74 @@
-// // File: src/engine/features/advanceFeatures/moveSlToCost.js
+// File: src/engine/features/advanceFeatures/moveSlToCost.js
 
-// // Yahan aap apne broker API aur DB functions import karenge (example ke liye)
-// // import { modifyDhanOrder } from '../../../utils/dhanApi.js';
-// // import { updateLegStatus } from '../../../database/legDb.js';
+const Deployment = require('../../../models/Deployment.js');
+const { createAndEmitLog } = require('../../utils/logger.js');
 
-// /**
-//  * Handle Move SL to Cost Logic
-//  * @param {Object} strategy - The complete strategy object containing legs and settings
-//  */
-// export const handleMoveSlToCost = async (strategy) => {
-//     try {
-//         // 1. SAFETY CHECK: Agar ye feature on nahi hai ya legs nahi hain, to turant wapas jao
-//         if (!strategy?.advanceSettings?.moveSLToCost || !strategy?.legs) return;
+/**
+ * 🛡️ ADVANCE FEATURE 1: MOVE SL TO COST
+ * Ye function tab call hoga jab kisi ek leg ka Target hit ho jaye.
+ * Ye bache hue sabhi active legs ka SL utha kar unke Entry Price par set kar dega.
+ */
+const handleMoveSlToCost = async (strategy, triggeredDeployment, broker) => {
+    try {
+        // 1. Check karein ki user ne strategy me ye feature ON kiya hai ya nahi
+        const advanceData = strategy.data?.advanceFeatures || {};
+        const isMoveSlToCostEnabled = advanceData.moveSlToCost === true || advanceData.moveSlToCost === 'ON';
 
-//         const legs = strategy.legs;
+        if (!isMoveSlToCostEnabled) return; // Agar feature OFF hai to wapas jao
 
-//         // 2. Pata lagao: Kya koi leg Profit/Target me kat chuka hai?
-//         // (Aapke database me status ka jo bhi naam ho, wo yahan daalein, jaise 'EXITED_TARGET')
-//         const targetHitLegs = legs.filter(leg => leg.status === 'EXITED_TARGET');
-        
-//         // 3. Pata lagao: Kya koi leg abhi bhi market me chal raha hai?
-//         const activeLegs = legs.filter(leg => leg.status === 'ACTIVE');
+        console.log(`🛡️ [ADVANCE FEATURE] Move SL to Cost triggered by target hit in ${triggeredDeployment.tradedSymbol}`);
 
-//         // 🔥 THE CORE LOGIC 🔥
-//         // Agar kam se kam 1 leg Target pe nikal gaya, aur dusra abhi chal raha hai...
-//         if (targetHitLegs.length > 0 && activeLegs.length > 0) {
+        // 2. Database me same strategy aur same broker ke dusre ACTIVE legs dhundhein
+        const otherActiveLegs = await Deployment.find({
+            strategyId: triggeredDeployment.strategyId,
+            brokerId: triggeredDeployment.brokerId,
+            status: 'ACTIVE',
+            _id: { $ne: triggeredDeployment._id } // Jis leg ne target hit kiya hai, usko chhod kar
+        });
+
+        // Agar koi aur leg bacha hi nahi hai, to aage badhne ki zarurat nahi
+        if (otherActiveLegs.length === 0) {
+            console.log("ℹ️ Koi aur active leg nahi mila Move SL to Cost ke liye.");
+            return;
+        }
+
+        // 3. Bache hue sabhi legs ka SL cost par move karein
+        for (let leg of otherActiveLegs) {
             
-//             for (let activeLeg of activeLegs) {
-//                 // 4. FLAG CHECK: Kya iska SL pehle hi cost par laya ja chuka hai? 
-//                 // (Taki engine har second modify order ka spam na kare)
-//                 if (!activeLeg.isSlMovedToCost) {
-                    
-//                     console.log(`🛡️ [Advance Feature] Move SL to Cost Triggered for Leg ID: ${activeLeg.id}`);
-                    
-//                     const newSlPrice = activeLeg.entryPrice; // SL ab kharid-bhav (Cost) par aayega
+            // Agar pehle hi move ho chuka hai, to ignore karein
+            if (leg.isSlMovedToCost) continue;
 
-//                     // 5. BROKER API CALL: Dhan (ya kisi aur broker) ko naya SL price bhejna
-//                     /*
-//                     await modifyDhanOrder({
-//                         orderId: activeLeg.slOrderId, // Purana SL order ID
-//                         orderType: 'STOP_LOSS',
-//                         price: newSlPrice,
-//                         triggerPrice: newSlPrice
-//                     });
-//                     */
+            const oldSL = leg.trailingSL || leg.paperSlPrice || 0;
+            const newSL = leg.entryPrice;
 
-//                     // 6. DATABASE UPDATE: Update kar do ki SL move ho chuka hai aur naya price kya hai
-//                     /*
-//                     await updateLegStatus(activeLeg.id, {
-//                         isSlMovedToCost: true,
-//                         slPrice: newSlPrice
-//                     });
-//                     */
+            // SL Update (Live SL aur Trailing SL dono ko Cost par le aaye)
+            leg.trailingSL = newSL;
+            leg.paperSlPrice = newSL;
+            leg.isSlMovedToCost = true; // 🔥 Flag set karein taki baar-baar update na ho
+            
+            await leg.save();
 
-//                     console.log(`✅ SL successfully moved to cost (₹${newSlPrice}) for Leg: ${activeLeg.id}`);
-//                 }
-//             }
-//         }
-//     } catch (error) {
-//         console.error(`❌ [Advance Feature Error] Move SL to Cost failed for Strategy ${strategy.id}:`, error);
-//     }
-// };
+            const logMessage = `🛡️ Risk Free! SL Moved to Cost (₹${newSL}) for ${leg.tradedSymbol} because another leg hit target.`;
+            console.log(logMessage);
+
+            // 4. User ko UI par Live Notification (Log) bhejein
+            if (broker) {
+                await createAndEmitLog(
+                    broker,
+                    leg.tradedSymbol,
+                    'SYSTEM_UPDATE',
+                    leg.tradedQty,
+                    'SUCCESS',
+                    logMessage
+                );
+            }
+        }
+
+    } catch (error) {
+        console.error("❌ Move SL to Cost Error:", error.message);
+    }
+};
+
+module.exports = {
+    handleMoveSlToCost
+};
