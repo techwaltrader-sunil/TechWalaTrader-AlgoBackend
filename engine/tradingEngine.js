@@ -2602,6 +2602,8 @@ cron.schedule('*/30 * * * * *', async () => {
                                     await deployment.save();
                                     await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'SUCCESS', `Paper Entry at ₹${entryPrice}`);
                                 }
+
+                                
                                 // 🔴 LIVE TRADE ENTRY
                                 else if (deployment.executionType === 'LIVE') {
                                     const orderData = { action: tradeAction, quantity: tradeQty, securityId: instrument.id, segment: instrument.exchange };
