@@ -2576,7 +2576,15 @@ cron.schedule('*/30 * * * * *', async () => {
                                 // 🟢 PAPER TRADE ENTRY
                                 if (deployment.executionType === 'FORWARD_TEST' || deployment.executionType === 'PAPER') {
                                     await sleep(500); 
-                                    const entryPrice = preFetchedLtp || await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id) || currentSpotPrice;
+                                    
+                                    // 🔥 THE BUG FIX: "|| currentSpotPrice" hata diya gaya hai!
+                                    let entryPrice = preFetchedLtp || await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id);
+                                    
+                                    // Agar API error ki wajah se price nahi mila, to galat price par entry mat lo!
+                                    if (!entryPrice || entryPrice <= 0) {
+                                        console.log(`⚠️ [WARNING] LTP not found for Paper Trade Entry. Skipping tick to prevent wrong P&L.`);
+                                        continue; 
+                                    }
                                     
                                     deployment.tradedSecurityId = instrument.id;
                                     deployment.tradedExchange = instrument.exchange;
@@ -2584,7 +2592,6 @@ cron.schedule('*/30 * * * * *', async () => {
                                     deployment.tradeAction = tradeAction;
                                     deployment.tradedSymbol = instrument.tradingSymbol;
                                     deployment.entryPrice = entryPrice;
-                                    deployment.signalType = currentSignalType; // 🔥 FIX: Saving Signal Type for Exit
 
                                     if (isPrePunchSL && entryPrice > 0 && leg.slValue > 0) {
                                         deployment.paperSlPrice = tradeAction === "BUY" 
@@ -2594,7 +2601,7 @@ cron.schedule('*/30 * * * * *', async () => {
 
                                     await deployment.save();
                                     await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'SUCCESS', `Paper Entry at ₹${entryPrice}`);
-                                } 
+                                }
                                 // 🔴 LIVE TRADE ENTRY
                                 else if (deployment.executionType === 'LIVE') {
                                     const orderData = { action: tradeAction, quantity: tradeQty, securityId: instrument.id, segment: instrument.exchange };
