@@ -2436,6 +2436,7 @@ const { processTrailingLogic } = require('./features/riskManagement/trailingLogi
 const { handleMoveSlToCost } = require('./features/advanceFeatures/moveSlToCost.js');
 const { handlePrePunchSl } = require('./features/advanceFeatures/prePunchSl.js');
 const { handleExitAllOnSlTgt } = require('./features/advanceFeatures/exitAllOnSlTgt.js');
+const { processWaitAndTrade } = require('./features/advanceFeatures/waitAndTrade.js');
 
 // Global execution locks
 const executionLocks = new Set();
@@ -2537,6 +2538,40 @@ cron.schedule('*/30 * * * * *', async () => {
                                 }
                                 
                                 if (!instrument) continue;
+
+
+                                if (!instrument) continue;
+
+                                // 🔥 THE WAIT & TRADE INJECTION 🔥
+                                await sleep(500); // 805 Rate limit safety
+                                const currentPremiumLtp = preFetchedLtp || await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id) || currentSpotPrice;
+
+                                const isWaitAndTradeActive = strategy.data?.advanceSettings?.waitAndTrade;
+                                const waitAndTradeConfig = strategy.data?.advanceSettings?.waitAndTradeConfig || {};
+
+                                if (isWaitAndTradeActive && waitAndTradeConfig.movement > 0) {
+                                    // 1. Agar Reference Price save nahi hai, to save karo aur Wait karo
+                                    if (!deployment.waitReferencePrice) {
+                                        deployment.waitReferencePrice = currentPremiumLtp; 
+                                        await deployment.save();
+                                        
+                                        console.log(`⏳ [WAIT & TRADE] Signal Aaya! Ref Price: ₹${currentPremiumLtp}. Waiting for movement...`);
+                                        await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'INFO', `Wait & Trade Activated. Ref Premium: ₹${currentPremiumLtp}`);
+                                        continue; // 🛑 Trade execute mat karo, agle loop ka intezaar karo
+                                    } 
+                                    // 2. Agar pehle se Wait kar rahe hain, to condition check karo
+                                    else {
+                                        const waitStatus = processWaitAndTrade(waitAndTradeConfig, currentPremiumLtp, deployment.waitReferencePrice);
+                                        
+                                        if (!waitStatus.shouldExecute) {
+                                            // Condition abhi meet nahi hui hai
+                                            continue; // 🛑 Chup chaap agle loop me jao
+                                        } else {
+                                            console.log(`🎯 [WAIT & TRADE] Condition Met! Current: ₹${currentPremiumLtp} crossed Target: ₹${waitStatus.targetPrice}.`);
+                                            await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'INFO', `Wait Target (₹${waitStatus.targetPrice}) Hit! Executing Trade...`);
+                                        }
+                                    }
+                                }
 
                                 // 🟢 PAPER TRADE ENTRY
                                 if (deployment.executionType === 'FORWARD_TEST' || deployment.executionType === 'PAPER') {

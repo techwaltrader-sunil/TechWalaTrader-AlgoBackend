@@ -74,6 +74,7 @@ const deploymentSchema = new mongoose.Schema({
     exitPrice: { type: Number, default: 0 },
     paperSlPrice: { type: Number, default: 0 }, // 👈 NEW: For Paper Trade Pre-Punch SL
     realizedPnl: { type: Number, default: 0 },
+    waitReferencePrice: { type: Number, default: 0 },
     
 }, { timestamps: true });
 
