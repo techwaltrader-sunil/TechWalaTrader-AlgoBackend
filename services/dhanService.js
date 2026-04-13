@@ -290,30 +290,28 @@ const DHAN_API_URL = 'https://api.dhan.co/orders';
 const DHAN_FEED_URL = 'https://api.dhan.co/v2/marketfeed/ltp'; 
 
 // ==============================================================
-// 🚦 THE TRAFFIC POLICE (GLOBAL RATE LIMITER - 805 ERROR KILLER)
+// 🚦 THE TRAFFIC POLICE & CACHE SYSTEM (805 ERROR KILLER)
 // ==============================================================
-const API_DELAY_MS = 250; // Har API call ke beech minimum 250ms (0.25 sec) ka gap (Max 4 calls/second)
+const API_DELAY_MS = 300; // API calls ke beech 300ms ka gap
 let lastApiCallTime = 0;
 let apiQueue = Promise.resolve();
 
-/**
- * Ye function saari API requests ko ek line (queue) me khada kar dega 
- * aur unke beech ek safe gap maintain karega taaki 805 error na aaye.
- */
+// 🔥 NEW: LTP Cache System
+const ltpCache = new Map();
+const CACHE_TTL = 2500; // 2.5 seconds tak price yaad rakhega
+
 const enqueueApiCall = (apiFunction) => {
     apiQueue = apiQueue.then(async () => {
         const now = Date.now();
         const timeSinceLastCall = now - lastApiCallTime;
         
-        // Agar pichli call aur is call me gap kam hai, toh thoda intezaar karo
         if (timeSinceLastCall < API_DELAY_MS) {
             await new Promise(resolve => setTimeout(resolve, API_DELAY_MS - timeSinceLastCall));
         }
         
-        lastApiCallTime = Date.now(); // Time update karo
-        return apiFunction(); // Original API call fire karo
+        lastApiCallTime = Date.now(); 
+        return apiFunction(); 
     }).catch(err => {
-        // Queue tootne na paye, error ko pass on kar do
         throw err; 
     });
     return apiQueue;
@@ -324,7 +322,7 @@ const enqueueApiCall = (apiFunction) => {
 // 🛒 1. PLACE DHAN ORDER
 // ==========================================
 const placeDhanOrder = async (clientId, accessToken, orderData) => {
-    return enqueueApiCall(async () => { // 🔥 Queue ke andar daal diya
+    return enqueueApiCall(async () => { 
         try {
             const payload = {
                 dhanClientId: clientId,
@@ -357,10 +355,19 @@ const placeDhanOrder = async (clientId, accessToken, orderData) => {
 };
 
 // ==========================================
-// 📡 2. FETCH LIVE LTP
+// 📡 2. FETCH LIVE LTP (WITH SMART CACHING)
 // ==========================================
 const fetchLiveLTP = async (clientId, accessToken, exchange, securityId) => {
-    return enqueueApiCall(async () => { // 🔥 Queue ke andar daal diya
+    // 🔥 CACHE CHECK: Pehle dekho kya hamare paas taza (fresh) price pada hai?
+    const cacheKey = `${exchange}_${securityId}`;
+    const cachedData = ltpCache.get(cacheKey);
+    
+    if (cachedData && (Date.now() - cachedData.timestamp < CACHE_TTL)) {
+        // Agar 2.5 second ke andar data fetch hua tha, to Dhan ko mat chhedo, yahi se return kardo!
+        return cachedData.price;
+    }
+
+    return enqueueApiCall(async () => { 
         try {
             const payload = {};
             payload[exchange] = [parseInt(securityId)];
@@ -376,8 +383,12 @@ const fetchLiveLTP = async (clientId, accessToken, exchange, securityId) => {
 
             const ltpData = response.data?.data;
             if (ltpData && ltpData[exchange] && ltpData[exchange][securityId]) {
-                const price = ltpData[exchange][securityId].last_price;
-                return parseFloat(price);
+                const price = parseFloat(ltpData[exchange][securityId].last_price);
+                
+                // 🔥 CACHE UPDATE: Naya price memory me daal do agli requests ke liye
+                ltpCache.set(cacheKey, { price: price, timestamp: Date.now() });
+                
+                return price;
             }
             return null;
         } catch (error) {
@@ -391,7 +402,7 @@ const fetchLiveLTP = async (clientId, accessToken, exchange, securityId) => {
 // 📊 3. FETCH HISTORICAL DATA (OHLCV)
 // ==========================================
 const fetchDhanHistoricalData = async (clientId, accessToken, securityId, exchangeSegment, instrumentType, fromDate, toDate, interval = "5") => {
-    return enqueueApiCall(async () => { // 🔥 Queue ke andar daal diya
+    return enqueueApiCall(async () => { 
         try {
             const isDaily = (interval.toUpperCase() === "D" || interval.toUpperCase() === "1D");
             const url = isDaily ? 'https://api.dhan.co/v2/charts/historical' : 'https://api.dhan.co/v2/charts/intraday';
@@ -442,7 +453,7 @@ const fetchDhanHistoricalData = async (clientId, accessToken, securityId, exchan
 // 🕒 4. FETCH EXPIRED OPTION DATA
 // ==========================================
 const fetchExpiredOptionData = async (clientId, apiSecret, spotSecurityId, strike, optionType, fromDate, toDate) => {
-    return enqueueApiCall(async () => { // 🔥 Queue ke andar daal diya
+    return enqueueApiCall(async () => { 
         try {
             const payload = {
                 exchangeSegment: "NSE_FNO",
