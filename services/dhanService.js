@@ -283,6 +283,226 @@
 // };
 
 
+// const axios = require('axios');
+
+// // Dhan API Base URLs
+// const DHAN_API_URL = 'https://api.dhan.co/orders';
+// const DHAN_FEED_URL = 'https://api.dhan.co/v2/marketfeed/ltp'; 
+
+// // ==============================================================
+// // 🚦 THE TRAFFIC POLICE (GLOBAL RATE LIMITER - 805 ERROR KILLER)
+// // ==============================================================
+// const API_DELAY_MS = 250; // Har API call ke beech minimum 250ms (0.25 sec) ka gap (Max 4 calls/second)
+// let lastApiCallTime = 0;
+// let apiQueue = Promise.resolve();
+
+// /**
+//  * Ye function saari API requests ko ek line (queue) me khada kar dega 
+//  * aur unke beech ek safe gap maintain karega taaki 805 error na aaye.
+//  */
+// const enqueueApiCall = (apiFunction) => {
+//     apiQueue = apiQueue.then(async () => {
+//         const now = Date.now();
+//         const timeSinceLastCall = now - lastApiCallTime;
+        
+//         // Agar pichli call aur is call me gap kam hai, toh thoda intezaar karo
+//         if (timeSinceLastCall < API_DELAY_MS) {
+//             await new Promise(resolve => setTimeout(resolve, API_DELAY_MS - timeSinceLastCall));
+//         }
+        
+//         lastApiCallTime = Date.now(); // Time update karo
+//         return apiFunction(); // Original API call fire karo
+//     }).catch(err => {
+//         // Queue tootne na paye, error ko pass on kar do
+//         throw err; 
+//     });
+//     return apiQueue;
+// };
+
+
+// // ==========================================
+// // 🛒 1. PLACE DHAN ORDER
+// // ==========================================
+// const placeDhanOrder = async (clientId, accessToken, orderData) => {
+//     return enqueueApiCall(async () => { // 🔥 Queue ke andar daal diya
+//         try {
+//             const payload = {
+//                 dhanClientId: clientId,
+//                 correlationId: `TM-${Date.now()}`, 
+//                 transactionType: orderData.action, 
+//                 exchangeSegment: "NSE_FNO", 
+//                 productType: "INTRADAY", 
+//                 orderType: "MARKET", 
+//                 validity: "DAY",
+//                 securityId: orderData.securityId, 
+//                 quantity: orderData.quantity
+//             };
+
+//             const response = await axios.post(DHAN_API_URL, payload, {
+//                 headers: {
+//                     'access-token': accessToken,
+//                     'Content-Type': 'application/json',
+//                     'Accept': 'application/json'
+//                 }
+//             });
+
+//             console.log(`✅ [DHAN API] Order Placed Successfully for ${clientId}:`, response.data);
+//             return { success: true, data: response.data };
+
+//         } catch (error) {
+//             console.error(`❌ [DHAN API] Order Failed for ${clientId}:`, error.response?.data || error.message);
+//             return { success: false, error: error.response?.data || error.message };
+//         }
+//     });
+// };
+
+// // ==========================================
+// // 📡 2. FETCH LIVE LTP
+// // ==========================================
+// const fetchLiveLTP = async (clientId, accessToken, exchange, securityId) => {
+//     return enqueueApiCall(async () => { // 🔥 Queue ke andar daal diya
+//         try {
+//             const payload = {};
+//             payload[exchange] = [parseInt(securityId)];
+
+//             const response = await axios.post(DHAN_FEED_URL, payload, {
+//                 headers: {
+//                     'access-token': accessToken,
+//                     'client-id': clientId,
+//                     'Content-Type': 'application/json',
+//                     'Accept': 'application/json'
+//                 }
+//             });
+
+//             const ltpData = response.data?.data;
+//             if (ltpData && ltpData[exchange] && ltpData[exchange][securityId]) {
+//                 const price = ltpData[exchange][securityId].last_price;
+//                 return parseFloat(price);
+//             }
+//             return null;
+//         } catch (error) {
+//             console.error(`❌ [DHAN API] LTP Fetch Failed for ${securityId}:`, error.response?.data || error.message);
+//             return null;
+//         }
+//     });
+// };
+
+// // ==========================================
+// // 📊 3. FETCH HISTORICAL DATA (OHLCV)
+// // ==========================================
+// const fetchDhanHistoricalData = async (clientId, accessToken, securityId, exchangeSegment, instrumentType, fromDate, toDate, interval = "5") => {
+//     return enqueueApiCall(async () => { // 🔥 Queue ke andar daal diya
+//         try {
+//             const isDaily = (interval.toUpperCase() === "D" || interval.toUpperCase() === "1D");
+//             const url = isDaily ? 'https://api.dhan.co/v2/charts/historical' : 'https://api.dhan.co/v2/charts/intraday';
+//             const formattedFromDate = isDaily ? fromDate : `${fromDate} 09:15:00`;
+//             const formattedToDate = isDaily ? toDate : `${toDate} 15:30:00`;
+
+//             const payload = {
+//                 securityId: securityId.toString(),
+//                 exchangeSegment: exchangeSegment, 
+//                 instrument: instrumentType,       
+//                 fromDate: formattedFromDate,               
+//                 toDate: formattedToDate,
+//             };
+
+//             if (isDaily) {
+//                 payload.expiryCode = 0; 
+//             } else {
+//                 payload.interval = parseInt(interval) || 5; 
+//                 payload.oi = false;
+//             }
+
+//             const headers = {
+//                 'client-id': clientId,
+//                 'access-token': accessToken,
+//                 'Content-Type': 'application/json',
+//                 'Accept': 'application/json'
+//             };
+
+//             const response = await axios.post(url, payload, { headers });
+            
+//             const actualData = (response.data && response.data.data && response.data.data.open) ? response.data.data : response.data;
+
+//             if (actualData && actualData.open && actualData.open.length > 0) {
+//                 return { success: true, data: actualData };
+//             } else {
+//                 return { success: false, message: 'Invalid data format received from Dhan' };
+//             }
+//         } catch (error) {
+//             const errData = error.response?.data;
+//             const errorMsg = errData?.internalErrorMessage || errData?.errorMessage || error.message || "Unknown error occurred";
+//             console.error(`❌ [Dhan API] Historical Fetch Error:`, errData || errorMsg);
+//             return { success: false, message: errorMsg };
+//         }
+//     });
+// };
+
+// // ==========================================
+// // 🕒 4. FETCH EXPIRED OPTION DATA
+// // ==========================================
+// const fetchExpiredOptionData = async (clientId, apiSecret, spotSecurityId, strike, optionType, fromDate, toDate) => {
+//     return enqueueApiCall(async () => { // 🔥 Queue ke andar daal diya
+//         try {
+//             const payload = {
+//                 exchangeSegment: "NSE_FNO",
+//                 interval: "1",
+//                 securityId: Number(spotSecurityId), 
+//                 instrument: "OPTIDX",
+//                 expiryFlag: "WEEK", 
+//                 expiryCode: 1, 
+//                 strike: "ATM", 
+//                 drvOptionType: optionType === "CE" ? "CALL" : "PUT",
+//                 requiredData: ["open", "high", "low", "close", "volume"],
+//                 fromDate: fromDate,
+//                 toDate: toDate
+//             };
+
+//             const response = await axios({
+//                 method: 'post',
+//                 url: 'https://api.dhan.co/v2/charts/rollingoption', 
+//                 headers: {
+//                     'access-token': apiSecret,
+//                     'client-id': clientId,
+//                     'Accept': 'application/json',
+//                     'Content-Type': 'application/json'
+//                 },
+//                 data: payload
+//             });
+
+//             const optionKey = optionType === "CE" ? "ce" : "pe";
+//             const expData = response.data.data ? response.data.data[optionKey] : null;
+
+//             if (!expData || !expData.timestamp || expData.timestamp.length === 0) {
+//                  return { success: false, error: "No data found in expired options" };
+//             }
+
+//             const formattedData = {
+//                 start_Time: expData.timestamp,
+//                 open: expData.open,
+//                 high: expData.high,
+//                 low: expData.low,
+//                 close: expData.close,
+//                 volume: expData.volume
+//             };
+
+//             return { success: true, data: formattedData };
+
+//         } catch (error) {
+//             console.log(`⚠️ Expired API Error for ${optionType}:`, error.response?.data || error.message);
+//             return { success: false, error: error.message };
+//         }
+//     });
+// };
+
+// module.exports = {
+//     placeDhanOrder,
+//     fetchLiveLTP,
+//     fetchDhanHistoricalData,
+//     fetchExpiredOptionData 
+// };
+
+
 const axios = require('axios');
 
 // Dhan API Base URLs
@@ -292,13 +512,13 @@ const DHAN_FEED_URL = 'https://api.dhan.co/v2/marketfeed/ltp';
 // ==============================================================
 // 🚦 THE TRAFFIC POLICE & CACHE SYSTEM (805 ERROR KILLER)
 // ==============================================================
-const API_DELAY_MS = 300; // API calls ke beech 300ms ka gap
+const API_DELAY_MS = 1000; // API calls ke beech 300ms ka gap
 let lastApiCallTime = 0;
 let apiQueue = Promise.resolve();
 
 // 🔥 NEW: LTP Cache System
 const ltpCache = new Map();
-const CACHE_TTL = 2500; // 2.5 seconds tak price yaad rakhega
+const CACHE_TTL = 5000; // 2.5 seconds tak price yaad rakhega
 
 const enqueueApiCall = (apiFunction) => {
     apiQueue = apiQueue.then(async () => {
