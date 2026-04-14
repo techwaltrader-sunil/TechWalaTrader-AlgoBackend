@@ -4703,6 +4703,36 @@ const runBacktestSimulator = async (req, res) => {
 
             const spotClosePrice = parseFloat(candle.close);
 
+
+
+            // =========================================================
+            // 🔥 ENTRY X-RAY DEBUGGER (Jab koi trade open nahi hai)
+            // =========================================================
+            if (!isPositionOpen && isMarketOpen && !isTradingHaltedForDay) {
+                
+                // LONG ENTRY CHECK
+                if (txnType === 'Both Side' || txnType === 'Only Long') {
+                    if (entryConds && entryConds.longRules && entryConds.longRules.length > 0) {
+                        const v1 = calcLongInd1.length > 0 ? calcLongInd1[0][i] : null;
+                        const v2 = calcLongInd2.length > 0 ? calcLongInd2[0][i] : null;
+                        const n1 = formatIndName(entryConds.longRules[0].ind1);
+                        const n2 = formatIndName(entryConds.longRules[0].ind2);
+                        console.log(`🔍 [ENTRY X-RAY] Time: ${h}:${m} | Check: LONG | ${n1}: ${v1 ? v1.toFixed(2) : 'null'} | ${n2}: ${v2 ? v2.toFixed(2) : 'null'} | Signal: ${finalLongSignal}`);
+                    }
+                }
+
+                // SHORT ENTRY CHECK
+                if (txnType === 'Both Side' || txnType === 'Only Short') {
+                    if (entryConds && entryConds.shortRules && entryConds.shortRules.length > 0) {
+                        const v1 = calcShortInd1.length > 0 ? calcShortInd1[0][i] : null;
+                        const v2 = calcShortInd2.length > 0 ? calcShortInd2[0][i] : null;
+                        const n1 = formatIndName(entryConds.shortRules[0].ind1);
+                        const n2 = formatIndName(entryConds.shortRules[0].ind2);
+                        console.log(`🔍 [ENTRY X-RAY] Time: ${h}:${m} | Check: SHORT | ${n1}: ${v1 ? v1.toFixed(2) : 'null'} | ${n2}: ${v2 ? v2.toFixed(2) : 'null'} | Signal: ${finalShortSignal}`);
+                    }
+                }
+            }
+
             // =========================================================
             // 5. 🛑 M2M RISK CHECK (SL/TP & Global Max Profit/Loss Check)
             // =========================================================
