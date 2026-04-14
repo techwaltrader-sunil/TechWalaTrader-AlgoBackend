@@ -1909,8 +1909,13 @@ const runBacktestSimulator = async (req, res) => {
         const transactionType = legData.action || "BUY";
 
         const riskSettings = strategy.data?.riskManagement || strategy.riskManagement || {};
+        
+        // 🔥 FIX: Re-declared global limits for Exact Price Math
+        const globalMaxProfit = Number(riskSettings.maxProfit) || 0;
+        const globalMaxLoss = Number(riskSettings.maxLoss) || 0;
+        
         let isTradingHaltedForDay = false; 
-        let currentDayTracker = ""; 
+        let currentDayTracker = "";
 
         const calculateATM = (spotPrice, symbolStr) => {
             if(symbolStr.includes("BANK")) return Math.round(spotPrice / 100) * 100;
