@@ -98,8 +98,7 @@
 //     processTrailingLogic
 // };
 
-
-/// File: src/engine/features/riskManagement/trailingLogic.js
+// File: src/engine/features/riskManagement/trailingLogic.js
 
 // 🔥 1. IMPORT LOGGER
 const { createAndEmitLog } = require('../../utils/logger.js');
@@ -248,4 +247,4 @@ const evaluateTrailingSL = (currentTrade, currentPnl, riskData, tradeQuantity) =
 module.exports = {
     processTrailingLogic,
     evaluateTrailingSL
-};  
+};

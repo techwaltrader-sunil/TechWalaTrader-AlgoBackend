@@ -1399,7 +1399,7 @@ const runBacktestSimulator = async (req, res) => {
                     }
                 }
 
-                /// =========================================================
+                // =========================================================
                 // 🔥 SHARED TRAILING STOP LOSS (TSL) ENGINE 🚀
                 // =========================================================
                 const openTradePnL = calcTradePnL(currentTrade.entryPrice, currentClose, tradeQuantity, currentTrade.transaction);
