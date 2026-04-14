@@ -2220,17 +2220,63 @@ const runBacktestSimulator = async (req, res) => {
                     }
                 }
 
-                // 🔥 2. CHECK GLOBAL MAX PROFIT / MAX LOSS (SHARED LOGIC)
-                if (!hitSL && !hitTP) { 
-                    const mtmResult = evaluateMtmLogic(dailyBreakdownMap[dateStr].pnl, openTradePnL, riskSettings);
+                // // 🔥 2. CHECK GLOBAL MAX PROFIT / MAX LOSS (SHARED LOGIC)
+                // if (!hitSL && !hitTP) { 
+                //     const mtmResult = evaluateMtmLogic(dailyBreakdownMap[dateStr].pnl, openTradePnL, riskSettings);
                     
-                    if (mtmResult.isHalted) {
-                        hitMaxProfit = mtmResult.exitReason === "MAX_PROFIT";
-                        hitMaxLoss = mtmResult.exitReason === "MAX_LOSS";
-                        exitPrice = currentClose; 
-                        exitReason = mtmResult.exitReason;
+                //     if (mtmResult.isHalted) {
+                //         hitMaxProfit = mtmResult.exitReason === "MAX_PROFIT";
+                //         hitMaxLoss = mtmResult.exitReason === "MAX_LOSS";
+                //         exitPrice = currentClose; 
+                //         exitReason = mtmResult.exitReason;
+                //         isTradingHaltedForDay = true; 
+                //         console.log(mtmResult.logMessage);
+                //     }
+                // }
+
+                // =========================================================
+                // 🔥 2. CHECK GLOBAL MAX PROFIT / MAX LOSS (EXACT PRICE LOGIC)
+                // =========================================================
+                if (!hitSL && !hitTP) { 
+                    const realizedDailyPnL = dailyBreakdownMap[dateStr].pnl;
+                    
+                    // Target PnL needed from current trade to hit global limits
+                    const pnlNeededForMaxProfit = globalMaxProfit > 0 ? (globalMaxProfit - realizedDailyPnL) : Infinity;
+                    const pnlNeededForMaxLoss = globalMaxLoss > 0 ? (-globalMaxLoss - realizedDailyPnL) : -Infinity;
+
+                    // Calculate the EXACT Premium Price to hit these targets
+                    let exactMtmProfitPrice = 0;
+                    let exactMtmLossPrice = 0;
+
+                    if (currentTrade.transaction === "BUY") {
+                        exactMtmProfitPrice = currentTrade.entryPrice + (pnlNeededForMaxProfit / tradeQuantity);
+                        exactMtmLossPrice = currentTrade.entryPrice + (pnlNeededForMaxLoss / tradeQuantity); // This will drop price
+                    } else { // SELL
+                        exactMtmProfitPrice = currentTrade.entryPrice - (pnlNeededForMaxProfit / tradeQuantity);
+                        exactMtmLossPrice = currentTrade.entryPrice - (pnlNeededForMaxLoss / tradeQuantity);
+                    }
+
+                    // 🛑 CHECK EXACT MAX LOSS HIT (Mid-Candle)
+                    if (globalMaxLoss > 0 && (
+                        (currentTrade.transaction === "BUY" && currentLow <= exactMtmLossPrice) || 
+                        (currentTrade.transaction === "SELL" && currentHigh >= exactMtmLossPrice)
+                    )) {
+                        hitMaxLoss = true;
+                        exitPrice = exactMtmLossPrice; 
+                        exitReason = "MAX_LOSS";
                         isTradingHaltedForDay = true; 
-                        console.log(mtmResult.logMessage);
+                        console.log(`🛑 [MTM EXACT HIT] Max Loss reached mid-candle. Exiting exactly at ₹${exactMtmLossPrice.toFixed(2)}`);
+                    }
+                    // 🎯 CHECK EXACT MAX PROFIT HIT (Mid-Candle)
+                    else if (globalMaxProfit > 0 && (
+                        (currentTrade.transaction === "BUY" && currentHigh >= exactMtmProfitPrice) || 
+                        (currentTrade.transaction === "SELL" && currentLow <= exactMtmProfitPrice)
+                    )) {
+                        hitMaxProfit = true;
+                        exitPrice = exactMtmProfitPrice; 
+                        exitReason = "MAX_PROFIT";
+                        isTradingHaltedForDay = true; 
+                        console.log(`🎯 [MTM EXACT HIT] Max Profit reached mid-candle. Exiting exactly at ₹${exactMtmProfitPrice.toFixed(2)}`);
                     }
                 }
 
