@@ -4358,7 +4358,9 @@ const runBacktestSimulator = async (req, res) => {
         const cleanSymbolForMap = upperSymbol.replace(' 50', '').trim();
         const spotSecurityId = instrumentData.securityId || dhanIdMap[upperSymbol] || dhanIdMap[cleanSymbolForMap] || "25";
         
-        let timeframe = strategy.interval ? strategy.interval.replace(' min', '') : "5"; 
+        // 🔥 FIX: Deep extraction for interval to handle MongoDB nesting
+        const rawInterval = strategy.interval || strategy.config?.interval || strategy.data?.config?.interval;
+        let timeframe = rawInterval ? String(rawInterval).replace(' min', '').trim() : "5"; 
         
         let cachedData = await HistoricalData.find({
             symbol: { $regex: new RegExp(cleanSymbolForMap, "i") }, timeframe, timestamp: { $gte: startDate, $lte: endDate }
