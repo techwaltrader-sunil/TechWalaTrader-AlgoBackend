@@ -3447,7 +3447,6 @@
 // module.exports = { runBacktestSimulator };
 
 
-
 const mongoose = require('mongoose'); 
 const Strategy = require('../models/Strategy');
 const HistoricalData = require('../models/HistoricalData');
@@ -3615,8 +3614,6 @@ const runBacktestSimulator = async (req, res) => {
         const rawExitLongRules = exitConds.longRules || [];
         const rawExitShortRules = exitConds.shortRules || [];
         
-        console.log(`\n🚨 [DEBUG DB] Exit Rules Found -> Long: ${rawExitLongRules.length}, Short: ${rawExitShortRules.length}`);
-
         const exitLongRules = rawExitLongRules.filter(rule => rule.ind1 && (rule.ind1.id || rule.ind1.display));
         const exitShortRules = rawExitShortRules.filter(rule => rule.ind1 && (rule.ind1.id || rule.ind1.display));
         
@@ -3855,6 +3852,18 @@ const runBacktestSimulator = async (req, res) => {
             // 5. 🛑 M2M RISK CHECK (SL/TP & Global Max Profit/Loss Check)
             // =========================================================
             if (isPositionOpen && currentTrade) {
+                
+                // 🔥 THE RESTORED UNSTOPPABLE X-RAY DEBUGGER 🔥
+                if (currentTrade.signalType === "SHORT") {
+                    const v1 = calcExitShortInd1.length > 0 ? calcExitShortInd1[0][i] : null;
+                    const v2 = calcExitShortInd2.length > 0 ? calcExitShortInd2[0][i] : null;
+                    console.log(`🔍 [X-RAY] Time: ${h}:${m} | Type: SHORT | Ind1: ${v1 ? v1.toFixed(2) : 'null'} | Ind2: ${v2 ? v2.toFixed(2) : 'null'} | Signal: ${exitShortSignal}`);
+                } else if (currentTrade.signalType === "LONG") {
+                    const v1 = calcExitLongInd1.length > 0 ? calcExitLongInd1[0][i] : null;
+                    const v2 = calcExitLongInd2.length > 0 ? calcExitLongInd2[0][i] : null;
+                    console.log(`🔍 [X-RAY] Time: ${h}:${m} | Type: LONG | Ind1: ${v1 ? v1.toFixed(2) : 'null'} | Ind2: ${v2 ? v2.toFixed(2) : 'null'} | Signal: ${exitLongSignal}`);
+                }
+
                 let hitSL = false;
                 let hitTP = false;
                 let hitMaxProfit = false;
@@ -3952,7 +3961,6 @@ const runBacktestSimulator = async (req, res) => {
                         if (lockTrigger > 0 && currentTrade.highestPnL >= lockTrigger) {
                             currentTrade.lockedPnL = lockAmount;
                             currentTrade.tslLocked = true;
-                            // console.log(`🔒 [TSL LOCKED] Profit reached ₹${currentTrade.highestPnL.toFixed(2)}, Locked SL at ₹${lockAmount}`);
                         }
                     }
 
@@ -3972,7 +3980,6 @@ const runBacktestSimulator = async (req, res) => {
 
                                 if (newTrailingPnL > currentTrade.trailingPnL) {
                                     currentTrade.trailingPnL = newTrailingPnL;
-                                    // console.log(`📈 [TSL TRAILED] Peak PnL: ₹${currentTrade.highestPnL.toFixed(2)} | New SL Floor: ₹${newTrailingPnL}`);
                                 }
                             }
                         }
@@ -4055,7 +4062,6 @@ const runBacktestSimulator = async (req, res) => {
             // =========================================================
            if (!isPositionOpen && isMarketOpen && !isTradingHaltedForDay && (finalLongSignal || finalShortSignal)) {
                 
-                // 🔥 FIX 1: Ensure transActionTypeStr is properly capitalized to match conditions
                 const transActionTypeStr = (legData.action || "BUY").toUpperCase();
                 
                 let activeOptionType = "";
@@ -4074,10 +4080,12 @@ const runBacktestSimulator = async (req, res) => {
                 if(isOptionsTrade && broker) {
                     let apiSuccess = false;
                     
-                    // 🔥 FIX 2: Pass all 6 arguments to getOptionSecurityId correctly
                     const strikeCriteria = legData.strikeCriteria || "ATM pt";
                     const strikeType = legData.strikeType || "ATM";
                     const reqExpiry = legData.expiry || "WEEKLY";
+
+                    // 🔥 NEW ENTRY X-RAY: Ye saaf dikhayega ki OptType undefined nahi hai
+                    console.log(`🔍 [X-RAY] Fetching Option ID -> Base: ${upperSymbol}, OptType: ${activeOptionType}`);
 
                     const optionConfig = getOptionSecurityId(upperSymbol, spotClosePrice, strikeCriteria, strikeType, activeOptionType, reqExpiry);
                     
@@ -4162,7 +4170,6 @@ const runBacktestSimulator = async (req, res) => {
                     let apiSuccess = false;
                     const targetStrike = currentTrade.optionConfig.strike;
                     
-                    // 🔥 FIX 3: Pass all 6 arguments to exactly resolve the option again
                     const reqExpiry = legData.expiry || "WEEKLY";
                     const optionConfig = getOptionSecurityId(upperSymbol, targetStrike, "ATM pt", "ATM", currentTrade.optionConfig.type, reqExpiry);
                     
