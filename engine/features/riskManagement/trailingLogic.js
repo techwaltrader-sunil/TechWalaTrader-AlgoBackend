@@ -98,19 +98,22 @@
 //     processTrailingLogic
 // };
 
-// File: src/engine/features/riskManagement/trailingLogic.js
+
+
+
+
 
 // 🔥 1. IMPORT LOGGER
 const { createAndEmitLog } = require('../../utils/logger.js');
 
 /**
  * ========================================================
- * 🟢 LIVE & PAPER TRADING ENGINE (Your Original Code)
+ * 🟢 LIVE & PAPER TRADING ENGINE
  * ========================================================
  */
 const processTrailingLogic = async (deployment, strategy, liveLtp, broker) => {
     try {
-        const riskData = strategy.data?.riskManagement || {};
+        const riskData = strategy.data?.riskManagement || strategy.riskManagement || {};
         const trailType = riskData.profitTrailing;
 
         if (!trailType || trailType === 'No Trailing' || !deployment.entryPrice || liveLtp <= 0) return;
@@ -123,12 +126,14 @@ const processTrailingLogic = async (deployment, strategy, liveLtp, broker) => {
         let isModified = false;
         let logMessage = ""; 
 
+        // 🔥 THE FIX: Fallback variables (UI UI vs DB naming mismatch ko theek karna)
+        const lockAt = parseFloat(riskData.lockAt || riskData.lockTrigger) || 0;
+        const lockProfit = parseFloat(riskData.lockProfit || riskData.lockAmount) || 0;
+
         // --- 1. LOCK FIX PROFIT LOGIC ---
         if (trailType === 'Lock Fix Profit' || trailType === 'Lock and Trail') {
-            const lockAt = parseFloat(riskData.lockAt) || 0;
-            const lockProfit = parseFloat(riskData.lockProfit) || 0;
-
-            if (currentPnl >= lockAt && (!deployment.isProfitLocked)) {
+            // 🔥 THE FIX 2: Strict > 0 check. Taaki 0 pe turant SL na lag jaye.
+            if (lockAt > 0 && currentPnl >= lockAt && (!deployment.isProfitLocked)) {
                 newTrailingSL = deployment.tradeAction === 'BUY'
                     ? deployment.entryPrice + (lockProfit / deployment.tradedQty)
                     : deployment.entryPrice - (lockProfit / deployment.tradedQty);
@@ -142,8 +147,8 @@ const processTrailingLogic = async (deployment, strategy, liveLtp, broker) => {
 
         // --- 2. TRAIL PROFIT LOGIC ---
         if (trailType === 'Trail Profit' || trailType === 'Lock and Trail') {
-            const trailEvery = parseFloat(riskData.trailEvery) || 0;
-            const trailBy = parseFloat(riskData.trailBy) || 0;
+            const trailEvery = parseFloat(riskData.trailEvery || riskData.trailTrigger) || 0;
+            const trailBy = parseFloat(riskData.trailBy || riskData.trailAmount) || 0;
 
             if (trailEvery > 0 && trailBy > 0) {
                 const currentProfitSteps = Math.floor(currentPnl / trailEvery);
@@ -198,12 +203,13 @@ const evaluateTrailingSL = (currentTrade, currentPnl, riskData, tradeQuantity) =
     const trailType = riskData.profitTrailing;
     if (!trailType || trailType === 'No Trailing') return result;
 
+    // 🔥 THE FIX: Fallback variables (UI UI vs DB naming mismatch ko theek karna)
+    const lockAt = parseFloat(riskData.lockAt || riskData.lockTrigger) || 0;
+    const lockProfit = parseFloat(riskData.lockProfit || riskData.lockAmount) || 0;
+
     // --- 1. LOCK FIX PROFIT LOGIC ---
     if (trailType === 'Lock Fix Profit' || trailType === 'Lock and Trail') {
-        const lockAt = parseFloat(riskData.lockAt) || 0;
-        const lockProfit = parseFloat(riskData.lockProfit) || 0;
-
-        if (currentPnl >= lockAt && (!currentTrade.isProfitLocked)) {
+        if (lockAt > 0 && currentPnl >= lockAt && (!currentTrade.isProfitLocked)) {
             result.newTrailingSL = currentTrade.transaction === 'BUY'
                 ? currentTrade.entryPrice + (lockProfit / tradeQuantity)
                 : currentTrade.entryPrice - (lockProfit / tradeQuantity);
@@ -216,8 +222,8 @@ const evaluateTrailingSL = (currentTrade, currentPnl, riskData, tradeQuantity) =
 
     // --- 2. TRAIL PROFIT LOGIC ---
     if (trailType === 'Trail Profit' || trailType === 'Lock and Trail') {
-        const trailEvery = parseFloat(riskData.trailEvery) || 0;
-        const trailBy = parseFloat(riskData.trailBy) || 0;
+        const trailEvery = parseFloat(riskData.trailEvery || riskData.trailTrigger) || 0;
+        const trailBy = parseFloat(riskData.trailBy || riskData.trailAmount) || 0;
 
         if (trailEvery > 0 && trailBy > 0) {
             const currentProfitSteps = Math.floor(currentPnl / trailEvery);
@@ -243,7 +249,6 @@ const evaluateTrailingSL = (currentTrade, currentPnl, riskData, tradeQuantity) =
     return result;
 };
 
-// 🔥 Dono functions ko export kar diya
 module.exports = {
     processTrailingLogic,
     evaluateTrailingSL
