@@ -1392,4 +1392,64 @@ const handleTradingViewAlert = async (req, res) => {
     }
 };
 
-module.exports = { handleTradingViewAlert };
+// =========================================================================
+// 🚨 NEW: DHAN POSTBACK / WEBHOOK HANDLER (For late rejections & Ghost Trades)
+// =========================================================================
+const handleDhanPostback = async (req, res) => {
+    try {
+        const postbackData = req.body;
+        
+        // Dhan hamesha webhook me orderId aur orderStatus bhejta hai
+        const { orderId, orderStatus, remarks, tradingSymbol } = postbackData;
+
+        // Agar orderId nahi hai, to aage mat badho
+        if (!orderId) {
+            return res.status(200).send("IGNORED: No Order ID"); // Webhook ko hamesha 200 dena chahiye
+        }
+
+        console.log(`\n🔔 [DHAN WEBHOOK] Order: ${orderId} | Status: ${orderStatus} | Symbol: ${tradingSymbol}`);
+
+        // Agar order kisi wajah se REJECT ho gaya ho (Late RMS Rejection)
+        if (orderStatus && orderStatus.toUpperCase() === 'REJECTED') {
+            
+            // Database me us ACTIVE deployment ko dhundo jiska order reject hua hai
+            // Note: Hum fallback ke liye 'tradedSymbol' bhi use kar rahe hain
+            const Deployment = require('../models/Deployment'); // Model import
+            
+            const failedDeployment = await Deployment.findOne({
+                status: 'ACTIVE',
+                $or: [
+                    { orderId: orderId }, // Agar aapne DB me orderId save kiya hai
+                    { tradedSymbol: tradingSymbol } // Fallback option
+                ]
+            });
+
+            if (failedDeployment) {
+                const failReason = remarks || "Rejected by Dhan RMS (Caught via Webhook)";
+
+                // 🛑 GHOST TRADE KILL SWITCH 🛑
+                failedDeployment.status = 'FAILED'; 
+                failedDeployment.exitRemarks = failReason;
+                failedDeployment.pnl = 0; // P&L ko strictly 0 kar do
+                await failedDeployment.save();
+
+                console.log(`🛑 [GHOST TRADE KILLED] Webhook marked deployment as FAILED. Reason: ${failReason}`);
+            } else {
+                console.log(`ℹ️ Order ${orderId} rejected, but no matching ACTIVE deployment found (Already handled).`);
+            }
+        }
+
+        // Dhan ko batao ki humne message receive kar liya (200 OK)
+        return res.status(200).json({ success: true, message: "Dhan Postback processed" });
+
+    } catch (error) {
+        console.error("❌ Dhan Postback Error:", error);
+        return res.status(500).json({ error: "Internal Server Error" });
+    }
+};
+
+// 🔥 UPDATE EXPORTS: Dono functions ko export karo
+module.exports = { 
+    handleTradingViewAlert,
+    handleDhanPostback // Naya function add kiya
+};
