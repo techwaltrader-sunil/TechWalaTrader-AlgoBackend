@@ -266,21 +266,26 @@
 // };
 
 
+
+
 const Deployment = require('../models/Deployment');
 
 exports.getReportSummary = async (req, res) => {
     try {
         const { startDate, endDate, brokerId, mode } = req.query;
+
+        // 1. Filter Setup (COMPLETED trades only)
         let query = { status: 'COMPLETED' };
 
-        // Live vs Paper Mode Filter
+        // 🎯 Live vs Forward (Paper Trading) Filter using executionType
         if (mode === 'Forward') {
             query.executionType = { $in: ['PAPER', 'FORWARD_TEST'] }; 
         } else {
+            // Agar mode Live hai ya kuch bhi pass nahi hua, to default LIVE dikhao
             query.executionType = 'LIVE'; 
         }
 
-        // Date Filter
+        // 2. Date Filter
         if (startDate && endDate) {
             query.updatedAt = {
                 $gte: new Date(new Date(startDate).setHours(0, 0, 0, 0)),
@@ -288,10 +293,12 @@ exports.getReportSummary = async (req, res) => {
             };
         }
 
+        // 3. Broker Filter
         if (brokerId && brokerId !== 'All') {
             query.brokers = { $in: [brokerId] };
         }
 
+        // 4. Fetch Deployments from DB
         const deployments = await Deployment.find(query).populate('strategyId');
 
         let totalTrades = deployments.length;
@@ -303,6 +310,7 @@ exports.getReportSummary = async (req, res) => {
         let strategyBreakdown = {};
         let dailyBreakdown = {}; 
 
+        // 5. Data Calculation Loop
         deployments.forEach(dep => {
             const pnl = dep.realizedPnl || 0;
             totalPnl += pnl;
@@ -313,29 +321,35 @@ exports.getReportSummary = async (req, res) => {
             if (pnl > maxProfit) maxProfit = pnl;
             if (pnl < maxLoss) maxLoss = pnl;
 
-            // Date and Time Formatting
+            // 🔥 Time formatting (Mongoose timestamps: createdAt = Entry, updatedAt = Exit)
             const entryDateObj = new Date(dep.createdAt);
             const exitDateObj = new Date(dep.updatedAt);
+            
+            // Full Date for records (e.g., "2026-04-15")
             const dateStrFull = exitDateObj.toISOString().split('T')[0]; 
             const entryTimeStr = entryDateObj.toLocaleTimeString('en-US', { hour12: false, timeZone: 'Asia/Kolkata' });
             const exitTimeStr = exitDateObj.toLocaleTimeString('en-US', { hour12: false, timeZone: 'Asia/Kolkata' });
 
+            // Strategy Breakdown Setup
             const strategyName = dep.strategyId ? dep.strategyId.name : "Unknown Strategy";
-            
             if (!strategyBreakdown[strategyName]) {
                 strategyBreakdown[strategyName] = { 
-                    pnl: 0, trades: 0, wins: 0, losses: 0, 
+                    pnl: 0, 
+                    trades: 0, 
+                    wins: 0, 
+                    losses: 0, 
                     segment: dep.tradedExchange || 'N/A',
-                    tradesList: [] // 🔥 NAYA LOGIC: Yahan trades save honge
+                    tradesList: [] // 🔥 ARRAY FOR FRONTEND ACCORDION
                 };
             }
 
+            // Metrics Update
             strategyBreakdown[strategyName].pnl += pnl;
             strategyBreakdown[strategyName].trades += 1;
             if (pnl > 0) strategyBreakdown[strategyName].wins += 1;
             else if (pnl < 0) strategyBreakdown[strategyName].losses += 1;
 
-            // 🔥 NAYA LOGIC: Har trade ki detail array me push karo
+            // 🔥 INDIVIDUAL TRADE DATA PUSH (Isi se Accordion banega)
             strategyBreakdown[strategyName].tradesList.push({
                 tradedSymbol: dep.tradedSymbol || strategyName,
                 tradeAction: dep.tradeAction || "BUY",
@@ -349,15 +363,25 @@ exports.getReportSummary = async (req, res) => {
                 exitTime: exitTimeStr
             });
 
-            const dateStr = exitDateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+            // Day-wise P&L Calculation for Bar Chart
+            const dateStr = exitDateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }); 
             if (!dailyBreakdown[dateStr]) dailyBreakdown[dateStr] = 0;
             dailyBreakdown[dateStr] += pnl;
         });
 
         const winRate = totalTrades > 0 ? ((wins / totalTrades) * 100).toFixed(2) : 0;
-        const strategyData = Object.keys(strategyBreakdown).map(name => ({ name, ...strategyBreakdown[name] }));
+        
+        // Final Output Map
+        const strategyData = Object.keys(strategyBreakdown).map(name => ({ 
+            name, 
+            ...strategyBreakdown[name] 
+        }));
+
+        // Daily P&L Array formatting for Bar Chart
         const dailyData = Object.keys(dailyBreakdown).map(date => ({
-            date, pnl: dailyBreakdown[date], fill: dailyBreakdown[date] >= 0 ? '#10b981' : '#ef4444' 
+            date,
+            pnl: dailyBreakdown[date],
+            fill: dailyBreakdown[date] >= 0 ? '#10b981' : '#ef4444' 
         }));
 
         res.status(200).json({
