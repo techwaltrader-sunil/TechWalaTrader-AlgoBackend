@@ -267,7 +267,6 @@
 
 
 
-
 const Deployment = require('../models/Deployment');
 
 exports.getReportSummary = async (req, res) => {
