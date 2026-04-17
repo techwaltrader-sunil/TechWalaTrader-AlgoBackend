@@ -2477,7 +2477,6 @@
 
 
 
-
 // ==========================================
 // 🌟 MAIN TRADING ENGINE (THE MANAGER) 🌟
 // ==========================================
@@ -2495,7 +2494,6 @@ const { fetchLivePrice } = require('./utils/priceFetcher.js');
 const { createAndEmitLog } = require('./utils/logger.js'); 
 
 // 🔍 Scanners
-// 🔥 FIX: Added 'getIndicatorExitSignal' for Indicator Exits
 const { findStrikeByLivePremium } = require('./scanners/optionChainScanner.js');
 const { getIndicatorSignal, getIndicatorExitSignal } = require('./scanners/indicatorScanner.js');  
 
@@ -2527,7 +2525,9 @@ cron.schedule('*/30 * * * * *', async () => {
 
     try {
         const currentTime = moment().tz("Asia/Kolkata").format("HH:mm");
-        const activeDeployments = await Deployment.find({ status: 'ACTIVE' }).populate('strategyId');
+        const activeDeployments = await Deployment.find({ 
+            status: { $in: ['ACTIVE', 'PARTIALLY_COMPLETED'] } // 🔥 FIX: Both active states
+        }).populate('strategyId');
 
         if (activeDeployments.length === 0) return;
 
@@ -2558,10 +2558,14 @@ cron.schedule('*/30 * * * * *', async () => {
             else if (upperRawSymbol.includes("SENSEX")) baseSymbol = "SENSEX";
             else continue; 
 
+            // 🔥 HELPERS
+            const hasLegs = deployment.executedLegs && deployment.executedLegs.length > 0;
+            const hasActiveLegs = hasLegs && deployment.executedLegs.some(l => l.status === 'ACTIVE');
+
             // ==============================================================
-            // ⚡ 1. ENTRY LOGIC 
+            // ⚡ 1. ENTRY LOGIC (Fixed to use executedLegs array)
             // ==============================================================
-            if (!executionLocks.has(entryLockKey) && !deployment.tradedSecurityId) {
+            if (!executionLocks.has(entryLockKey) && !hasLegs) {
                 let shouldEnter = false;
                 let currentSignalType = "NONE";
                 const strategyType = strategy.type || "Time Based"; 
@@ -2610,36 +2614,26 @@ cron.schedule('*/30 * * * * *', async () => {
                                 
                                 if (!instrument) continue;
 
-
-                                if (!instrument) continue;
-
-                                // 🔥 THE WAIT & TRADE INJECTION 🔥
-                                await sleep(500); // 805 Rate limit safety
+                                // 🔥 THE WAIT & TRADE INJECTION
+                                await sleep(500); 
                                 const currentPremiumLtp = preFetchedLtp || await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id) || currentSpotPrice;
 
                                 const isWaitAndTradeActive = strategy.data?.advanceSettings?.waitAndTrade;
                                 const waitAndTradeConfig = strategy.data?.advanceSettings?.waitAndTradeConfig || {};
 
                                 if (isWaitAndTradeActive && waitAndTradeConfig.movement > 0) {
-                                    // 1. Agar Reference Price save nahi hai, to save karo aur Wait karo
                                     if (!deployment.waitReferencePrice) {
                                         deployment.waitReferencePrice = currentPremiumLtp; 
                                         await deployment.save();
-                                        
-                                        console.log(`⏳ [WAIT & TRADE] Signal Aaya! Ref Price: ₹${currentPremiumLtp}. Waiting for movement...`);
+                                        console.log(`⏳ [WAIT & TRADE] Ref Price: ₹${currentPremiumLtp}. Waiting for movement...`);
                                         await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'INFO', `Wait & Trade Activated. Ref Premium: ₹${currentPremiumLtp}`);
-                                        continue; // 🛑 Trade execute mat karo, agle loop ka intezaar karo
-                                    } 
-                                    // 2. Agar pehle se Wait kar rahe hain, to condition check karo
-                                    else {
+                                        continue; 
+                                    } else {
                                         const waitStatus = processWaitAndTrade(waitAndTradeConfig, currentPremiumLtp, deployment.waitReferencePrice);
-                                        
                                         if (!waitStatus.shouldExecute) {
-                                            // Condition abhi meet nahi hui hai
-                                            continue; // 🛑 Chup chaap agle loop me jao
+                                            continue; 
                                         } else {
-                                            console.log(`🎯 [WAIT & TRADE] Condition Met! Current: ₹${currentPremiumLtp} crossed Target: ₹${waitStatus.targetPrice}.`);
-                                            await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'INFO', `Wait Target (₹${waitStatus.targetPrice}) Hit! Executing Trade...`);
+                                            console.log(`🎯 [WAIT & TRADE] Target Hit! Executing Trade...`);
                                         }
                                     }
                                 }
@@ -2647,33 +2641,35 @@ cron.schedule('*/30 * * * * *', async () => {
                                 // 🟢 PAPER TRADE ENTRY
                                 if (deployment.executionType === 'FORWARD_TEST' || deployment.executionType === 'PAPER') {
                                     await sleep(500); 
-                                    
-                                    // 🔥 THE BUG FIX: "|| currentSpotPrice" hata diya gaya hai!
                                     let entryPrice = preFetchedLtp || await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id);
                                     
-                                    // Agar API error ki wajah se price nahi mila, to galat price par entry mat lo!
                                     if (!entryPrice || entryPrice <= 0) {
-                                        console.log(`⚠️ [WARNING] LTP not found for Paper Trade Entry. Skipping tick to prevent wrong P&L.`);
+                                        console.log(`⚠️ LTP not found. Skipping...`);
                                         continue; 
                                     }
                                     
-                                    deployment.tradedSecurityId = instrument.id;
-                                    deployment.tradedExchange = instrument.exchange;
-                                    deployment.tradedQty = tradeQty;
-                                    deployment.tradeAction = tradeAction;
-                                    deployment.tradedSymbol = instrument.tradingSymbol;
-                                    deployment.entryPrice = entryPrice;
-
+                                    let paperSl = 0;
                                     if (isPrePunchSL && entryPrice > 0 && leg.slValue > 0) {
-                                        deployment.paperSlPrice = tradeAction === "BUY" 
+                                        paperSl = tradeAction === "BUY" 
                                             ? (leg.slType === 'SL%' ? entryPrice - (entryPrice * (Number(leg.slValue)/100)) : entryPrice - Number(leg.slValue))
                                             : (leg.slType === 'SL%' ? entryPrice + (entryPrice * (Number(leg.slValue)/100)) : entryPrice + Number(leg.slValue));
                                     }
 
+                                    // 🔥 PUSH TO ARRAY
+                                    deployment.executedLegs.push({
+                                        securityId: instrument.id,
+                                        exchange: instrument.exchange,
+                                        symbol: instrument.tradingSymbol,
+                                        action: tradeAction,
+                                        quantity: tradeQty,
+                                        entryPrice: entryPrice,
+                                        paperSlPrice: paperSl,
+                                        status: 'ACTIVE'
+                                    });
+
                                     await deployment.save();
                                     await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'SUCCESS', `Paper Entry at ₹${entryPrice}`);
                                 }
-
                                 
                                 // 🔴 LIVE TRADE ENTRY
                                 else if (deployment.executionType === 'LIVE') {
@@ -2681,20 +2677,19 @@ cron.schedule('*/30 * * * * *', async () => {
                                     const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
 
                                     if (orderResponse.success && orderResponse.data?.orderStatus?.toUpperCase() !== "REJECTED") {
-                                        deployment.tradedSecurityId = instrument.id;
-                                        deployment.tradedExchange = instrument.exchange;
-                                        deployment.tradedQty = tradeQty;
-                                        deployment.tradeAction = tradeAction;
-                                        deployment.tradedSymbol = instrument.tradingSymbol;
-                                        deployment.signalType = currentSignalType; // 🔥 FIX: Saving Signal Type
-
                                         await sleep(2000); 
-                                        const entryPrice = await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id);
-                                        deployment.entryPrice = entryPrice || 0;
+                                        const entryPrice = await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id) || 0;
 
-                                        if (isPrePunchSL) {
-                                            await handlePrePunchSl(deployment, broker, leg, deployment.entryPrice);
-                                        }
+                                        // 🔥 PUSH TO ARRAY
+                                        deployment.executedLegs.push({
+                                            securityId: instrument.id,
+                                            exchange: instrument.exchange,
+                                            symbol: instrument.tradingSymbol,
+                                            action: tradeAction,
+                                            quantity: tradeQty,
+                                            entryPrice: entryPrice,
+                                            status: 'ACTIVE'
+                                        });
 
                                         await deployment.save();
                                         await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'SUCCESS', `Live Entry Executed`, orderResponse.data.orderId);
@@ -2709,143 +2704,144 @@ cron.schedule('*/30 * * * * *', async () => {
             }
 
             // ==============================================================
-            // 📉 2.5 INDICATOR BASED EXIT LOGIC (NEW)
+            // 📉 2.5 INDICATOR BASED EXIT LOGIC (Fixed for Array)
             // ==============================================================
-            if (!executionLocks.has(exitLockKey) && deployment.tradedSecurityId && strategy.type === "Indicator Based") {
+            if (!executionLocks.has(exitLockKey) && hasActiveLegs && strategy.type === "Indicator Based") {
                 const broker = await Broker.findById(deployment.brokers[0]);
                 if (broker && broker.engineOn) {
-                    // 🔥 Scanner se poochho ki Exit ka signal aaya kya?
-                    const shouldExit = await getIndicatorExitSignal(strategy, broker, baseSymbol, deployment.signalType);
+                    // Check signal (you might need to update your scanner if it relied on single leg data)
+                    const shouldExit = await getIndicatorExitSignal(strategy, broker, baseSymbol, deployment.signalType || "NONE");
                     
                     if (shouldExit) {
                         executionLocks.add(exitLockKey);
                         console.log(`📉 INDICATOR EXIT TRIGGERED! Strategy: ${strategy.name}`);
 
-                        const exitAction = deployment.tradeAction === 'BUY' ? 'SELL' : 'BUY';
-                        
-                        // 🟢 PAPER EXIT (Indicator)
-                        if (deployment.executionType === 'FORWARD_TEST' || deployment.executionType === 'PAPER') {
-                            await sleep(500); 
-                            const exitLtp = await fetchLiveLTP(broker.clientId, broker.apiSecret, deployment.tradedExchange, deployment.tradedSecurityId) || 0;
+                        for (let i = 0; i < deployment.executedLegs.length; i++) {
+                            let currentLeg = deployment.executedLegs[i];
+                            if (currentLeg.status !== 'ACTIVE') continue;
+
+                            const exitAction = currentLeg.action === 'BUY' ? 'SELL' : 'BUY';
+                            await sleep(500);
                             
-                            if (exitLtp > 0 && deployment.entryPrice > 0) {
-                                const finalPnl = deployment.tradeAction === 'BUY' 
-                                    ? (exitLtp - deployment.entryPrice) * deployment.tradedQty 
-                                    : (deployment.entryPrice - exitLtp) * deployment.tradedQty;
+                            // PAPER
+                            if (deployment.executionType === 'FORWARD_TEST' || deployment.executionType === 'PAPER') {
+                                const exitLtp = await fetchLiveLTP(broker.clientId, broker.apiSecret, currentLeg.exchange, currentLeg.securityId) || 0;
+                                if (exitLtp > 0) {
+                                    const finalPnl = currentLeg.action === 'BUY' 
+                                        ? (exitLtp - currentLeg.entryPrice) * currentLeg.quantity 
+                                        : (currentLeg.entryPrice - exitLtp) * currentLeg.quantity;
 
-                                deployment.exitPrice = exitLtp;
-                                deployment.pnl = finalPnl;
-                                deployment.realizedPnl = finalPnl;
-                                deployment.status = 'COMPLETED';
-                                deployment.exitRemarks = "Indicator Exit condition met";
-                                await deployment.save();
+                                    currentLeg.exitPrice = exitLtp;
+                                    currentLeg.livePnl = finalPnl;
+                                    currentLeg.status = 'COMPLETED';
+                                    currentLeg.exitReason = "Indicator Exit";
+                                    
+                                    deployment.pnl = (deployment.pnl || 0) + finalPnl;
+                                    deployment.realizedPnl = (deployment.realizedPnl || 0) + finalPnl;
 
-                                await createAndEmitLog(broker, deployment.tradedSymbol, exitAction, deployment.tradedQty, 'SUCCESS', `Paper Auto-Exit (Indicator). P&L: ₹${finalPnl.toFixed(2)}`);
+                                    await createAndEmitLog(broker, currentLeg.symbol, exitAction, currentLeg.quantity, 'SUCCESS', `Paper Indicator Exit. P&L: ₹${finalPnl.toFixed(2)}`);
+                                }
+                            } 
+                            // LIVE
+                            else if (deployment.executionType === 'LIVE') {
+                                const orderData = { action: exitAction, quantity: currentLeg.quantity, securityId: currentLeg.securityId, segment: currentLeg.exchange };
+                                const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
                                 
-                                // Trigger Advance Features (Exit All)
-                                if (strategy.data?.advanceSettings?.exitAllOnSlTgt) {
-                                    await handleExitAllOnSlTgt(strategy, deployment, broker, "Indicator Exit");
+                                if (orderResponse.success) {
+                                    await sleep(2000); 
+                                    const exitLtp = await fetchLiveLTP(broker.clientId, broker.apiSecret, currentLeg.exchange, currentLeg.securityId) || 0;
+                                    const finalPnl = currentLeg.action === 'BUY' 
+                                        ? (exitLtp - currentLeg.entryPrice) * currentLeg.quantity 
+                                        : (currentLeg.entryPrice - exitLtp) * currentLeg.quantity;
+
+                                    currentLeg.exitPrice = exitLtp;
+                                    currentLeg.livePnl = finalPnl;
+                                    currentLeg.status = 'COMPLETED';
+                                    currentLeg.exitReason = "Indicator Exit";
+                                    
+                                    deployment.pnl = (deployment.pnl || 0) + finalPnl;
+                                    deployment.realizedPnl = (deployment.realizedPnl || 0) + finalPnl;
+
+                                    await createAndEmitLog(broker, currentLeg.symbol, exitAction, currentLeg.quantity, 'SUCCESS', `Live Indicator Exit. P&L: ₹${finalPnl.toFixed(2)}`, orderResponse.data.orderId);
                                 }
                             }
-                        } 
-                        // 🔴 LIVE EXIT (Indicator)
-                        else if (deployment.executionType === 'LIVE') {
-                            const orderData = { action: exitAction, quantity: deployment.tradedQty, securityId: deployment.tradedSecurityId, segment: deployment.tradedExchange };
-                            const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
-                            
-                            if (orderResponse.success && orderResponse.data?.orderStatus?.toUpperCase() !== "REJECTED") {
-                                await sleep(2000); 
-                                const exitLtp = await fetchLiveLTP(broker.clientId, broker.apiSecret, deployment.tradedExchange, deployment.tradedSecurityId) || 0;
-                                
-                                const finalPnl = deployment.tradeAction === 'BUY' 
-                                    ? (exitLtp - deployment.entryPrice) * deployment.tradedQty 
-                                    : (deployment.entryPrice - exitLtp) * deployment.tradedQty;
+                        }
+                        deployment.status = 'COMPLETED';
+                        deployment.exitRemarks = "Indicator Exit condition met";
+                        await deployment.save();
 
-                                deployment.exitPrice = exitLtp;
-                                deployment.pnl = finalPnl;
-                                deployment.realizedPnl = finalPnl;
-                                deployment.status = 'COMPLETED';
-                                deployment.exitRemarks = "Indicator Exit condition met";
-                                await deployment.save();
-
-                                await createAndEmitLog(broker, deployment.tradedSymbol, exitAction, deployment.tradedQty, 'SUCCESS', `Live Auto-Exit (Indicator). P&L: ₹${finalPnl.toFixed(2)}`, orderResponse.data.orderId);
-
-                                // Trigger Advance Features (Exit All)
-                                if (strategy.data?.advanceSettings?.exitAllOnSlTgt) {
-                                    await handleExitAllOnSlTgt(strategy, deployment, broker, "Indicator Exit");
-                                }
-                            } else {
-                                await createAndEmitLog(broker, deployment.tradedSymbol, exitAction, deployment.tradedQty, 'FAILED', `Indicator Exit Failed: ${orderResponse.data?.remarks || "RMS Rejected"}`);
-                                executionLocks.delete(exitLockKey);
-                            }
+                        if (strategy.data?.advanceSettings?.exitAllOnSlTgt) {
+                            await handleExitAllOnSlTgt(strategy, deployment, broker, "Indicator Exit");
                         }
                     }
                 }
             }
 
-
             // ==============================================================
-            // ⏰ 3. TIME-BASED AUTO SQUARE-OFF LOGIC (BULLETPROOF FIXED)
+            // ⏰ 3. TIME-BASED AUTO SQUARE-OFF LOGIC (Fixed for Array)
             // ==============================================================
-            if (squareOffTime && deployment.tradedSecurityId && !executionLocks.has(exitLockKey)) {
-                
-                // Convert both times to pure minutes for safe >= comparison
+            if (squareOffTime && hasActiveLegs && !executionLocks.has(exitLockKey)) {
                 const [currH, currM] = currentTime.split(':').map(Number);
                 const currentMinutes = (currH * 60) + currM;
 
                 const [sqH, sqM] = squareOffTime.split(':').map(Number);
                 const squareOffMinutes = (sqH * 60) + sqM;
 
-                // Agar current time square-off time ke barabar ya usse zayada hai
                 if (currentMinutes >= squareOffMinutes) {
                     executionLocks.add(exitLockKey);
-                    console.log(`⏰ TIME SQUARE-OFF TRIGGERED! Strategy: ${strategy.name} at ${currentTime} (Target was ${squareOffTime})`);
+                    console.log(`⏰ TIME SQUARE-OFF TRIGGERED! Strategy: ${strategy.name}`);
 
-                    for (const brokerId of deployment.brokers) {
-                        const broker = await Broker.findById(brokerId);
-                        if (broker && broker.engineOn) {
-                            const exitAction = deployment.tradeAction === 'BUY' ? 'SELL' : 'BUY';
+                    const broker = await Broker.findById(deployment.brokers[0]);
+                    if (broker && broker.engineOn) {
+                        for (let i = 0; i < deployment.executedLegs.length; i++) {
+                            let currentLeg = deployment.executedLegs[i];
+                            if (currentLeg.status !== 'ACTIVE') continue;
+
+                            const exitAction = currentLeg.action === 'BUY' ? 'SELL' : 'BUY';
                             
+                            // PAPER
                             if (deployment.executionType === 'FORWARD_TEST' || deployment.executionType === 'PAPER') {
                                 await sleep(500); 
-                                const exitLtp = await fetchLiveLTP(broker.clientId, broker.apiSecret, deployment.tradedExchange, deployment.tradedSecurityId) || 0;
+                                const exitLtp = await fetchLiveLTP(broker.clientId, broker.apiSecret, currentLeg.exchange, currentLeg.securityId) || 0;
                                 
-                                if (exitLtp > 0 && deployment.entryPrice > 0) {
-                                    const finalPnl = deployment.tradeAction === 'BUY' 
-                                        ? (exitLtp - deployment.entryPrice) * deployment.tradedQty 
-                                        : (deployment.entryPrice - exitLtp) * deployment.tradedQty;
+                                if (exitLtp > 0) {
+                                    const finalPnl = currentLeg.action === 'BUY' 
+                                        ? (exitLtp - currentLeg.entryPrice) * currentLeg.quantity 
+                                        : (currentLeg.entryPrice - exitLtp) * currentLeg.quantity;
 
-                                    deployment.exitPrice = exitLtp;
-                                    deployment.pnl = finalPnl;
-                                    deployment.realizedPnl = finalPnl;
-                                    deployment.status = 'COMPLETED';
-                                    deployment.exitRemarks = "Time Auto Square-Off";
-                                    await deployment.save();
+                                    currentLeg.exitPrice = exitLtp;
+                                    currentLeg.livePnl = finalPnl;
+                                    currentLeg.status = 'COMPLETED';
+                                    currentLeg.exitReason = "Time Auto Square-Off";
+                                    
+                                    deployment.pnl = (deployment.pnl || 0) + finalPnl;
+                                    deployment.realizedPnl = (deployment.realizedPnl || 0) + finalPnl;
 
-                                    await createAndEmitLog(broker, deployment.tradedSymbol, exitAction, deployment.tradedQty, 'SUCCESS', `Paper Trade Auto-Exit (Time). P&L: ₹${finalPnl.toFixed(2)}`);
+                                    await createAndEmitLog(broker, currentLeg.symbol, exitAction, currentLeg.quantity, 'SUCCESS', `Paper Auto-Exit (Time). P&L: ₹${finalPnl.toFixed(2)}`);
                                 }
                             } 
+                            // LIVE
                             else if (deployment.executionType === 'LIVE') {
-                                const orderData = { action: exitAction, quantity: deployment.tradedQty, securityId: deployment.tradedSecurityId, segment: deployment.tradedExchange };
+                                const orderData = { action: exitAction, quantity: currentLeg.quantity, securityId: currentLeg.securityId, segment: currentLeg.exchange };
                                 const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
                                 
                                 if (orderResponse.success) {
-                                    // Live db save & log is handled by Webhook, but we can add a basic log here
-                                    await createAndEmitLog(broker, deployment.tradedSymbol, exitAction, deployment.tradedQty, 'INFO', `Live Time Auto Square-Off order placed.`);
+                                    currentLeg.status = 'COMPLETED'; // Will sync properly with Webhook
+                                    currentLeg.exitReason = "Time Auto Square-Off";
+                                    await createAndEmitLog(broker, currentLeg.symbol, exitAction, currentLeg.quantity, 'INFO', `Live Time Auto Square-Off order placed.`);
                                 }
                             }
                         }
+                        deployment.status = 'COMPLETED';
+                        deployment.exitRemarks = "Time Auto Square-Off";
+                        await deployment.save();
                     }
                 }
             }
 
-
             // ==============================================================
             // 💰 4. RISK MANAGEMENT & ADVANCE FEATURES DELEGATION 
             // ==============================================================
-            // 🔥 FIX: Ab hum check karenge ki kya koi bhi leg ACTIVE hai?
-            const hasActiveLegs = deployment.executedLegs && deployment.executedLegs.some(l => l.status === 'ACTIVE');
-
             if (hasActiveLegs && (deployment.status === 'ACTIVE' || deployment.status === 'PARTIALLY_COMPLETED') && !executionLocks.has(exitLockKey)) {
                 
                 await handleMtmSquareOff(deployment, strategy, executionLocks, exitLockKey);
@@ -2857,7 +2853,7 @@ cron.schedule('*/30 * * * * *', async () => {
                     for (let i = 0; i < deployment.executedLegs.length; i++) {
                         let currentLeg = deployment.executedLegs[i];
                         
-                        if (currentLeg.status !== 'ACTIVE') continue; // Jo cut gaya use ignore karo
+                        if (currentLeg.status !== 'ACTIVE') continue; 
 
                         await sleep(1000); 
                         const liveLtp = await fetchLiveLTP(broker.clientId, broker.apiSecret, currentLeg.exchange, currentLeg.securityId);
@@ -2868,7 +2864,6 @@ cron.schedule('*/30 * * * * *', async () => {
                             let isTpHit = false;
                             let exitReason = "";
 
-                            // Strategy setup me se is leg ka config nikalo
                             const legConfig = strategy.data.legs.find(l => 
                                 (l.action || "BUY").toUpperCase() === currentLeg.action && 
                                 currentLeg.symbol.includes(l.optionType === "Call" ? "CE" : "PE")
@@ -2905,7 +2900,7 @@ cron.schedule('*/30 * * * * *', async () => {
                                 }
                             }
 
-                            // ⚡ AGAR SL YA TP HIT HUA HAI TO SIRF YE WALA LEG CUT KARO
+                            // ⚡ SQUARE-OFF
                             if (isSlHit || isTpHit) {
                                 executionLocks.add(exitLockKey);
                                 const exitAction = currentLeg.action === 'BUY' ? 'SELL' : 'BUY';
@@ -2915,35 +2910,47 @@ cron.schedule('*/30 * * * * *', async () => {
                                     ? (liveLtp - currentLeg.entryPrice) * currentLeg.quantity 
                                     : (currentLeg.entryPrice - liveLtp) * currentLeg.quantity;
 
-                                // Leg ka data update karo
                                 currentLeg.exitPrice = liveLtp;
                                 currentLeg.livePnl = finalPnl;
                                 currentLeg.status = 'COMPLETED';
                                 currentLeg.exitReason = exitReason;
 
-                                // Total PnL update karo
                                 deployment.pnl = (deployment.pnl || 0) + finalPnl;
                                 deployment.realizedPnl = (deployment.realizedPnl || 0) + finalPnl;
                                 
-                                // 🔥 THE MAGIC: Check if all legs are completed
                                 const allCompleted = deployment.executedLegs.every(l => l.status === 'COMPLETED');
                                 deployment.status = allCompleted ? 'COMPLETED' : 'PARTIALLY_COMPLETED';
 
                                 await deployment.save();
-                                await createAndEmitLog(broker, currentLeg.symbol, exitAction, currentLeg.quantity, 'SUCCESS', `Auto-Exit: ${exitReason}. P&L: ₹${finalPnl.toFixed(2)}`);
 
-                                // 🚀 YAHAN AAYEGA MOVE SL TO COST KA JADOO
+                                // PAPER / LIVE Log Execution
+                                if (deployment.executionType === 'FORWARD_TEST' || deployment.executionType === 'PAPER') {
+                                    await createAndEmitLog(broker, currentLeg.symbol, exitAction, currentLeg.quantity, 'SUCCESS', `Auto-Exit: ${exitReason}. P&L: ₹${finalPnl.toFixed(2)}`);
+                                } else if (deployment.executionType === 'LIVE') {
+                                    const orderData = { action: exitAction, quantity: currentLeg.quantity, securityId: currentLeg.securityId, segment: currentLeg.exchange };
+                                    const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
+                                    if (orderResponse.success) {
+                                        await createAndEmitLog(broker, currentLeg.symbol, exitAction, currentLeg.quantity, 'SUCCESS', `Live Auto-Exit: ${exitReason}. P&L: ₹${finalPnl.toFixed(2)}`, orderResponse.data.orderId);
+                                    }
+                                }
+
+                                // 🚀 ADVANCE FEATURES
                                 if (!allCompleted && strategy.data?.advanceSettings?.moveSLToCost) {
-                                    console.log(`🛡️ Move SL to Cost Triggered for remaining legs!`);
                                     await handleMoveSlToCost(strategy, deployment, broker);
+                                }
+                                if (strategy.data?.advanceSettings?.exitAllOnSlTgt) {
+                                    await handleExitAllOnSlTgt(strategy, deployment, broker, exitReason);
                                 }
 
                             } else {
-                                // Agar SL Hit nahi hua to bas Live PnL update karo UI ke liye
+                                // Live PnL UI Update
                                 currentLeg.livePnl = currentLeg.action === 'BUY' 
                                     ? (liveLtp - currentLeg.entryPrice) * currentLeg.quantity 
                                     : (currentLeg.entryPrice - liveLtp) * currentLeg.quantity;
                                 await deployment.save();
+                                
+                                // Note: Trailing logic can be called here if needed for the current leg
+                                // await processTrailingLogic(deployment, strategy, liveLtp, broker);
                             }
                         }
                     }
