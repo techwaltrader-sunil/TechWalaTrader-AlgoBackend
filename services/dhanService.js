@@ -771,60 +771,59 @@ const enqueueApiCall = (apiFunction) => {
 
 
 // ==========================================
-// 🛒 1. PLACE DHAN ORDER (WITH AUTO-RETRY)
+// 🛒 1. PLACE DHAN ORDER (WITH AUTO-RETRY - DEADLOCK FIXED)
 // ==========================================
-const placeDhanOrder = async (clientId, accessToken, orderData, retryCount = 0) => {
-    const MAX_RETRIES = 3; // Maximum 3 baar try karega
-    const RETRY_DELAY_MS = 1500; // Har try ke beech 1.5 seconds ka gap
+const placeDhanOrder = async (clientId, accessToken, orderData) => {
+    const MAX_RETRIES = 3; 
+    const RETRY_DELAY_MS = 1500; 
 
     return enqueueApiCall(async () => { 
-        try {
-            // Correlation ID me retry count jod diya hai taki Dhan ise duplicate na mane
-            const retrySuffix = retryCount > 0 ? `-R${retryCount}` : '';
-            const payload = {
-                dhanClientId: clientId,
-                correlationId: `TM-${Date.now()}${retrySuffix}`, 
-                transactionType: orderData.action, 
-                exchangeSegment: "NSE_FNO", 
-                productType: "INTRADAY", 
-                orderType: "MARKET", 
-                validity: "DAY",
-                securityId: orderData.securityId, 
-                quantity: orderData.quantity
-            };
+        // 🔥 DEADLOCK FIX: Recursion hatakar simple FOR loop laga diya
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                const retrySuffix = attempt > 0 ? `-R${attempt}` : '';
+                const payload = {
+                    dhanClientId: clientId,
+                    correlationId: `TM-${Date.now()}${retrySuffix}`, 
+                    transactionType: orderData.action, 
+                    exchangeSegment: "NSE_FNO", 
+                    productType: "INTRADAY", 
+                    orderType: "MARKET", 
+                    validity: "DAY",
+                    securityId: orderData.securityId, 
+                    quantity: orderData.quantity
+                };
 
-            const response = await axios.post(DHAN_API_URL, payload, {
-                headers: {
-                    'access-token': accessToken,
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
+                const response = await axios.post(DHAN_API_URL, payload, {
+                    headers: {
+                        'access-token': accessToken,
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    }
+                });
+
+                if (attempt > 0) {
+                     console.log(`✅ [DHAN API] Order Placed Successfully on Retry #${attempt} for ${clientId}`);
+                } else {
+                     console.log(`✅ [DHAN API] Order Placed Successfully for ${clientId}:`, response.data);
                 }
-            });
-
-            if (retryCount > 0) {
-                 console.log(`✅ [DHAN API] Order Placed Successfully on Retry #${retryCount} for ${clientId}`);
-            } else {
-                 console.log(`✅ [DHAN API] Order Placed Successfully for ${clientId}:`, response.data);
-            }
-            
-            return { success: true, data: response.data };
-
-        } catch (error) {
-            const status = error.response?.status;
-            
-            // 🔥 THE AUTO-RETRY LOGIC 🔥
-            // Agar Dhan API server error (502, 503, 504) de, to turant fail mat karo, dobara try karo!
-            if ((status === 502 || status === 503 || status === 504 || error.code === 'ECONNABORTED' || !error.response) && retryCount < MAX_RETRIES) {
-                console.warn(`⚠️ [DHAN API] Server Error (${status || 'Network Issue'}) for ${clientId}. Retrying in ${RETRY_DELAY_MS/1000}s... (Attempt ${retryCount + 1}/${MAX_RETRIES})`);
                 
-                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
-                
-                // Recursion: Function khud ko dobara bulayega
-                return placeDhanOrder(clientId, accessToken, orderData, retryCount + 1);
-            }
+                return { success: true, data: response.data };
 
-            console.error(`❌ [DHAN API] Order Failed for ${clientId} after ${retryCount} retries:`, error.response?.data || error.message);
-            return { success: false, error: error.response?.data || error.message };
+            } catch (error) {
+                const status = error.response?.status;
+                
+                // Agar server error hai aur attempts bache hain
+                if ((status === 502 || status === 503 || status === 504 || error.code === 'ECONNABORTED' || !error.response) && attempt < MAX_RETRIES) {
+                    console.warn(`⚠️ [DHAN API] Server Error (${status || 'Network Issue'}) for ${clientId}. Retrying in ${RETRY_DELAY_MS/1000}s... (Attempt ${attempt + 1}/${MAX_RETRIES})`);
+                    
+                    await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+                    continue; // Agle try ke liye loop ko aage badhao (No deadlock!)
+                }
+
+                console.error(`❌ [DHAN API] Order Failed for ${clientId} after ${attempt} retries:`, error.response?.data || error.message);
+                return { success: false, error: error.response?.data || error.message };
+            }
         }
     });
 };
