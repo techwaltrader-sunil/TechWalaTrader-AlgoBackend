@@ -4649,7 +4649,8 @@ const runBacktestSimulator = async (req, res) => {
                         else if (transActionTypeStr === "SELL") activeOptionType = finalLongSignal ? "PE" : "CE"; 
                     }
                     
-                    let finalEntryPrice = spotClosePrice;
+                    // 🔥 THE MAHA-FIX: Options ke liye default 0 rakho, Spot price NAHI!
+                    let finalEntryPrice = isOptionsTrade ? 0 : spotClosePrice; 
                     let validTrade = true;
                     let premiumChartData = null; 
                     let targetStrike = calculateATM(spotClosePrice, upperSymbol);
@@ -4657,18 +4658,15 @@ const runBacktestSimulator = async (req, res) => {
                     const strikeType = legData.strikeType || "ATM";
                     const reqExpiry = legData.expiry || "WEEKLY";
 
-                    // 🔥 THE MAHA-GALTI FIX: Generate Dynamic Symbol BEFORE API Calls
                     const expiryLabel = getNearestExpiryString(dateStr, upperSymbol, reqExpiry);
                     let tradeSymbol = `${upperSymbol} ${targetStrike} ${activeOptionType} (${expiryLabel})`;
 
                     if(isOptionsTrade && broker) {
                         let apiSuccess = false;
 
-                        // 🔥 STRICT HISTORICAL CHECK: Aaj ki date hai ya purani?
                         const todayStr = new Date().toISOString().split('T')[0];
                         const isHistoricalDate = dateStr !== todayStr;
 
-                        // SIRF AAJ KI DATE KE LIYE Live API use karo
                         if(!isHistoricalDate) {
                             const optionConfig = getOptionSecurityId(upperSymbol, spotClosePrice, strikeCriteria, strikeType, activeOptionType, reqExpiry);
                             if (optionConfig && optionConfig.strike) targetStrike = optionConfig.strike;
@@ -4689,13 +4687,11 @@ const runBacktestSimulator = async (req, res) => {
                                         }
                                         premiumChartData = optRes.data; 
                                         apiSuccess = true;
-                                        // ⚠️ WARNING: Yahan hum 'tradeSymbol' ko OVERWRITE NAHI karenge! 
                                     } 
                                 } catch(e) { }
                             } 
                         }
                         
-                        // HISTORICAL DATES KE LIYE: Sirf Rolling Options API (Expired Data) Use karo
                         if (!apiSuccess) {
                             try {
                                 await sleep(500);
@@ -4716,8 +4712,13 @@ const runBacktestSimulator = async (req, res) => {
                             } catch(e) { }
                         }
 
-                        if (apiSuccess && finalEntryPrice > spotClosePrice * 0.5) {
+                        // 🔥 STRICT VALIDATION: API fail hui to trade cancel karo, Spot price mat lo!
+                        if (!apiSuccess || finalEntryPrice === 0) {
                             validTrade = false;
+                            console.log(`❌ Trade Canceled: Dhan API failed to return premium data for ${tradeSymbol} on ${dateStr}`);
+                        } else if (finalEntryPrice > spotClosePrice * 0.5) {
+                            validTrade = false;
+                            console.log(`❌ Trade Canceled: API sent garbage Spot Price instead of Premium for ${tradeSymbol}`);
                         }
                     }
 
@@ -4725,7 +4726,7 @@ const runBacktestSimulator = async (req, res) => {
                         openTrades.push({
                             id: `leg_${legIndex}`,
                             legConfig: legData,
-                            symbol: tradeSymbol, // 🔥 Yahan ab hamesha hamara sundar format jayega!
+                            symbol: tradeSymbol, 
                             transaction: transActionTypeStr, 
                             quantity: tradeQuantity,
                             entryTime: `${h}:${m}:00`, 
