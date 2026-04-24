@@ -4628,7 +4628,7 @@ const runBacktestSimulator = async (req, res) => {
 
 
         // =========================================================
-            // 🔥 2. MULTI-LEG ENTRY LOGIC (100% FIXED STRIKE ACCURACY)
+            // 🔥 2. MULTI-LEG ENTRY LOGIC (100% FIXED STRIKE ACCURACY + UI SYMBOL FIX)
             // =========================================================
             if (openTrades.length === 0 && isMarketOpen && !isTradingHaltedForDay && (finalLongSignal || finalShortSignal)) {
                 
@@ -4656,20 +4656,20 @@ const runBacktestSimulator = async (req, res) => {
                     const strikeType = legData.strikeType || "ATM";
                     const reqExpiry = legData.expiry || "WEEKLY";
 
-                    // Default symbol (will be overridden by actual traded symbol)
-                    let tradeSymbol = `${upperSymbol} ${targetStrike} ${activeOptionType} (Generating...)`;
+                    // 🔥 THE MAHA-FIX: Generate beautiful dynamic symbol with Weekly/Monthly logic
+                    const expiryLabel = getNearestExpiryString(dateStr, upperSymbol, reqExpiry);
+                    let tradeSymbol = `${upperSymbol} ${targetStrike} ${activeOptionType} (${expiryLabel})`;
 
                     if(isOptionsTrade && broker) {
                         let apiSuccess = false;
 
-                        // 🔥 THE JUGAD: We MUST use Live Security ID to get a 100% Fixed Chart.
-                        // (Even for historical dates, this fetches the nearest active contract available in Dhan's DB)
+                        // 100% FIXED STRIKE LOGIC
                         const optionConfig = getOptionSecurityId(upperSymbol, spotClosePrice, strikeCriteria, strikeType, activeOptionType, reqExpiry);
                         
                         if (optionConfig && optionConfig.strike) {
                             targetStrike = optionConfig.strike;
-                            // 🔥 Ensure UI exactly matches the data being traded to avoid chart-checking confusion!
-                            tradeSymbol = optionConfig.tradingSymbol; 
+                            // 🔥 YAHAN SE 'tradeSymbol = optionConfig.tradingSymbol;' HATA DIYA GAYA HAI!
+                            // Ab UI me hamesha hamara 'expiryLabel' (Weekly/Monthly) hi dikhega!
 
                             try {
                                 await sleep(500); 
@@ -4691,7 +4691,7 @@ const runBacktestSimulator = async (req, res) => {
                             } catch(e) { }
                         } 
 
-                        // Strict Validation: Skip trade if Dhan couldn't provide the fixed chart
+                        // Strict Validation
                         if (!apiSuccess || finalEntryPrice === 0) {
                             validTrade = false;
                             console.log(`❌ Trade Canceled: Exact Security ID not found or API failed for ${tradeSymbol} on ${dateStr}`);
@@ -4705,7 +4705,7 @@ const runBacktestSimulator = async (req, res) => {
                         openTrades.push({
                             id: `leg_${legIndex}`,
                             legConfig: legData,
-                            symbol: tradeSymbol, // Yahan wahi aayega jo exact trade hua hai (e.g., NIFTY 28 APR 24450 CE)
+                            symbol: tradeSymbol, // 🔥 Yahan ab hamesha hamara sundar format jayega!
                             transaction: transActionTypeStr, 
                             quantity: tradeQuantity,
                             entryTime: `${h}:${m}:00`, 
