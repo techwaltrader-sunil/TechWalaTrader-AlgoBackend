@@ -4091,33 +4091,90 @@ const runBacktestSimulator = async (req, res) => {
             return (entryP - exitP) * qty; 
         };
 
-        const getNearestExpiryString = (tradeDateStr, symbolStr) => {
+        // const getNearestExpiryString = (tradeDateStr, symbolStr) => {
+        //     const d = new Date(tradeDateStr);
+        //     const upSym = symbolStr.toUpperCase();
+        //     let expiryDate = new Date(d);
+            
+        //     if (upSym.includes("NIFTY") && !upSym.includes("BANK") && !upSym.includes("FIN") && !upSym.includes("MID")) {
+        //         let targetDay = 2; 
+        //         while (expiryDate.getDay() !== targetDay) expiryDate.setDate(expiryDate.getDate() + 1);
+        //     } else {
+        //         let targetDay = upSym.includes("MID") ? 1 : 2; 
+        //         const lastDayOfMonth = new Date(expiryDate.getFullYear(), expiryDate.getMonth() + 1, 0);
+        //         expiryDate = new Date(lastDayOfMonth);
+        //         while (expiryDate.getDay() !== targetDay) expiryDate.setDate(expiryDate.getDate() - 1);
+        //         if (d > expiryDate) {
+        //             const lastDayOfNextMonth = new Date(d.getFullYear(), d.getMonth() + 2, 0);
+        //             expiryDate = new Date(lastDayOfNextMonth);
+        //             while (expiryDate.getDay() !== targetDay) expiryDate.setDate(expiryDate.getDate() - 1);
+        //         }
+        //     }
+        //     const formattedDate = `${String(expiryDate.getDate()).padStart(2, '0')}${expiryDate.toLocaleString('en-US', { month: 'short' }).toUpperCase()}${String(expiryDate.getFullYear()).slice(-2)}`;
+        //     const today = new Date(); today.setHours(0, 0, 0, 0); 
+        //     const expDateForCheck = new Date(expiryDate); expDateForCheck.setHours(0, 0, 0, 0);
+        //     return `${(expDateForCheck < today) ? "EXP" : "Upcoming EXP"} ${formattedDate}`; 
+        // };
+
+
+
+        // 🔥 NEW: SEBI COMPLIANT EXPRIRY CALCULATOR (ALL TUESDAYS)
+        const getNearestExpiryString = (tradeDateStr, symbolStr, reqExpiry = "WEEKLY") => {
             const d = new Date(tradeDateStr);
             const upSym = symbolStr.toUpperCase();
             let expiryDate = new Date(d);
-            
-            if (upSym.includes("NIFTY") && !upSym.includes("BANK") && !upSym.includes("FIN") && !upSym.includes("MID")) {
-                let targetDay = 2; 
-                while (expiryDate.getDay() !== targetDay) expiryDate.setDate(expiryDate.getDate() + 1);
+
+            // 🔥 SEBI NEW RULE: Ab sabka Expiry TUESDAY (2) ho gaya hai!
+            let targetDay = 2; 
+            let forceMonthly = false;
+
+            // NIFTY 50 ko chhodkar baki sab (Bank, Fin, Midcap) zabardasti Monthly hain
+            if (upSym.includes("BANK") || upSym.includes("FIN") || upSym.includes("MID")) {
+                forceMonthly = true;
+            }
+
+            const upperReqExpiry = reqExpiry.toUpperCase();
+            const isMonthlyRequest = forceMonthly || upperReqExpiry === "MONTHLY";
+
+            if (!isMonthlyRequest) {
+                // NIFTY 50 Weekly Logic (Target Day: Tuesday)
+                while (expiryDate.getDay() !== targetDay) {
+                    expiryDate.setDate(expiryDate.getDate() + 1);
+                }
+                if (upperReqExpiry === "NEXT WEEKLY" || upperReqExpiry === "NEXT WEEK") {
+                    expiryDate.setDate(expiryDate.getDate() + 7);
+                }
             } else {
-                let targetDay = upSym.includes("MID") ? 1 : 2; 
+                // MONTHLY LOGIC (For Bank/Fin/Midcap, or Nifty Monthly) -> Target Day: Last Tuesday
                 const lastDayOfMonth = new Date(expiryDate.getFullYear(), expiryDate.getMonth() + 1, 0);
                 expiryDate = new Date(lastDayOfMonth);
-                while (expiryDate.getDay() !== targetDay) expiryDate.setDate(expiryDate.getDate() - 1);
+                
+                // Find the last Tuesday of the month
+                while (expiryDate.getDay() !== targetDay) {
+                    expiryDate.setDate(expiryDate.getDate() - 1);
+                }
+                
+                // Agar aaj ka din is mahine ki expiry ke BAAD ka hai, to agle mahine ka Last Tuesday lo
                 if (d > expiryDate) {
                     const lastDayOfNextMonth = new Date(d.getFullYear(), d.getMonth() + 2, 0);
                     expiryDate = new Date(lastDayOfNextMonth);
-                    while (expiryDate.getDay() !== targetDay) expiryDate.setDate(expiryDate.getDate() - 1);
+                    while (expiryDate.getDay() !== targetDay) {
+                        expiryDate.setDate(expiryDate.getDate() - 1);
+                    }
                 }
             }
+
             const formattedDate = `${String(expiryDate.getDate()).padStart(2, '0')}${expiryDate.toLocaleString('en-US', { month: 'short' }).toUpperCase()}${String(expiryDate.getFullYear()).slice(-2)}`;
-            const today = new Date(); today.setHours(0, 0, 0, 0); 
-            const expDateForCheck = new Date(expiryDate); expDateForCheck.setHours(0, 0, 0, 0);
-            return `${(expDateForCheck < today) ? "EXP" : "Upcoming EXP"} ${formattedDate}`; 
+            
+            let prefix = "Weekly";
+            if (isMonthlyRequest) prefix = "Monthly";
+            else if (upperReqExpiry === "NEXT WEEKLY" || upperReqExpiry === "NEXT WEEK") prefix = "Next Weekly";
+
+            return `${prefix} EXP ${formattedDate}`;
         };
 
-        
 
+        
         for (let i = 0; i < cachedData.length; i++) {
             if (i % 500 === 0) await new Promise(resolve => setImmediate(resolve));
 
