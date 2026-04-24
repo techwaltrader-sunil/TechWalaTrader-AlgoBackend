@@ -4628,7 +4628,7 @@ const runBacktestSimulator = async (req, res) => {
 
 
         // =========================================================
-            // 🔥 2. MULTI-LEG ENTRY LOGIC (AUTHENTIC WEEKLY/MONTHLY DATA)
+            // 🔥 2. MULTI-LEG ENTRY LOGIC (THE SMART ROUTER)
             // =========================================================
             if (openTrades.length === 0 && isMarketOpen && !isTradingHaltedForDay && (finalLongSignal || finalShortSignal)) {
                 
@@ -4654,7 +4654,7 @@ const runBacktestSimulator = async (req, res) => {
                     let targetStrike = calculateATM(spotClosePrice, upperSymbol);
                     const strikeCriteria = legData.strikeCriteria || "ATM pt";
                     const strikeType = legData.strikeType || "ATM";
-                    const reqExpiry = legData.expiry || "WEEKLY"; // Yahan se Weekly/Monthly aayega
+                    const reqExpiry = legData.expiry || "WEEKLY";
 
                     const expiryLabel = getNearestExpiryString(dateStr, upperSymbol, reqExpiry);
                     let tradeSymbol = `${upperSymbol} ${targetStrike} ${activeOptionType} (${expiryLabel})`;
@@ -4662,42 +4662,43 @@ const runBacktestSimulator = async (req, res) => {
                     if(isOptionsTrade && broker) {
                         let apiSuccess = false;
 
-                        // 🔥 STRICT SEPARATION: Aaj ka din vs Purane din
-                        const todayStr = new Date().toISOString().split('T')[0];
-                        const isHistoricalDate = dateStr !== todayStr;
+                        // 🔥 EXTRACT EXPECTED DATE (e.g., "28 APR") TO VERIFY LIVE ID
+                        const targetExpStr = expiryLabel.split('EXP ')[1]; // "28APR26"
+                        const expectedDay = targetExpStr.substring(0, 2); // "28"
+                        const expectedMonth = targetExpStr.substring(2, 5); // "APR"
+                        const expectedDhanDateStr = `${expectedDay} ${expectedMonth}`; // "28 APR"
 
-                        if(!isHistoricalDate) {
-                            // 🟢 AAJ KA DIN: Live Market me Exact ID mil jayega
-                            const optionConfig = getOptionSecurityId(upperSymbol, spotClosePrice, strikeCriteria, strikeType, activeOptionType, reqExpiry);
-                            if (optionConfig && optionConfig.strike) {
-                                targetStrike = optionConfig.strike;
-                                tradeSymbol = optionConfig.tradingSymbol; 
-                                try {
-                                    await sleep(500); 
-                                    const optRes = await fetchDhanHistoricalData(broker.clientId, broker.apiSecret, optionConfig.id, "NSE_FNO", "OPTIDX", dateStr, dateStr, "1");
-                                    if(optRes.success && optRes.data && optRes.data.close) {
-                                        const exactMatchIndex = optRes.data.start_Time.findIndex(t => {
-                                            const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
-                                            return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
-                                        });
-                                        if (isTimeBased) {
-                                            finalEntryPrice = exactMatchIndex !== -1 ? optRes.data.open[exactMatchIndex] : optRes.data.open[0];
-                                        } else {
-                                            finalEntryPrice = exactMatchIndex !== -1 ? optRes.data.close[exactMatchIndex] : optRes.data.close[0];
-                                        }
-                                        premiumChartData = optRes.data; 
-                                        apiSuccess = true;
-                                    } 
-                                } catch(e) { }
-                            }
-                        } else {
-                            // 🔴 PURANE DIN (HISTORY): Yahan asli Weekly/Monthly Theta ke liye ROLLING API jaruri hai!
+                        // 🟢 STEP 1: SMART LIVE API CHECK (For Fixed Strike Accuracy)
+                        const optionConfig = getOptionSecurityId(upperSymbol, spotClosePrice, strikeCriteria, strikeType, activeOptionType, reqExpiry);
+                        
+                        // Check if Live ID exists AND it matches our required historical date!
+                        if (optionConfig && optionConfig.strike && optionConfig.tradingSymbol.includes(expectedDhanDateStr)) {
+                            targetStrike = optionConfig.strike;
+                            // UI text ko sundar rakhne ke liye tradeSymbol overwrite nahi karenge
+                            try {
+                                await sleep(500); 
+                                const optRes = await fetchDhanHistoricalData(broker.clientId, broker.apiSecret, optionConfig.id, "NSE_FNO", "OPTIDX", dateStr, dateStr, "1");
+                                if(optRes.success && optRes.data && optRes.data.close) {
+                                    const exactMatchIndex = optRes.data.start_Time.findIndex(t => {
+                                        const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
+                                        return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
+                                    });
+                                    if (isTimeBased) {
+                                        finalEntryPrice = exactMatchIndex !== -1 ? optRes.data.open[exactMatchIndex] : optRes.data.open[0];
+                                    } else {
+                                        finalEntryPrice = exactMatchIndex !== -1 ? optRes.data.close[exactMatchIndex] : optRes.data.close[0];
+                                    }
+                                    premiumChartData = optRes.data; 
+                                    apiSuccess = true;
+                                } 
+                            } catch(e) { }
+                        }
+
+                        // 🔴 STEP 2: FALLBACK TO ROLLING API (Only for deleted/expired Weekly contracts)
+                        if (!apiSuccess) {
                             try {
                                 await sleep(500);
-                                // Format "ATM" or "ITM 1" to "ITM1" for Rolling API
                                 const formattedStrikeForRolling = strikeType.replace(/\s+/g, '').toUpperCase(); 
-                                
-                                // 🔥 fetchExpiredOptionData ab reqExpiry pass karega aur asli Weekly/Monthly layega
                                 const expRes = await fetchExpiredOptionData(broker.clientId, broker.apiSecret, spotSecurityId, formattedStrikeForRolling, activeOptionType, dateStr, dateStr, reqExpiry);
                                 
                                 if(expRes.success && expRes.data && expRes.data.close) {
