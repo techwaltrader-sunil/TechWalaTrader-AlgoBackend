@@ -4628,7 +4628,7 @@ const runBacktestSimulator = async (req, res) => {
 
 
         // =========================================================
-            // 🔥 2. MULTI-LEG ENTRY LOGIC (100% FIXED STRIKE ACCURACY + UI SYMBOL FIX)
+            // 🔥 2. MULTI-LEG ENTRY LOGIC (AUTHENTIC WEEKLY/MONTHLY DATA)
             // =========================================================
             if (openTrades.length === 0 && isMarketOpen && !isTradingHaltedForDay && (finalLongSignal || finalShortSignal)) {
                 
@@ -4654,47 +4654,72 @@ const runBacktestSimulator = async (req, res) => {
                     let targetStrike = calculateATM(spotClosePrice, upperSymbol);
                     const strikeCriteria = legData.strikeCriteria || "ATM pt";
                     const strikeType = legData.strikeType || "ATM";
-                    const reqExpiry = legData.expiry || "WEEKLY";
+                    const reqExpiry = legData.expiry || "WEEKLY"; // Yahan se Weekly/Monthly aayega
 
-                    // 🔥 THE MAHA-FIX: Generate beautiful dynamic symbol with Weekly/Monthly logic
                     const expiryLabel = getNearestExpiryString(dateStr, upperSymbol, reqExpiry);
                     let tradeSymbol = `${upperSymbol} ${targetStrike} ${activeOptionType} (${expiryLabel})`;
 
                     if(isOptionsTrade && broker) {
                         let apiSuccess = false;
 
-                        // 100% FIXED STRIKE LOGIC
-                        const optionConfig = getOptionSecurityId(upperSymbol, spotClosePrice, strikeCriteria, strikeType, activeOptionType, reqExpiry);
-                        
-                        if (optionConfig && optionConfig.strike) {
-                            targetStrike = optionConfig.strike;
-                            // 🔥 YAHAN SE 'tradeSymbol = optionConfig.tradingSymbol;' HATA DIYA GAYA HAI!
-                            // Ab UI me hamesha hamara 'expiryLabel' (Weekly/Monthly) hi dikhega!
+                        // 🔥 STRICT SEPARATION: Aaj ka din vs Purane din
+                        const todayStr = new Date().toISOString().split('T')[0];
+                        const isHistoricalDate = dateStr !== todayStr;
 
+                        if(!isHistoricalDate) {
+                            // 🟢 AAJ KA DIN: Live Market me Exact ID mil jayega
+                            const optionConfig = getOptionSecurityId(upperSymbol, spotClosePrice, strikeCriteria, strikeType, activeOptionType, reqExpiry);
+                            if (optionConfig && optionConfig.strike) {
+                                targetStrike = optionConfig.strike;
+                                tradeSymbol = optionConfig.tradingSymbol; 
+                                try {
+                                    await sleep(500); 
+                                    const optRes = await fetchDhanHistoricalData(broker.clientId, broker.apiSecret, optionConfig.id, "NSE_FNO", "OPTIDX", dateStr, dateStr, "1");
+                                    if(optRes.success && optRes.data && optRes.data.close) {
+                                        const exactMatchIndex = optRes.data.start_Time.findIndex(t => {
+                                            const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
+                                            return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
+                                        });
+                                        if (isTimeBased) {
+                                            finalEntryPrice = exactMatchIndex !== -1 ? optRes.data.open[exactMatchIndex] : optRes.data.open[0];
+                                        } else {
+                                            finalEntryPrice = exactMatchIndex !== -1 ? optRes.data.close[exactMatchIndex] : optRes.data.close[0];
+                                        }
+                                        premiumChartData = optRes.data; 
+                                        apiSuccess = true;
+                                    } 
+                                } catch(e) { }
+                            }
+                        } else {
+                            // 🔴 PURANE DIN (HISTORY): Yahan asli Weekly/Monthly Theta ke liye ROLLING API jaruri hai!
                             try {
-                                await sleep(500); 
-                                const optRes = await fetchDhanHistoricalData(broker.clientId, broker.apiSecret, optionConfig.id, "NSE_FNO", "OPTIDX", dateStr, dateStr, "1");
+                                await sleep(500);
+                                // Format "ATM" or "ITM 1" to "ITM1" for Rolling API
+                                const formattedStrikeForRolling = strikeType.replace(/\s+/g, '').toUpperCase(); 
                                 
-                                if(optRes.success && optRes.data && optRes.data.close) {
-                                    const exactMatchIndex = optRes.data.start_Time.findIndex(t => {
+                                // 🔥 fetchExpiredOptionData ab reqExpiry pass karega aur asli Weekly/Monthly layega
+                                const expRes = await fetchExpiredOptionData(broker.clientId, broker.apiSecret, spotSecurityId, formattedStrikeForRolling, activeOptionType, dateStr, dateStr, reqExpiry);
+                                
+                                if(expRes.success && expRes.data && expRes.data.close) {
+                                    const exactMatchIndex = expRes.data.start_Time.findIndex(t => {
                                         const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
                                         return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
                                     });
                                     if (isTimeBased) {
-                                        finalEntryPrice = exactMatchIndex !== -1 ? optRes.data.open[exactMatchIndex] : optRes.data.open[0];
+                                        finalEntryPrice = exactMatchIndex !== -1 ? expRes.data.open[exactMatchIndex] : expRes.data.open[0];
                                     } else {
-                                        finalEntryPrice = exactMatchIndex !== -1 ? optRes.data.close[exactMatchIndex] : optRes.data.close[0];
+                                        finalEntryPrice = exactMatchIndex !== -1 ? expRes.data.close[exactMatchIndex] : expRes.data.close[0];
                                     }
-                                    premiumChartData = optRes.data; 
+                                    premiumChartData = expRes.data; 
                                     apiSuccess = true;
-                                } 
+                                }
                             } catch(e) { }
-                        } 
+                        }
 
                         // Strict Validation
                         if (!apiSuccess || finalEntryPrice === 0) {
                             validTrade = false;
-                            console.log(`❌ Trade Canceled: Exact Security ID not found or API failed for ${tradeSymbol} on ${dateStr}`);
+                            console.log(`❌ Trade Canceled: API failed for ${tradeSymbol} on ${dateStr}`);
                         } else if (finalEntryPrice > spotClosePrice * 0.5) {
                             validTrade = false;
                             console.log(`❌ Trade Canceled: Spot Price returned instead of Premium for ${tradeSymbol}`);
@@ -4705,7 +4730,7 @@ const runBacktestSimulator = async (req, res) => {
                         openTrades.push({
                             id: `leg_${legIndex}`,
                             legConfig: legData,
-                            symbol: tradeSymbol, // 🔥 Yahan ab hamesha hamara sundar format jayega!
+                            symbol: tradeSymbol, 
                             transaction: transActionTypeStr, 
                             quantity: tradeQuantity,
                             entryTime: `${h}:${m}:00`, 
