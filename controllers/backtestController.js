@@ -4116,6 +4116,8 @@ const runBacktestSimulator = async (req, res) => {
             return `${(expDateForCheck < today) ? "EXP" : "Upcoming EXP"} ${formattedDate}`; 
         };
 
+        
+
         for (let i = 0; i < cachedData.length; i++) {
             if (i % 500 === 0) await new Promise(resolve => setImmediate(resolve));
 

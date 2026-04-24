@@ -735,6 +735,266 @@
 
 
 
+// const axios = require('axios');
+
+// // Dhan API Base URLs
+// const DHAN_API_URL = 'https://api.dhan.co/orders';
+// const DHAN_FEED_URL = 'https://api.dhan.co/v2/marketfeed/ltp'; 
+
+// // ==============================================================
+// // 🚦 THE TRAFFIC POLICE & CACHE SYSTEM (805 ERROR KILLER)
+// // ==============================================================
+// const API_DELAY_MS = 1000; // API calls ke beech 300ms ka gap
+// let lastApiCallTime = 0;
+// let apiQueue = Promise.resolve();
+
+// // 🔥 NEW: LTP Cache System
+// const ltpCache = new Map();
+// const CACHE_TTL = 5000; // 2.5 seconds tak price yaad rakhega
+
+// const enqueueApiCall = (apiFunction) => {
+//     apiQueue = apiQueue.then(async () => {
+//         const now = Date.now();
+//         const timeSinceLastCall = now - lastApiCallTime;
+        
+//         if (timeSinceLastCall < API_DELAY_MS) {
+//             await new Promise(resolve => setTimeout(resolve, API_DELAY_MS - timeSinceLastCall));
+//         }
+        
+//         lastApiCallTime = Date.now(); 
+//         return apiFunction(); 
+//     }).catch(err => {
+//         throw err; 
+//     });
+//     return apiQueue;
+// };
+
+
+// // ==========================================
+// // 🛒 1. PLACE DHAN ORDER (WITH AUTO-RETRY - DEADLOCK FIXED)
+// // ==========================================
+// const placeDhanOrder = async (clientId, accessToken, orderData) => {
+//     const MAX_RETRIES = 3; 
+//     const RETRY_DELAY_MS = 1500; 
+
+//     return enqueueApiCall(async () => { 
+//         // 🔥 DEADLOCK FIX: Recursion hatakar simple FOR loop laga diya
+//         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+//             try {
+//                 const retrySuffix = attempt > 0 ? `-R${attempt}` : '';
+//                 const payload = {
+//                     dhanClientId: clientId,
+//                     correlationId: `TM-${Date.now()}${retrySuffix}`, 
+//                     transactionType: orderData.action, 
+//                     exchangeSegment: "NSE_FNO", 
+//                     productType: "INTRADAY", 
+//                     orderType: "MARKET", 
+//                     validity: "DAY",
+//                     securityId: orderData.securityId, 
+//                     quantity: orderData.quantity
+//                 };
+
+//                 const response = await axios.post(DHAN_API_URL, payload, {
+//                     headers: {
+//                         'access-token': accessToken,
+//                         'Content-Type': 'application/json',
+//                         'Accept': 'application/json'
+//                     }
+//                 });
+
+//                 if (attempt > 0) {
+//                      console.log(`✅ [DHAN API] Order Placed Successfully on Retry #${attempt} for ${clientId}`);
+//                 } else {
+//                      console.log(`✅ [DHAN API] Order Placed Successfully for ${clientId}:`, response.data);
+//                 }
+                
+//                 return { success: true, data: response.data };
+
+//             } catch (error) {
+//                 const status = error.response?.status;
+                
+//                 // Agar server error hai aur attempts bache hain
+//                 if ((status === 502 || status === 503 || status === 504 || error.code === 'ECONNABORTED' || !error.response) && attempt < MAX_RETRIES) {
+//                     console.warn(`⚠️ [DHAN API] Server Error (${status || 'Network Issue'}) for ${clientId}. Retrying in ${RETRY_DELAY_MS/1000}s... (Attempt ${attempt + 1}/${MAX_RETRIES})`);
+                    
+//                     await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+//                     continue; // Agle try ke liye loop ko aage badhao (No deadlock!)
+//                 }
+
+//                 console.error(`❌ [DHAN API] Order Failed for ${clientId} after ${attempt} retries:`, error.response?.data || error.message);
+//                 return { success: false, error: error.response?.data || error.message };
+//             }
+//         }
+//     });
+// };
+
+// // ==========================================
+// // 📡 2. FETCH LIVE LTP (WITH SMART CACHING)
+// // ==========================================
+// const fetchLiveLTP = async (clientId, accessToken, exchange, securityId) => {
+//     // 🔥 CACHE CHECK: Pehle dekho kya hamare paas taza (fresh) price pada hai?
+//     const cacheKey = `${exchange}_${securityId}`;
+//     const cachedData = ltpCache.get(cacheKey);
+    
+//     if (cachedData && (Date.now() - cachedData.timestamp < CACHE_TTL)) {
+//         // Agar 2.5 second ke andar data fetch hua tha, to Dhan ko mat chhedo, yahi se return kardo!
+//         return cachedData.price;
+//     }
+
+//     return enqueueApiCall(async () => { 
+//         try {
+//             const payload = {};
+//             payload[exchange] = [parseInt(securityId)];
+
+//             const response = await axios.post(DHAN_FEED_URL, payload, {
+//                 headers: {
+//                     'access-token': accessToken,
+//                     'client-id': clientId,
+//                     'Content-Type': 'application/json',
+//                     'Accept': 'application/json'
+//                 }
+//             });
+
+//             const ltpData = response.data?.data;
+//             if (ltpData && ltpData[exchange] && ltpData[exchange][securityId]) {
+//                 const price = parseFloat(ltpData[exchange][securityId].last_price);
+                
+//                 // 🔥 CACHE UPDATE: Naya price memory me daal do agli requests ke liye
+//                 ltpCache.set(cacheKey, { price: price, timestamp: Date.now() });
+                
+//                 return price;
+//             }
+//             return null;
+//         } catch (error) {
+//             console.error(`❌ [DHAN API] LTP Fetch Failed for ${securityId}:`, error.response?.data || error.message);
+//             return null;
+//         }
+//     });
+// };
+
+// // ==========================================
+// // 📊 3. FETCH HISTORICAL DATA (OHLCV)
+// // ==========================================
+// const fetchDhanHistoricalData = async (clientId, accessToken, securityId, exchangeSegment, instrumentType, fromDate, toDate, interval = "5") => {
+//     return enqueueApiCall(async () => { 
+//         try {
+//             const isDaily = (interval.toUpperCase() === "D" || interval.toUpperCase() === "1D");
+//             const url = isDaily ? 'https://api.dhan.co/v2/charts/historical' : 'https://api.dhan.co/v2/charts/intraday';
+//             const formattedFromDate = isDaily ? fromDate : `${fromDate} 09:15:00`;
+//             const formattedToDate = isDaily ? toDate : `${toDate} 15:30:00`;
+
+//             const payload = {
+//                 securityId: securityId.toString(),
+//                 exchangeSegment: exchangeSegment, 
+//                 instrument: instrumentType,       
+//                 fromDate: formattedFromDate,               
+//                 toDate: formattedToDate,
+//             };
+
+//             if (isDaily) {
+//                 payload.expiryCode = 0; 
+//             } else {
+//                 payload.interval = parseInt(interval) || 5; 
+//                 payload.oi = false;
+//             }
+
+//             const headers = {
+//                 'client-id': clientId,
+//                 'access-token': accessToken,
+//                 'Content-Type': 'application/json',
+//                 'Accept': 'application/json'
+//             };
+
+//             const response = await axios.post(url, payload, { headers });
+            
+//             const actualData = (response.data && response.data.data && response.data.data.open) ? response.data.data : response.data;
+
+//              // 🔥 THE MASTER FIX: Data normalization so the engine never crashes!
+//             if (actualData && !actualData.start_Time && actualData.timestamp) {
+//                 actualData.start_Time = actualData.timestamp; 
+//             }
+            
+//             if (actualData && actualData.open && actualData.open.length > 0) {
+//                 return { success: true, data: actualData };
+//             } else {
+//                 return { success: false, message: 'Invalid data format received from Dhan' };
+//             }
+//         } catch (error) {
+//             const errData = error.response?.data;
+//             const errorMsg = errData?.internalErrorMessage || errData?.errorMessage || error.message || "Unknown error occurred";
+//             console.error(`❌ [Dhan API] Historical Fetch Error:`, errData || errorMsg);
+//             return { success: false, message: errorMsg };
+//         }
+//     });
+// };
+
+// // ==========================================
+// // 🕒 4. FETCH EXPIRED OPTION DATA
+// // ==========================================
+// const fetchExpiredOptionData = async (clientId, apiSecret, spotSecurityId, strike, optionType, fromDate, toDate) => {
+//     return enqueueApiCall(async () => { 
+//         try {
+//             const payload = {
+//                 exchangeSegment: "NSE_FNO",
+//                 interval: "1",
+//                 securityId: Number(spotSecurityId), 
+//                 instrument: "OPTIDX",
+//                 expiryFlag: "WEEK", 
+//                 expiryCode: 1, 
+//                 strike: "ATM", 
+//                 drvOptionType: optionType === "CE" ? "CALL" : "PUT",
+//                 requiredData: ["open", "high", "low", "close", "volume"],
+//                 fromDate: fromDate,
+//                 toDate: toDate
+//             };
+
+//             const response = await axios({
+//                 method: 'post',
+//                 url: 'https://api.dhan.co/v2/charts/rollingoption', 
+//                 headers: {
+//                     'access-token': apiSecret,
+//                     'client-id': clientId,
+//                     'Accept': 'application/json',
+//                     'Content-Type': 'application/json'
+//                 },
+//                 data: payload
+//             });
+
+//             const optionKey = optionType === "CE" ? "ce" : "pe";
+//             const expData = response.data.data ? response.data.data[optionKey] : null;
+
+//             if (!expData || !expData.timestamp || expData.timestamp.length === 0) {
+//                  return { success: false, error: "No data found in expired options" };
+//             }
+
+//             const formattedData = {
+//                 start_Time: expData.timestamp,
+//                 open: expData.open,
+//                 high: expData.high,
+//                 low: expData.low,
+//                 close: expData.close,
+//                 volume: expData.volume
+//             };
+
+//             return { success: true, data: formattedData };
+
+//         } catch (error) {
+//             console.log(`⚠️ Expired API Error for ${optionType}:`, error.response?.data || error.message);
+//             return { success: false, error: error.message };
+//         }
+//     });
+// };
+
+// module.exports = {
+//     placeDhanOrder,
+//     fetchLiveLTP,
+//     fetchDhanHistoricalData,
+//     fetchExpiredOptionData 
+// };
+
+
+
+
 const axios = require('axios');
 
 // Dhan API Base URLs
@@ -928,20 +1188,36 @@ const fetchDhanHistoricalData = async (clientId, accessToken, securityId, exchan
     });
 };
 
+/// ==========================================
+// 🕒 4. FETCH EXPIRED OPTION DATA (SEBI COMPLIANT)
 // ==========================================
-// 🕒 4. FETCH EXPIRED OPTION DATA
-// ==========================================
-const fetchExpiredOptionData = async (clientId, apiSecret, spotSecurityId, strike, optionType, fromDate, toDate) => {
+const fetchExpiredOptionData = async (clientId, apiSecret, spotSecurityId, strike, optionType, fromDate, toDate, reqExpiry = "WEEKLY", interval = "1") => {
     return enqueueApiCall(async () => { 
         try {
+            let expFlag = "WEEK";
+            let expCode = 1; 
+
+            const upperReqExpiry = reqExpiry.toUpperCase();
+            
+            // 🔥 SEBI RULE: Agar ID 13 (NIFTY 50) nahi hai, to zabardasti Monthly flag lagao!
+            const forceMonthly = Number(spotSecurityId) !== 13;
+
+            if (forceMonthly || upperReqExpiry === "MONTHLY") {
+                expFlag = "MONTH";
+                expCode = 1;
+            } else if (upperReqExpiry === "NEXT WEEKLY" || upperReqExpiry === "NEXT WEEK") {
+                expFlag = "WEEK";
+                expCode = 2; 
+            }
+
             const payload = {
                 exchangeSegment: "NSE_FNO",
-                interval: "1",
+                interval: String(interval),
                 securityId: Number(spotSecurityId), 
                 instrument: "OPTIDX",
-                expiryFlag: "WEEK", 
-                expiryCode: 1, 
-                strike: "ATM", 
+                expiryFlag: expFlag, 
+                expiryCode: expCode, 
+                strike: String(strike), 
                 drvOptionType: optionType === "CE" ? "CALL" : "PUT",
                 requiredData: ["open", "high", "low", "close", "volume"],
                 fromDate: fromDate,
