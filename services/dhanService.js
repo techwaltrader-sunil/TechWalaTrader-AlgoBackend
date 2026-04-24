@@ -909,6 +909,11 @@ const fetchDhanHistoricalData = async (clientId, accessToken, securityId, exchan
             
             const actualData = (response.data && response.data.data && response.data.data.open) ? response.data.data : response.data;
 
+             // 🔥 THE MASTER FIX: Data normalization so the engine never crashes!
+            if (actualData && !actualData.start_Time && actualData.timestamp) {
+                actualData.start_Time = actualData.timestamp; 
+            }
+            
             if (actualData && actualData.open && actualData.open.length > 0) {
                 return { success: true, data: actualData };
             } else {
