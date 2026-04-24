@@ -4178,7 +4178,7 @@ const runBacktestSimulator = async (req, res) => {
         };
 
 
-        
+
         for (let i = 0; i < cachedData.length; i++) {
             if (i % 500 === 0) await new Promise(resolve => setImmediate(resolve));
 
@@ -4518,7 +4518,116 @@ const runBacktestSimulator = async (req, res) => {
                 }
             }
 
-            // =========================================================
+        //     // =========================================================
+        //     // 🔥 2. MULTI-LEG ENTRY LOGIC
+        //     // =========================================================
+        //     if (openTrades.length === 0 && isMarketOpen && !isTradingHaltedForDay && (finalLongSignal || finalShortSignal)) {
+                
+        //         for (let legIndex = 0; legIndex < strategyLegs.length; legIndex++) {
+        //             const legData = strategyLegs[legIndex];
+                    
+        //             let tradeQuantity = legData.quantity; 
+        //             if (!tradeQuantity || isNaN(tradeQuantity)) tradeQuantity = upperSymbol.includes("BANK") ? 30 : (upperSymbol.includes("NIFTY") ? 50 : 1);
+
+        //             const transActionTypeStr = (legData.action || "BUY").toUpperCase();
+                    
+        //             let activeOptionType = "";
+
+        //             if (isTimeBased) {
+        //                 activeOptionType = (legData.optionType || "Call").toUpperCase().includes("C") ? "CE" : "PE";
+        //             } else {
+        //                 if (transActionTypeStr === "BUY") activeOptionType = finalLongSignal ? "CE" : "PE";
+        //                 else if (transActionTypeStr === "SELL") activeOptionType = finalLongSignal ? "PE" : "CE"; 
+        //             }
+                    
+        //             let tradeSymbol = upperSymbol;
+        //             let finalEntryPrice = spotClosePrice;
+        //             let validTrade = true;
+        //             let premiumChartData = null; 
+        //             let targetStrike = calculateATM(spotClosePrice, upperSymbol);
+
+        //             if(isOptionsTrade && broker) {
+        //                 let apiSuccess = false;
+        //                 const strikeCriteria = legData.strikeCriteria || "ATM pt";
+        //                 const strikeType = legData.strikeType || "ATM";
+        //                 const reqExpiry = legData.expiry || "WEEKLY";
+
+        //                 const optionConfig = getOptionSecurityId(upperSymbol, spotClosePrice, strikeCriteria, strikeType, activeOptionType, reqExpiry);
+        //                 if (optionConfig && optionConfig.strike) targetStrike = optionConfig.strike;
+
+        //                 if(optionConfig) {
+        //                     try {
+        //                         await sleep(500); 
+        //                         const optRes = await fetchDhanHistoricalData(broker.clientId, broker.apiSecret, optionConfig.id, "NSE_FNO", "OPTIDX", dateStr, dateStr, "1");
+        //                         if(optRes.success && optRes.data && optRes.data.close) {
+        //                             const exactMatchIndex = optRes.data.start_Time.findIndex(t => {
+        //                                 const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
+        //                                 return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
+        //                             });
+        //                             // 🔥 THE DOT-TO-DOT FIX: Entry par exact Open price lo time based me
+        //                             if (isTimeBased) {
+        //                                 finalEntryPrice = exactMatchIndex !== -1 ? optRes.data.open[exactMatchIndex] : optRes.data.open[0];
+        //                             } else {
+        //                                 finalEntryPrice = exactMatchIndex !== -1 ? optRes.data.close[exactMatchIndex] : optRes.data.close[0];
+        //                             }
+        //                             tradeSymbol = optionConfig.tradingSymbol;
+        //                             premiumChartData = optRes.data; 
+        //                             apiSuccess = true;
+        //                         } 
+        //                     } catch(e) { }
+        //                 } 
+                        
+        //                 if (!apiSuccess) {
+        //                     try {
+        //                         await sleep(500);
+        //                         const expRes = await fetchExpiredOptionData(broker.clientId, broker.apiSecret, spotSecurityId, targetStrike, activeOptionType, dateStr, dateStr);
+        //                         if(expRes.success && expRes.data && expRes.data.close) {
+        //                             const exactMatchIndex = expRes.data.start_Time.findIndex(t => {
+        //                                 const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
+        //                                 return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
+        //                             });
+        //                             if (isTimeBased) {
+        //                                 finalEntryPrice = exactMatchIndex !== -1 ? expRes.data.open[exactMatchIndex] : expRes.data.open[0];
+        //                             } else {
+        //                                 finalEntryPrice = exactMatchIndex !== -1 ? expRes.data.close[exactMatchIndex] : expRes.data.close[0];
+        //                             }
+        //                             const expiryLabel = getNearestExpiryString(dateStr, upperSymbol);
+        //                             tradeSymbol = `${upperSymbol} ${targetStrike} ${activeOptionType} (${expiryLabel})`;
+        //                             premiumChartData = expRes.data; 
+        //                             apiSuccess = true;
+        //                         }
+        //                     } catch(e) { }
+        //                 }
+
+        //                 if (apiSuccess && finalEntryPrice > spotClosePrice * 0.5) {
+        //                     validTrade = false;
+        //                 }
+        //             }
+
+        //             if (validTrade) {
+        //                 openTrades.push({
+        //                     id: `leg_${legIndex}`,
+        //                     legConfig: legData,
+        //                     symbol: tradeSymbol, 
+        //                     transaction: transActionTypeStr, 
+        //                     quantity: tradeQuantity,
+        //                     entryTime: `${h}:${m}:00`, 
+        //                     entryPrice: finalEntryPrice,
+        //                     exitTime: null, exitPrice: null, pnl: null, exitType: null,
+        //                     optionConfig: isOptionsTrade ? { strike: targetStrike, type: activeOptionType } : null,
+        //                     premiumChart: premiumChartData,
+        //                     signalType: finalLongSignal ? "LONG" : "SHORT",
+        //                     lastKnownPremium: finalEntryPrice,
+        //                     markedForExit: false 
+        //                 });
+        //                 console.log(`✅ [TRADE OPEN] Leg ${legIndex + 1} | Time: ${h}:${m} | Spot: ${spotClosePrice} | Premium: ${finalEntryPrice} | Type: ${activeOptionType}`);
+        //             }
+        //         } 
+        //     }
+        // } 
+
+
+        // =========================================================
             // 🔥 2. MULTI-LEG ENTRY LOGIC
             // =========================================================
             if (openTrades.length === 0 && isMarketOpen && !isTradingHaltedForDay && (finalLongSignal || finalShortSignal)) {
@@ -4540,47 +4649,57 @@ const runBacktestSimulator = async (req, res) => {
                         else if (transActionTypeStr === "SELL") activeOptionType = finalLongSignal ? "PE" : "CE"; 
                     }
                     
-                    let tradeSymbol = upperSymbol;
                     let finalEntryPrice = spotClosePrice;
                     let validTrade = true;
                     let premiumChartData = null; 
                     let targetStrike = calculateATM(spotClosePrice, upperSymbol);
+                    const strikeCriteria = legData.strikeCriteria || "ATM pt";
+                    const strikeType = legData.strikeType || "ATM";
+                    const reqExpiry = legData.expiry || "WEEKLY";
+
+                    // 🔥 THE MAHA-GALTI FIX: Generate Dynamic Symbol BEFORE API Calls
+                    const expiryLabel = getNearestExpiryString(dateStr, upperSymbol, reqExpiry);
+                    let tradeSymbol = `${upperSymbol} ${targetStrike} ${activeOptionType} (${expiryLabel})`;
 
                     if(isOptionsTrade && broker) {
                         let apiSuccess = false;
-                        const strikeCriteria = legData.strikeCriteria || "ATM pt";
-                        const strikeType = legData.strikeType || "ATM";
-                        const reqExpiry = legData.expiry || "WEEKLY";
 
-                        const optionConfig = getOptionSecurityId(upperSymbol, spotClosePrice, strikeCriteria, strikeType, activeOptionType, reqExpiry);
-                        if (optionConfig && optionConfig.strike) targetStrike = optionConfig.strike;
+                        // 🔥 STRICT HISTORICAL CHECK: Aaj ki date hai ya purani?
+                        const todayStr = new Date().toISOString().split('T')[0];
+                        const isHistoricalDate = dateStr !== todayStr;
 
-                        if(optionConfig) {
-                            try {
-                                await sleep(500); 
-                                const optRes = await fetchDhanHistoricalData(broker.clientId, broker.apiSecret, optionConfig.id, "NSE_FNO", "OPTIDX", dateStr, dateStr, "1");
-                                if(optRes.success && optRes.data && optRes.data.close) {
-                                    const exactMatchIndex = optRes.data.start_Time.findIndex(t => {
-                                        const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
-                                        return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
-                                    });
-                                    // 🔥 THE DOT-TO-DOT FIX: Entry par exact Open price lo time based me
-                                    if (isTimeBased) {
-                                        finalEntryPrice = exactMatchIndex !== -1 ? optRes.data.open[exactMatchIndex] : optRes.data.open[0];
-                                    } else {
-                                        finalEntryPrice = exactMatchIndex !== -1 ? optRes.data.close[exactMatchIndex] : optRes.data.close[0];
-                                    }
-                                    tradeSymbol = optionConfig.tradingSymbol;
-                                    premiumChartData = optRes.data; 
-                                    apiSuccess = true;
-                                } 
-                            } catch(e) { }
-                        } 
+                        // SIRF AAJ KI DATE KE LIYE Live API use karo
+                        if(!isHistoricalDate) {
+                            const optionConfig = getOptionSecurityId(upperSymbol, spotClosePrice, strikeCriteria, strikeType, activeOptionType, reqExpiry);
+                            if (optionConfig && optionConfig.strike) targetStrike = optionConfig.strike;
+
+                            if(optionConfig) {
+                                try {
+                                    await sleep(500); 
+                                    const optRes = await fetchDhanHistoricalData(broker.clientId, broker.apiSecret, optionConfig.id, "NSE_FNO", "OPTIDX", dateStr, dateStr, "1");
+                                    if(optRes.success && optRes.data && optRes.data.close) {
+                                        const exactMatchIndex = optRes.data.start_Time.findIndex(t => {
+                                            const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
+                                            return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
+                                        });
+                                        if (isTimeBased) {
+                                            finalEntryPrice = exactMatchIndex !== -1 ? optRes.data.open[exactMatchIndex] : optRes.data.open[0];
+                                        } else {
+                                            finalEntryPrice = exactMatchIndex !== -1 ? optRes.data.close[exactMatchIndex] : optRes.data.close[0];
+                                        }
+                                        premiumChartData = optRes.data; 
+                                        apiSuccess = true;
+                                        // ⚠️ WARNING: Yahan hum 'tradeSymbol' ko OVERWRITE NAHI karenge! 
+                                    } 
+                                } catch(e) { }
+                            } 
+                        }
                         
+                        // HISTORICAL DATES KE LIYE: Sirf Rolling Options API (Expired Data) Use karo
                         if (!apiSuccess) {
                             try {
                                 await sleep(500);
-                                const expRes = await fetchExpiredOptionData(broker.clientId, broker.apiSecret, spotSecurityId, targetStrike, activeOptionType, dateStr, dateStr);
+                                const expRes = await fetchExpiredOptionData(broker.clientId, broker.apiSecret, spotSecurityId, targetStrike, activeOptionType, dateStr, dateStr, reqExpiry);
                                 if(expRes.success && expRes.data && expRes.data.close) {
                                     const exactMatchIndex = expRes.data.start_Time.findIndex(t => {
                                         const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
@@ -4591,8 +4710,6 @@ const runBacktestSimulator = async (req, res) => {
                                     } else {
                                         finalEntryPrice = exactMatchIndex !== -1 ? expRes.data.close[exactMatchIndex] : expRes.data.close[0];
                                     }
-                                    const expiryLabel = getNearestExpiryString(dateStr, upperSymbol);
-                                    tradeSymbol = `${upperSymbol} ${targetStrike} ${activeOptionType} (${expiryLabel})`;
                                     premiumChartData = expRes.data; 
                                     apiSuccess = true;
                                 }
@@ -4608,7 +4725,7 @@ const runBacktestSimulator = async (req, res) => {
                         openTrades.push({
                             id: `leg_${legIndex}`,
                             legConfig: legData,
-                            symbol: tradeSymbol, 
+                            symbol: tradeSymbol, // 🔥 Yahan ab hamesha hamara sundar format jayega!
                             transaction: transActionTypeStr, 
                             quantity: tradeQuantity,
                             entryTime: `${h}:${m}:00`, 
@@ -4624,7 +4741,7 @@ const runBacktestSimulator = async (req, res) => {
                     }
                 } 
             }
-        } 
+        }
 
         // ==========================================
         // 🧮 5. DAILY LOOP (Metrics Generation)
