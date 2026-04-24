@@ -4695,7 +4695,14 @@ const runBacktestSimulator = async (req, res) => {
                         if (!apiSuccess) {
                             try {
                                 await sleep(500);
+                                
+                                // 🔥 THE FIX: Rolling API strictly requires relative names ("ATM", "ITM1"), NOT numeric strikes like 22650!
+                                const formattedStrikeForRolling = strikeType.replace(/\s+/g, '').toUpperCase(); // "ITM 1" ko "ITM1" banayega
+
                                 const expRes = await fetchExpiredOptionData(broker.clientId, broker.apiSecret, spotSecurityId, targetStrike, activeOptionType, dateStr, dateStr, reqExpiry);
+                                
+
+                                
                                 if(expRes.success && expRes.data && expRes.data.close) {
                                     const exactMatchIndex = expRes.data.start_Time.findIndex(t => {
                                         const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
