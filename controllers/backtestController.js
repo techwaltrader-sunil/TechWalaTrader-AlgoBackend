@@ -4118,14 +4118,14 @@ const runBacktestSimulator = async (req, res) => {
 
 
 
-        // 🔥 NEW: SEBI COMPLIANT EXPRIRY CALCULATOR (ALL TUESDAYS)
+                // 🔥 NEW: SEBI COMPLIANT DATE CALCULATOR (WITH ORIGINAL UI FORMATTING)
         const getNearestExpiryString = (tradeDateStr, symbolStr, reqExpiry = "WEEKLY") => {
             const d = new Date(tradeDateStr);
             const upSym = symbolStr.toUpperCase();
             let expiryDate = new Date(d);
 
             // 🔥 SEBI NEW RULE: Ab sabka Expiry TUESDAY (2) ho gaya hai!
-            let targetDay = 2; 
+            const targetDay = 2; 
             let forceMonthly = false;
 
             // NIFTY 50 ko chhodkar baki sab (Bank, Fin, Midcap) zabardasti Monthly hain
@@ -4141,6 +4141,7 @@ const runBacktestSimulator = async (req, res) => {
                 while (expiryDate.getDay() !== targetDay) {
                     expiryDate.setDate(expiryDate.getDate() + 1);
                 }
+                // Next Weekly Support
                 if (upperReqExpiry === "NEXT WEEKLY" || upperReqExpiry === "NEXT WEEK") {
                     expiryDate.setDate(expiryDate.getDate() + 7);
                 }
@@ -4164,13 +4165,16 @@ const runBacktestSimulator = async (req, res) => {
                 }
             }
 
+            // Date ko format karna (e.g., 28APR26)
             const formattedDate = `${String(expiryDate.getDate()).padStart(2, '0')}${expiryDate.toLocaleString('en-US', { month: 'short' }).toUpperCase()}${String(expiryDate.getFullYear()).slice(-2)}`;
             
-            let prefix = "Weekly";
-            if (isMonthlyRequest) prefix = "Monthly";
-            else if (upperReqExpiry === "NEXT WEEKLY" || upperReqExpiry === "NEXT WEEK") prefix = "Next Weekly";
-
-            return `${prefix} EXP ${formattedDate}`;
+            // 🔥 ORIGINAL UI FORMATTING (Aapke purane code se)
+            const today = new Date(); 
+            today.setHours(0, 0, 0, 0); 
+            const expDateForCheck = new Date(expiryDate); 
+            expDateForCheck.setHours(0, 0, 0, 0);
+            
+            return `${(expDateForCheck < today) ? "EXP" : "Upcoming EXP"} ${formattedDate}`; 
         };
 
 
