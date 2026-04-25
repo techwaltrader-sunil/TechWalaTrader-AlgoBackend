@@ -4358,7 +4358,7 @@ const runBacktestSimulator = async (req, res) => {
                 }
                 
 
-                
+
                 // 🔥 FIX 3: MOVE SL TO COST TRACKERS
                 let anyLegHitSlPast = dailyBreakdownMap[dateStr].tradesList.some(t => t.exitType === "STOPLOSS" || t.exitType === "SL_MOVED_TO_COST");
                 let anyLegHitSlThisTick = false;
@@ -4413,7 +4413,7 @@ const runBacktestSimulator = async (req, res) => {
 
                     // Hum sirf tabhi spot tracker use karenge jab SL move na hua ho. 
                     // Move to cost ke liye purana logic hi best hai, CE wala trade safe rahega.
-                    if (isOptionsTrade && trade.optionConfig && !isSlMovedToCost) {
+                    if (isOptionsTrade && trade.optionConfig) {
                         const optType = trade.optionConfig.type; // CE ya PE
                         const entrySpot = trade.optionConfig.strike; // Strike ko hi Base Spot manenge
 
@@ -4545,8 +4545,7 @@ const runBacktestSimulator = async (req, res) => {
                         // =========================================================================
                         // mathematical limits (like SL/TP) are already set precisely, 
                         // so we only run sniper for market-based exits.
-                        const needsMarketPrice = ["TIME_SQUAREOFF", "EOD_SQUAREOFF", "INDICATOR_EXIT", "MAX_PROFIT", "MAX_LOSS", "EXIT_ALL_TGT", "EXIT_ALL_SL", "STOPLOSS", "TARGET", "TRAILING_SL"].includes(trade.exitReason);
-                        
+                        const needsMarketPrice = ["TIME_SQUAREOFF", "EOD_SQUAREOFF", "INDICATOR_EXIT", "MAX_PROFIT", "MAX_LOSS", "EXIT_ALL_TGT", "EXIT_ALL_SL", "STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason);
                         if (isOptionsTrade && broker && needsMarketPrice && trade.optionConfig) {
                             const fixedStrike = trade.optionConfig.strike;
                             const optType = trade.optionConfig.type; 
@@ -4609,7 +4608,7 @@ const runBacktestSimulator = async (req, res) => {
                                                 // =========================================================
                                                 // 🔥 THE REALITY ENGINE (ACCURATE TIME + REAL SLIPPAGE)
                                                 // =========================================================
-                                                if (trade.exitReason === "STOPLOSS" || trade.exitReason === "TARGET" || trade.exitReason === "TRAILING_SL") {
+                                                if (trade.exitReason === "STOPLOSS" || trade.exitReason === "TARGET" || trade.exitReason === "TRAILING_SL" || trade.exitReason === "SL_MOVED_TO_COST") {
                                                     const exactMathPrice = trade.exitPrice; // (e.g., 145.86)
                                                     const candleOpen = exitData.open[actualExitIndex];
 
