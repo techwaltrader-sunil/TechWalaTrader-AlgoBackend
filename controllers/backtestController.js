@@ -4533,7 +4533,6 @@ const runBacktestSimulator = async (req, res) => {
                 // openTrades = remainingTrades; 
 
                 let remainingTrades = [];
-                // 🔥 Changed forEach to for...of loop to allow asynchronous API calls (The Sniper)
                 for (let trade of openTrades) {
                     if (trade.markedForExit || isExitTime || isLastCandleOfDay) {
                         if (!trade.markedForExit) {
@@ -4541,123 +4540,87 @@ const runBacktestSimulator = async (req, res) => {
                         }
 
                         // =========================================================================
-                        // 🔴 THE SNIPER INJECTION (Exact Exit Price Fetcher) 🔴
+                        // 🔴 THE SNIPER INJECTION (FOOLPROOF VERSION) 🔴
                         // =========================================================================
-                        // mathematical limits (like SL/TP) are already set precisely, 
-                        // so we only run sniper for market-based exits.
+                        // Is list me "SL_MOVED_TO_COST" add kar diya gaya hai!
                         const needsMarketPrice = ["TIME_SQUAREOFF", "EOD_SQUAREOFF", "INDICATOR_EXIT", "MAX_PROFIT", "MAX_LOSS", "EXIT_ALL_TGT", "EXIT_ALL_SL", "STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason);
+                        
                         if (isOptionsTrade && broker && needsMarketPrice && trade.optionConfig) {
                             const fixedStrike = trade.optionConfig.strike;
                             const optType = trade.optionConfig.type; 
-                            const currentAtmAtExit = calculateATM(spotClosePrice, upperSymbol);
                             const exitTimeStr = `${h}:${m}`;
 
-                            if (currentAtmAtExit !== fixedStrike) {
-                                console.log(`\n🔬 [EXIT SNIPER] Exit Triggered at ${exitTimeStr}. ATM shifted to ${currentAtmAtExit}. Seeking Locked Strike ${fixedStrike}...`);
-                                
-                                const axios = require('axios'); // Imported locally for safety
-                                let reqExpiry = trade.legConfig.expiry || "WEEKLY";
-                                let expFlag = "WEEK"; let expCode = 1; 
-                                if (reqExpiry.toUpperCase() === "MONTHLY") { expFlag = "MONTH"; expCode = 1; } 
-                                else if (reqExpiry.toUpperCase() === "NEXT WEEKLY" || reqExpiry.toUpperCase() === "NEXT WEEK") { expFlag = "WEEK"; expCode = 2; }
-                                
-                                const basePayload = {
-                                    exchangeSegment: "NSE_FNO", interval: "1", securityId: Number(spotSecurityId), instrument: "OPTIDX",
-                                    expiryFlag: expFlag, expiryCode: expCode, 
-                                    drvOptionType: optType === "CE" ? "CALL" : "PUT", 
-                                    requiredData: ["open", "high", "low", "close", "strike"],
-                                    fromDate: dateStr, toDate: dateStr
-                                };
+                            // 🔥 Sniper ab har haal me chalega! Koi if(shift) ki shart nahi!
+                            console.log(`\n🔬 [EXIT SNIPER] Trigger at ${exitTimeStr} for ${trade.exitReason}. Fetching exact Close/Open for ${fixedStrike}...`);
+                            
+                            const axios = require('axios'); 
+                            let reqExpiry = trade.legConfig.expiry || "WEEKLY";
+                            let expFlag = "WEEK"; let expCode = 1; 
+                            if (reqExpiry.toUpperCase() === "MONTHLY") { expFlag = "MONTH"; expCode = 1; } 
+                            else if (reqExpiry.toUpperCase() === "NEXT WEEKLY" || reqExpiry.toUpperCase() === "NEXT WEEK") { expFlag = "WEEK"; expCode = 2; }
+                            
+                            const basePayload = {
+                                exchangeSegment: "NSE_FNO", interval: "1", securityId: Number(spotSecurityId), instrument: "OPTIDX",
+                                expiryFlag: expFlag, expiryCode: expCode, 
+                                drvOptionType: optType === "CE" ? "CALL" : "PUT", 
+                                requiredData: ["open", "high", "low", "close", "strike"],
+                                fromDate: dateStr, toDate: dateStr
+                            };
 
-                                // 🔥 THE MINUS HACKER CANDIDATES
-                                const candidates = ["ITM-1", "OTM-1", "-ITM1", "-OTM1", "-1", "-2", "-3", "ITM1", "ITM2", "OTM1", "OTM2", "ITM 1", "OTM 1"];
-                                let foundExactExit = false;
-                                
-                                for(let guess of candidates) {
-                                    try {
-                                        const exitPayload = { ...basePayload, strike: guess };
-                                        const exitRes = await axios.post('https://api.dhan.co/v2/charts/rollingoption', exitPayload, {
-                                            headers: { 'access-token': broker.apiSecret, 'client-id': broker.clientId, 'Content-Type': 'application/json' }
-                                        });
+                            // "ATM" ko bhi list me dal diya taki agar shift na hua ho to bhi API data de!
+                            const candidates = ["ATM", "ITM-1", "OTM-1", "-ITM1", "-OTM1", "-1", "-2", "-3", "ITM1", "ITM2", "ITM3", "OTM1", "OTM2", "OTM3", "ITM 1", "OTM 1"];
+                            let foundExactExit = false;
+                            
+                            for(let guess of candidates) {
+                                try {
+                                    const exitRes = await axios.post('https://api.dhan.co/v2/charts/rollingoption', { ...basePayload, strike: guess }, {
+                                        headers: { 'access-token': broker.apiSecret, 'client-id': broker.clientId, 'Content-Type': 'application/json' }
+                                    });
+                                    const optKey = optType === "CE" ? "ce" : "pe";
+                                    let exitData = exitRes.data.data ? exitRes.data.data[optKey] : null;
+
+                                    if (exitData && exitData.timestamp) {
+                                        let actualExitIndex = -1;
+                                        for(let k=0; k<exitData.timestamp.length; k++){
+                                            const optTime = new Date(exitData.timestamp[k] * 1000 + (5.5 * 3600000));
+                                            if(optTime.toISOString().split('T')[1].substring(0, 5) === exitTimeStr) { actualExitIndex = k; break; }
+                                        }
                                         
-                                        const optKey = optType === "CE" ? "ce" : "pe";
-                                        let exitData = exitRes.data.data ? exitRes.data.data[optKey] : null;
+                                        if(actualExitIndex !== -1 && exitData.strike && exitData.strike[actualExitIndex] === fixedStrike) {
+                                            console.log(`✅ [SNIPER BINGO] Dhan mapped ${fixedStrike} to [ ${guess} ] at ${exitTimeStr}!`);
+                                            
+                                            const mathPrice = trade.exitPrice; // Original calculated price
+                                            const cOpen = exitData.open[actualExitIndex];
+                                            const cClose = exitData.close[actualExitIndex];
 
-                                        if (exitData && exitData.timestamp) {
-                                            let actualExitIndex = -1;
-                                            for(let k=0; k<exitData.timestamp.length; k++){
-                                                const optTime = new Date(exitData.timestamp[k] * 1000 + (5.5 * 3600000));
-                                                const tStr = optTime.toISOString().split('T')[1].substring(0, 5);
-                                                if(tStr === exitTimeStr) { actualExitIndex = k; break; }
+                                            // 🚀 STRICT OVERWRITE TO CLOSE PRICE (Conservative Slippage)
+                                            if (["STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason)) {
+                                                if (trade.transaction === "BUY") {
+                                                    if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen < mathPrice) trade.exitPrice = cOpen;
+                                                    else if (trade.exitReason === "TARGET" && cOpen > mathPrice) trade.exitPrice = cOpen;
+                                                    else trade.exitPrice = cClose; // FORCE OVERWRITE TO CLOSE PRICE!
+                                                } else { // SELL Trade
+                                                    if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen > mathPrice) trade.exitPrice = cOpen;
+                                                    else if (trade.exitReason === "TARGET" && cOpen < mathPrice) trade.exitPrice = cOpen;
+                                                    else trade.exitPrice = cClose; // FORCE OVERWRITE TO CLOSE PRICE!
+                                                }
+                                            } else {
+                                                trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? cOpen : cClose;
                                             }
                                             
-                                            // Validate if Dhan returned our specific locked strike!
-                                            if(actualExitIndex !== -1 && exitData.strike && exitData.strike[actualExitIndex] === fixedStrike) {
-                                                console.log(`✅ [SNIPER BINGO] Dhan mapped ${fixedStrike} to [ ${guess} ] at ${exitTimeStr}!`);
-                                                // Time squareoff par OPEN price, baaki sab par CLOSE price
-                                               
-                                               
-                                                // // 🔥 SL aur Target ke liye Exact Close Price (Real Market Slippage Simulation)
-                                                // if (trade.exitReason === "STOPLOSS" || trade.exitReason === "TARGET" || trade.exitReason === "TRAILING_SL") {
-                                                //     trade.exitPrice = exitData.close[actualExitIndex]; 
-                                                // } else {
-                                                //     trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? exitData.open[actualExitIndex] : exitData.close[actualExitIndex];
-                                                // }
-
-
-                                                // =========================================================
-                                                // 🔥 THE REALITY ENGINE (ACCURATE TIME + REAL SLIPPAGE)
-                                                // =========================================================
-                                                if (trade.exitReason === "STOPLOSS" || trade.exitReason === "TARGET" || trade.exitReason === "TRAILING_SL" || trade.exitReason === "SL_MOVED_TO_COST") {
-                                                    const exactMathPrice = trade.exitPrice; // (e.g., 145.86)
-                                                    const candleOpen = exitData.open[actualExitIndex];
-
-                                                    // 1. Agar candle achanak SL ke aage open hui hai (Gap Slippage - 1 se 2 rs ka jump)
-                                                    if (trade.transaction === "BUY") {
-                                                        if ((trade.exitReason === "STOPLOSS" || trade.exitReason === "TRAILING_SL") && candleOpen < exactMathPrice) {
-                                                            trade.exitPrice = candleOpen; // Real Slippage Hit!
-                                                        } else if (trade.exitReason === "TARGET" && candleOpen > exactMathPrice) {
-                                                            trade.exitPrice = candleOpen; // Jackpot Gap up
-                                                        } else {
-                                                            trade.exitPrice = exactMathPrice; // Normal smooth hit
-                                                        }
-                                                    } else { // SELL Trade
-                                                        if ((trade.exitReason === "STOPLOSS" || trade.exitReason === "TRAILING_SL") && candleOpen > exactMathPrice) {
-                                                            trade.exitPrice = candleOpen; // Real Slippage Hit!
-                                                        } else if (trade.exitReason === "TARGET" && candleOpen < exactMathPrice) {
-                                                            trade.exitPrice = candleOpen; // Jackpot Gap down
-                                                        } else {
-                                                            trade.exitPrice = exactMathPrice; // Normal smooth hit
-                                                        }
-                                                    }
-                                                } else {
-                                                    // TIME_SQUAREOFF ke liye exact OPEN price
-                                                    // Indicator etc. ke liye CLOSE price
-                                                    trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? exitData.open[actualExitIndex] : exitData.close[actualExitIndex];
-                                                }
-
-
-                                                
-                                                foundExactExit = true;
-                                                break;
-                                            }
+                                            foundExactExit = true;
+                                            break;
                                         }
-                                    } catch(e) { /* silent skip */ }
-                                }
-                                
-                                if (!foundExactExit) {
-                                    console.log(`❌ [SNIPER FAILED] Could not find ${fixedStrike} at ${exitTimeStr}. Using fallback shifting chart.`);
-                                    if (!trade.exitPrice) trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? trade.currentOpen : trade.currentPrice;
-                                }
-                            } else {
-                                // Strike matched ATM, no shift happened
+                                    }
+                                } catch(e) { }
+                            }
+                            
+                            if (!foundExactExit) {
+                                console.log(`❌ [SNIPER FAILED] Could not find ${fixedStrike} at ${exitTimeStr}. Using fallback.`);
                                 if (!trade.exitPrice) trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? trade.currentOpen : trade.currentPrice;
                             }
                         } else {
-                            // Non-options trade or exact Math-based exit (like perfectly calculated SL)
-                            if (!trade.exitPrice) {
-                                trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? trade.currentOpen : trade.currentPrice;
-                            }
+                            if (!trade.exitPrice) trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? trade.currentOpen : trade.currentPrice;
                         }
                         // =========================================================================
 
