@@ -4619,32 +4619,34 @@ const runBacktestSimulator = async (req, res) => {
                                                 // }
 
 
-                                                // 🔥 THE DOT-TO-DOT (WITH GAP SLIPPAGE) FIX:
+                                                // =========================================================
+                                                // 🔥 THE REALITY ENGINE (ACCURATE TIME + REAL SLIPPAGE)
+                                                // =========================================================
                                                 if (trade.exitReason === "STOPLOSS" || trade.exitReason === "TARGET" || trade.exitReason === "TRAILING_SL") {
-                                                    // Engine ne jo mathematical price nikala hai (e.g. 60.97)
-                                                    const exactMathPrice = trade.exitPrice; 
+                                                    const exactMathPrice = trade.exitPrice; // (e.g., 145.86)
                                                     const candleOpen = exitData.open[actualExitIndex];
 
+                                                    // 1. Agar candle achanak SL ke aage open hui hai (Gap Slippage - 1 se 2 rs ka jump)
                                                     if (trade.transaction === "BUY") {
-                                                        // BUY Trade: SL niche hota hai, Target upar hota hai
                                                         if ((trade.exitReason === "STOPLOSS" || trade.exitReason === "TRAILING_SL") && candleOpen < exactMathPrice) {
-                                                            trade.exitPrice = candleOpen; // Slippage hit (Gapped below SL)
+                                                            trade.exitPrice = candleOpen; // Real Slippage Hit!
+                                                        } else if (trade.exitReason === "TARGET" && candleOpen > exactMathPrice) {
+                                                            trade.exitPrice = candleOpen; // Jackpot Gap up
+                                                        } else {
+                                                            trade.exitPrice = exactMathPrice; // Normal smooth hit
                                                         }
-                                                        if (trade.exitReason === "TARGET" && candleOpen > exactMathPrice) {
-                                                            trade.exitPrice = candleOpen; // Jackpot (Gapped above Target)
-                                                        }
-                                                    } else {
-                                                        // SELL Trade: SL upar hota hai, Target niche hota hai
+                                                    } else { // SELL Trade
                                                         if ((trade.exitReason === "STOPLOSS" || trade.exitReason === "TRAILING_SL") && candleOpen > exactMathPrice) {
-                                                            trade.exitPrice = candleOpen; // Slippage hit (Gapped above SL)
-                                                        }
-                                                        if (trade.exitReason === "TARGET" && candleOpen < exactMathPrice) {
-                                                            trade.exitPrice = candleOpen; // Jackpot (Gapped below Target)
+                                                            trade.exitPrice = candleOpen; // Real Slippage Hit!
+                                                        } else if (trade.exitReason === "TARGET" && candleOpen < exactMathPrice) {
+                                                            trade.exitPrice = candleOpen; // Jackpot Gap down
+                                                        } else {
+                                                            trade.exitPrice = exactMathPrice; // Normal smooth hit
                                                         }
                                                     }
                                                 } else {
-                                                    // TIME_SQUAREOFF ke liye us exact minute ka OPEN price
-                                                    // Aur baki conditions (Indicator Exit etc.) ke liye CLOSE price
+                                                    // TIME_SQUAREOFF ke liye exact OPEN price
+                                                    // Indicator etc. ke liye CLOSE price
                                                     trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? exitData.open[actualExitIndex] : exitData.close[actualExitIndex];
                                                 }
 
