@@ -4361,8 +4361,9 @@ const runBacktestSimulator = async (req, res) => {
                 let anyLegHitSlPast = dailyBreakdownMap[dateStr].tradesList.some(t => t.exitType === "STOPLOSS" || t.exitType === "SL_MOVED_TO_COST");
                 let anyLegHitSlThisTick = false;
 
-                openTrades.forEach((trade, idx) => {
-                    if (trade.markedForExit) return; 
+                // 🚀 CHANGED: forEach ko for...of me badla gaya taki Smart Verifier API call kar sake
+                for (let trade of openTrades) {
+                    if (trade.markedForExit) continue; // CHANGED: return ko continue kiya gaya
 
                     if (hitGlobalMaxProfit || hitGlobalMaxLoss) {
                         trade.markedForExit = true;
@@ -4376,18 +4377,16 @@ const runBacktestSimulator = async (req, res) => {
                         } else {
                             trade.exitPrice = trade.currentPrice;
                         }
-                        return;
+                        continue; // CHANGED: return ko continue kiya gaya
                     }
 
                     const legData = trade.legConfig;
                     const slValue = Number(legData.slValue || 0);
-                    // 🔥 FIX 4: DYNAMIC POINTS VS PERCENTAGE SL/TP
                     const slType = legData.slType || "Points"; 
                     const tpValue = Number(legData.tpValue || 0);
                     const tpType = legData.tpType || "Points";
                     
                     let slPrice = 0, tpPrice = 0;
-
                     let isSlMovedToCost = false;
                     if (advanceFeaturesSettings.moveSLToCost && (anyLegHitSlPast || anyLegHitSlThisTick)) {
                         isSlMovedToCost = true;
@@ -4403,6 +4402,69 @@ const runBacktestSimulator = async (req, res) => {
                         tpPrice = tpType === "Points" ? trade.entryPrice - tpValue : trade.entryPrice * (1 - tpValue / 100);
                     }
 
+                    // =========================================================================
+                    // 🚀🚀🚀 SMART VERIFIER INJECTION (Your Logic Implemented!) 🚀🚀🚀
+                    // =========================================================================
+                    // 1. Pehle check karo ki kya Rolling Chart ke hisab se SL, TP ya TSL hit hua hai?
+                    let claimsHitSl = ((!isSlMovedToCost && slValue > 0) || isSlMovedToCost) && ((trade.transaction === "BUY" && trade.currentLow <= slPrice) || (trade.transaction === "SELL" && trade.currentHigh >= slPrice));
+                    let claimsHitTp = (tpValue > 0) && ((trade.transaction === "BUY" && trade.currentHigh >= tpPrice) || (trade.transaction === "SELL" && trade.currentLow <= tpPrice));
+                    let claimsHitTsl = (trade.trailingSL) && ((trade.transaction === "BUY" && trade.currentLow <= trade.trailingSL) || (trade.transaction === "SELL" && trade.currentHigh >= trade.trailingSL));
+
+                    // Agar Rolling chart keh raha hai ki "HIT HUA HAI", to turant Sniper ko bulao!
+                    if ((claimsHitSl || claimsHitTp || claimsHitTsl) && isOptionsTrade && broker && trade.optionConfig && !trade.markedForExit) {
+                        const fixedStrike = trade.optionConfig.strike;
+                        const currentAtmAtCheck = calculateATM(spotClosePrice, upperSymbol);
+
+                        // Verify tabhi karo jab ATM shift ho chuka ho (yani chart fake ho sakta hai)
+                        if (currentAtmAtCheck !== fixedStrike) {
+                            const checkTimeStr = `${h}:${m}`;
+                            console.log(`\n🚨 [SMART VERIFIER] Rolling chart claims SL/TP hit at ${checkTimeStr}! Pausing engine to verify REAL price of ${fixedStrike}...`);
+
+                            const axios = require('axios');
+                            let expFlag = "WEEK"; let expCode = 1;
+                            let reqExpiry = trade.legConfig.expiry || "WEEKLY";
+                            if (reqExpiry.toUpperCase() === "MONTHLY") { expFlag = "MONTH"; expCode = 1; }
+                            else if (reqExpiry.toUpperCase() === "NEXT WEEKLY" || reqExpiry.toUpperCase() === "NEXT WEEK") { expFlag = "WEEK"; expCode = 2; }
+
+                            const basePayload = {
+                                exchangeSegment: "NSE_FNO", interval: "1", securityId: Number(spotSecurityId), instrument: "OPTIDX",
+                                expiryFlag: expFlag, expiryCode: expCode,
+                                drvOptionType: trade.optionConfig.type === "CE" ? "CALL" : "PUT",
+                                requiredData: ["open", "high", "low", "close", "strike"],
+                                fromDate: dateStr, toDate: dateStr
+                            };
+
+                            const candidates = ["ITM-1", "OTM-1", "-ITM1", "-OTM1", "-1", "-2", "-3", "ITM1", "ITM2", "ITM3", "OTM1", "OTM2", "OTM3", "ITM 1", "OTM 1"];
+                            for(let guess of candidates) {
+                                try {
+                                    const verifyRes = await axios.post('https://api.dhan.co/v2/charts/rollingoption', { ...basePayload, strike: guess }, {
+                                        headers: { 'access-token': broker.apiSecret, 'client-id': broker.clientId, 'Content-Type': 'application/json' }
+                                    });
+                                    const optKey = trade.optionConfig.type === "CE" ? "ce" : "pe";
+                                    let vData = verifyRes.data.data ? verifyRes.data.data[optKey] : null;
+
+                                    if (vData && vData.timestamp) {
+                                        let vIndex = -1;
+                                        for(let k=0; k<vData.timestamp.length; k++){
+                                            const optTime = new Date(vData.timestamp[k] * 1000 + (5.5 * 3600000));
+                                            if(optTime.toISOString().split('T')[1].substring(0, 5) === checkTimeStr) { vIndex = k; break; }
+                                        }
+                                        if(vIndex !== -1 && vData.strike && vData.strike[vIndex] === fixedStrike) {
+                                            // 🎯 OVERWRITE FAKE DATA WITH REAL DATA!
+                                            trade.currentHigh = vData.high[vIndex];
+                                            trade.currentLow = vData.low[vIndex];
+                                            trade.currentPrice = vData.close[vIndex];
+                                            console.log(`🛡️ [VERIFIED] False Alarm Averted! Real High is only ${trade.currentHigh}. Engine will keep trade open!`);
+                                            break;
+                                        }
+                                    }
+                                } catch(e) { }
+                            }
+                        }
+                    }
+                    // =========================================================================
+
+                    // 🛡️ AB ENGINE NORMAL KAAM KAREGA, PAR "VERIFIED" ASLI DATA KE SATH!
                     if ((!isSlMovedToCost && slValue > 0) || isSlMovedToCost) {
                         if ((trade.transaction === "BUY" && trade.currentLow <= slPrice) || (trade.transaction === "SELL" && trade.currentHigh >= slPrice)) {
                             trade.markedForExit = true; 
@@ -4436,7 +4498,7 @@ const runBacktestSimulator = async (req, res) => {
                             trade.markedForExit = true; trade.exitReason = "INDICATOR_EXIT"; trade.exitPrice = trade.currentPrice;
                         }
                     }
-                });
+                }
 
                 if (triggerReasonForExitAll && !hitGlobalMaxProfit && !hitGlobalMaxLoss) {
                     const exitAllCheck = evaluateExitAllLogic(advanceFeaturesSettings, triggerReasonForExitAll);
