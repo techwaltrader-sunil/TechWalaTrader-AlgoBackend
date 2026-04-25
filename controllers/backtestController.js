@@ -4496,7 +4496,7 @@ const runBacktestSimulator = async (req, res) => {
                         // =========================================================================
                         // mathematical limits (like SL/TP) are already set precisely, 
                         // so we only run sniper for market-based exits.
-                        const needsMarketPrice = ["TIME_SQUAREOFF", "EOD_SQUAREOFF", "INDICATOR_EXIT", "MAX_PROFIT", "MAX_LOSS", "EXIT_ALL_TGT", "EXIT_ALL_SL"].includes(trade.exitReason);
+                        const needsMarketPrice = ["TIME_SQUAREOFF", "EOD_SQUAREOFF", "INDICATOR_EXIT", "MAX_PROFIT", "MAX_LOSS", "EXIT_ALL_TGT", "EXIT_ALL_SL", "STOPLOSS", "TARGET", "TRAILING_SL"].includes(trade.exitReason);
                         
                         if (isOptionsTrade && broker && needsMarketPrice && trade.optionConfig) {
                             const fixedStrike = trade.optionConfig.strike;
@@ -4547,7 +4547,15 @@ const runBacktestSimulator = async (req, res) => {
                                             if(actualExitIndex !== -1 && exitData.strike && exitData.strike[actualExitIndex] === fixedStrike) {
                                                 console.log(`✅ [SNIPER BINGO] Dhan mapped ${fixedStrike} to [ ${guess} ] at ${exitTimeStr}!`);
                                                 // Time squareoff par OPEN price, baaki sab par CLOSE price
-                                                trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? exitData.open[actualExitIndex] : exitData.close[actualExitIndex];
+                                               
+                                               
+                                                // 🔥 SL aur Target ke liye Exact Close Price (Real Market Slippage Simulation)
+                                                if (trade.exitReason === "STOPLOSS" || trade.exitReason === "TARGET" || trade.exitReason === "TRAILING_SL") {
+                                                    trade.exitPrice = exitData.close[actualExitIndex]; 
+                                                } else {
+                                                    trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? exitData.open[actualExitIndex] : exitData.close[actualExitIndex];
+                                                }
+                                                
                                                 foundExactExit = true;
                                                 break;
                                             }
