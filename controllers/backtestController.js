@@ -4091,33 +4091,6 @@ const runBacktestSimulator = async (req, res) => {
             return (entryP - exitP) * qty; 
         };
 
-        // const getNearestExpiryString = (tradeDateStr, symbolStr) => {
-        //     const d = new Date(tradeDateStr);
-        //     const upSym = symbolStr.toUpperCase();
-        //     let expiryDate = new Date(d);
-            
-        //     if (upSym.includes("NIFTY") && !upSym.includes("BANK") && !upSym.includes("FIN") && !upSym.includes("MID")) {
-        //         let targetDay = 2; 
-        //         while (expiryDate.getDay() !== targetDay) expiryDate.setDate(expiryDate.getDate() + 1);
-        //     } else {
-        //         let targetDay = upSym.includes("MID") ? 1 : 2; 
-        //         const lastDayOfMonth = new Date(expiryDate.getFullYear(), expiryDate.getMonth() + 1, 0);
-        //         expiryDate = new Date(lastDayOfMonth);
-        //         while (expiryDate.getDay() !== targetDay) expiryDate.setDate(expiryDate.getDate() - 1);
-        //         if (d > expiryDate) {
-        //             const lastDayOfNextMonth = new Date(d.getFullYear(), d.getMonth() + 2, 0);
-        //             expiryDate = new Date(lastDayOfNextMonth);
-        //             while (expiryDate.getDay() !== targetDay) expiryDate.setDate(expiryDate.getDate() - 1);
-        //         }
-        //     }
-        //     const formattedDate = `${String(expiryDate.getDate()).padStart(2, '0')}${expiryDate.toLocaleString('en-US', { month: 'short' }).toUpperCase()}${String(expiryDate.getFullYear()).slice(-2)}`;
-        //     const today = new Date(); today.setHours(0, 0, 0, 0); 
-        //     const expDateForCheck = new Date(expiryDate); expDateForCheck.setHours(0, 0, 0, 0);
-        //     return `${(expDateForCheck < today) ? "EXP" : "Upcoming EXP"} ${formattedDate}`; 
-        // };
-
-
-
                 // 🔥 NEW: SEBI COMPLIANT DATE CALCULATOR (WITH ORIGINAL UI FORMATTING)
         const getNearestExpiryString = (tradeDateStr, symbolStr, reqExpiry = "WEEKLY") => {
             const d = new Date(tradeDateStr);
@@ -4478,14 +4451,125 @@ const runBacktestSimulator = async (req, res) => {
                     }
                 }
 
+                // let remainingTrades = [];
+                // openTrades.forEach(trade => {
+                //     if (trade.markedForExit || isExitTime || isLastCandleOfDay) {
+                //         if (!trade.markedForExit) {
+                //             trade.exitReason = isLastCandleOfDay ? "EOD_SQUAREOFF" : "TIME_SQUAREOFF";
+                //             // 🔥 THE DOT-TO-DOT FIX: Square-Off time par EXACT Open price uthao!
+                //             trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? trade.currentOpen : trade.currentPrice;
+                //         }
+
+                //         const pnl = calcTradePnL(trade.entryPrice, trade.exitPrice, trade.quantity, trade.transaction);
+                        
+                //         const completedTrade = {
+                //             ...trade,
+                //             exitTime: `${h}:${m}:00`,
+                //             pnl: pnl,
+                //             exitType: trade.exitReason
+                //         };
+                        
+                //         dailyBreakdownMap[dateStr].tradesList.push(completedTrade);
+                //         dailyBreakdownMap[dateStr].pnl += pnl;
+                //         dailyBreakdownMap[dateStr].trades += 1;
+                //         if (pnl > 0) { winTrades++; if(pnl > maxProfitTrade) maxProfitTrade = pnl; } 
+                //         else { lossTrades++; if(pnl < maxLossTrade) maxLossTrade = pnl; }
+                        
+                //         console.log(`🎯 [${completedTrade.exitType}] Date: ${dateStr} | Symbol: ${trade.symbol} | Exit: ${trade.exitPrice.toFixed(2)} | PnL: ${pnl.toFixed(2)}`);
+                //     } else {
+                //         remainingTrades.push(trade); 
+                //     }
+                // });
+
+                // openTrades = remainingTrades; 
+
                 let remainingTrades = [];
-                openTrades.forEach(trade => {
+                // 🔥 Changed forEach to for...of loop to allow asynchronous API calls (The Sniper)
+                for (let trade of openTrades) {
                     if (trade.markedForExit || isExitTime || isLastCandleOfDay) {
                         if (!trade.markedForExit) {
                             trade.exitReason = isLastCandleOfDay ? "EOD_SQUAREOFF" : "TIME_SQUAREOFF";
-                            // 🔥 THE DOT-TO-DOT FIX: Square-Off time par EXACT Open price uthao!
-                            trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? trade.currentOpen : trade.currentPrice;
                         }
+
+                        // =========================================================================
+                        // 🔴 THE SNIPER INJECTION (Exact Exit Price Fetcher) 🔴
+                        // =========================================================================
+                        // mathematical limits (like SL/TP) are already set precisely, 
+                        // so we only run sniper for market-based exits.
+                        const needsMarketPrice = ["TIME_SQUAREOFF", "EOD_SQUAREOFF", "INDICATOR_EXIT", "MAX_PROFIT", "MAX_LOSS", "EXIT_ALL_TGT", "EXIT_ALL_SL"].includes(trade.exitReason);
+                        
+                        if (isOptionsTrade && broker && needsMarketPrice && trade.optionConfig) {
+                            const fixedStrike = trade.optionConfig.strike;
+                            const optType = trade.optionConfig.type; 
+                            const currentAtmAtExit = calculateATM(spotClosePrice, upperSymbol);
+                            const exitTimeStr = `${h}:${m}`;
+
+                            if (currentAtmAtExit !== fixedStrike) {
+                                console.log(`\n🔬 [EXIT SNIPER] Exit Triggered at ${exitTimeStr}. ATM shifted to ${currentAtmAtExit}. Seeking Locked Strike ${fixedStrike}...`);
+                                
+                                const axios = require('axios'); // Imported locally for safety
+                                let reqExpiry = trade.legConfig.expiry || "WEEKLY";
+                                let expFlag = "WEEK"; let expCode = 1; 
+                                if (reqExpiry.toUpperCase() === "MONTHLY") { expFlag = "MONTH"; expCode = 1; } 
+                                else if (reqExpiry.toUpperCase() === "NEXT WEEKLY" || reqExpiry.toUpperCase() === "NEXT WEEK") { expFlag = "WEEK"; expCode = 2; }
+                                
+                                const basePayload = {
+                                    exchangeSegment: "NSE_FNO", interval: "1", securityId: Number(spotSecurityId), instrument: "OPTIDX",
+                                    expiryFlag: expFlag, expiryCode: expCode, 
+                                    drvOptionType: optType === "CE" ? "CALL" : "PUT", 
+                                    requiredData: ["open", "high", "low", "close", "strike"],
+                                    fromDate: dateStr, toDate: dateStr
+                                };
+
+                                // 🔥 THE MINUS HACKER CANDIDATES
+                                const candidates = ["ITM-1", "OTM-1", "-ITM1", "-OTM1", "-1", "-2", "-3", "ITM1", "ITM2", "OTM1", "OTM2", "ITM 1", "OTM 1"];
+                                let foundExactExit = false;
+                                
+                                for(let guess of candidates) {
+                                    try {
+                                        const exitPayload = { ...basePayload, strike: guess };
+                                        const exitRes = await axios.post('https://api.dhan.co/v2/charts/rollingoption', exitPayload, {
+                                            headers: { 'access-token': broker.apiSecret, 'client-id': broker.clientId, 'Content-Type': 'application/json' }
+                                        });
+                                        
+                                        const optKey = optType === "CE" ? "ce" : "pe";
+                                        let exitData = exitRes.data.data ? exitRes.data.data[optKey] : null;
+
+                                        if (exitData && exitData.timestamp) {
+                                            let actualExitIndex = -1;
+                                            for(let k=0; k<exitData.timestamp.length; k++){
+                                                const optTime = new Date(exitData.timestamp[k] * 1000 + (5.5 * 3600000));
+                                                const tStr = optTime.toISOString().split('T')[1].substring(0, 5);
+                                                if(tStr === exitTimeStr) { actualExitIndex = k; break; }
+                                            }
+                                            
+                                            // Validate if Dhan returned our specific locked strike!
+                                            if(actualExitIndex !== -1 && exitData.strike && exitData.strike[actualExitIndex] === fixedStrike) {
+                                                console.log(`✅ [SNIPER BINGO] Dhan mapped ${fixedStrike} to [ ${guess} ] at ${exitTimeStr}!`);
+                                                // Time squareoff par OPEN price, baaki sab par CLOSE price
+                                                trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? exitData.open[actualExitIndex] : exitData.close[actualExitIndex];
+                                                foundExactExit = true;
+                                                break;
+                                            }
+                                        }
+                                    } catch(e) { /* silent skip */ }
+                                }
+                                
+                                if (!foundExactExit) {
+                                    console.log(`❌ [SNIPER FAILED] Could not find ${fixedStrike} at ${exitTimeStr}. Using fallback shifting chart.`);
+                                    if (!trade.exitPrice) trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? trade.currentOpen : trade.currentPrice;
+                                }
+                            } else {
+                                // Strike matched ATM, no shift happened
+                                if (!trade.exitPrice) trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? trade.currentOpen : trade.currentPrice;
+                            }
+                        } else {
+                            // Non-options trade or exact Math-based exit (like perfectly calculated SL)
+                            if (!trade.exitPrice) {
+                                trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? trade.currentOpen : trade.currentPrice;
+                            }
+                        }
+                        // =========================================================================
 
                         const pnl = calcTradePnL(trade.entryPrice, trade.exitPrice, trade.quantity, trade.transaction);
                         
@@ -4506,9 +4590,11 @@ const runBacktestSimulator = async (req, res) => {
                     } else {
                         remainingTrades.push(trade); 
                     }
-                });
+                }
 
-                openTrades = remainingTrades; 
+                openTrades = remainingTrades;
+
+
             } 
             else if (!isTradingHaltedForDay) {
                 const mtmResult = evaluateMtmLogic(dailyBreakdownMap[dateStr].pnl, 0, riskSettings);
@@ -4517,114 +4603,6 @@ const runBacktestSimulator = async (req, res) => {
                     console.log(mtmResult.logMessage);
                 }
             }
-
-        //     // =========================================================
-        //     // 🔥 2. MULTI-LEG ENTRY LOGIC
-        //     // =========================================================
-        //     if (openTrades.length === 0 && isMarketOpen && !isTradingHaltedForDay && (finalLongSignal || finalShortSignal)) {
-                
-        //         for (let legIndex = 0; legIndex < strategyLegs.length; legIndex++) {
-        //             const legData = strategyLegs[legIndex];
-                    
-        //             let tradeQuantity = legData.quantity; 
-        //             if (!tradeQuantity || isNaN(tradeQuantity)) tradeQuantity = upperSymbol.includes("BANK") ? 30 : (upperSymbol.includes("NIFTY") ? 50 : 1);
-
-        //             const transActionTypeStr = (legData.action || "BUY").toUpperCase();
-                    
-        //             let activeOptionType = "";
-
-        //             if (isTimeBased) {
-        //                 activeOptionType = (legData.optionType || "Call").toUpperCase().includes("C") ? "CE" : "PE";
-        //             } else {
-        //                 if (transActionTypeStr === "BUY") activeOptionType = finalLongSignal ? "CE" : "PE";
-        //                 else if (transActionTypeStr === "SELL") activeOptionType = finalLongSignal ? "PE" : "CE"; 
-        //             }
-                    
-        //             let tradeSymbol = upperSymbol;
-        //             let finalEntryPrice = spotClosePrice;
-        //             let validTrade = true;
-        //             let premiumChartData = null; 
-        //             let targetStrike = calculateATM(spotClosePrice, upperSymbol);
-
-        //             if(isOptionsTrade && broker) {
-        //                 let apiSuccess = false;
-        //                 const strikeCriteria = legData.strikeCriteria || "ATM pt";
-        //                 const strikeType = legData.strikeType || "ATM";
-        //                 const reqExpiry = legData.expiry || "WEEKLY";
-
-        //                 const optionConfig = getOptionSecurityId(upperSymbol, spotClosePrice, strikeCriteria, strikeType, activeOptionType, reqExpiry);
-        //                 if (optionConfig && optionConfig.strike) targetStrike = optionConfig.strike;
-
-        //                 if(optionConfig) {
-        //                     try {
-        //                         await sleep(500); 
-        //                         const optRes = await fetchDhanHistoricalData(broker.clientId, broker.apiSecret, optionConfig.id, "NSE_FNO", "OPTIDX", dateStr, dateStr, "1");
-        //                         if(optRes.success && optRes.data && optRes.data.close) {
-        //                             const exactMatchIndex = optRes.data.start_Time.findIndex(t => {
-        //                                 const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
-        //                                 return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
-        //                             });
-        //                             // 🔥 THE DOT-TO-DOT FIX: Entry par exact Open price lo time based me
-        //                             if (isTimeBased) {
-        //                                 finalEntryPrice = exactMatchIndex !== -1 ? optRes.data.open[exactMatchIndex] : optRes.data.open[0];
-        //                             } else {
-        //                                 finalEntryPrice = exactMatchIndex !== -1 ? optRes.data.close[exactMatchIndex] : optRes.data.close[0];
-        //                             }
-        //                             tradeSymbol = optionConfig.tradingSymbol;
-        //                             premiumChartData = optRes.data; 
-        //                             apiSuccess = true;
-        //                         } 
-        //                     } catch(e) { }
-        //                 } 
-                        
-        //                 if (!apiSuccess) {
-        //                     try {
-        //                         await sleep(500);
-        //                         const expRes = await fetchExpiredOptionData(broker.clientId, broker.apiSecret, spotSecurityId, targetStrike, activeOptionType, dateStr, dateStr);
-        //                         if(expRes.success && expRes.data && expRes.data.close) {
-        //                             const exactMatchIndex = expRes.data.start_Time.findIndex(t => {
-        //                                 const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
-        //                                 return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
-        //                             });
-        //                             if (isTimeBased) {
-        //                                 finalEntryPrice = exactMatchIndex !== -1 ? expRes.data.open[exactMatchIndex] : expRes.data.open[0];
-        //                             } else {
-        //                                 finalEntryPrice = exactMatchIndex !== -1 ? expRes.data.close[exactMatchIndex] : expRes.data.close[0];
-        //                             }
-        //                             const expiryLabel = getNearestExpiryString(dateStr, upperSymbol);
-        //                             tradeSymbol = `${upperSymbol} ${targetStrike} ${activeOptionType} (${expiryLabel})`;
-        //                             premiumChartData = expRes.data; 
-        //                             apiSuccess = true;
-        //                         }
-        //                     } catch(e) { }
-        //                 }
-
-        //                 if (apiSuccess && finalEntryPrice > spotClosePrice * 0.5) {
-        //                     validTrade = false;
-        //                 }
-        //             }
-
-        //             if (validTrade) {
-        //                 openTrades.push({
-        //                     id: `leg_${legIndex}`,
-        //                     legConfig: legData,
-        //                     symbol: tradeSymbol, 
-        //                     transaction: transActionTypeStr, 
-        //                     quantity: tradeQuantity,
-        //                     entryTime: `${h}:${m}:00`, 
-        //                     entryPrice: finalEntryPrice,
-        //                     exitTime: null, exitPrice: null, pnl: null, exitType: null,
-        //                     optionConfig: isOptionsTrade ? { strike: targetStrike, type: activeOptionType } : null,
-        //                     premiumChart: premiumChartData,
-        //                     signalType: finalLongSignal ? "LONG" : "SHORT",
-        //                     lastKnownPremium: finalEntryPrice,
-        //                     markedForExit: false 
-        //                 });
-        //                 console.log(`✅ [TRADE OPEN] Leg ${legIndex + 1} | Time: ${h}:${m} | Spot: ${spotClosePrice} | Premium: ${finalEntryPrice} | Type: ${activeOptionType}`);
-        //             }
-        //         } 
-        //     }
-        // } 
 
 
         // =========================================================
