@@ -4540,18 +4540,18 @@ const runBacktestSimulator = async (req, res) => {
                         }
 
                         // =========================================================================
-                        // 🔴 THE SNIPER INJECTION (FOOLPROOF VERSION) 🔴
+                        // 🔴 THE SNIPER GATEKEEPER (REJECTS FAKE TRIGGERS) 🔴
                         // =========================================================================
-                        // Is list me "SL_MOVED_TO_COST" add kar diya gaya hai!
                         const needsMarketPrice = ["TIME_SQUAREOFF", "EOD_SQUAREOFF", "INDICATOR_EXIT", "MAX_PROFIT", "MAX_LOSS", "EXIT_ALL_TGT", "EXIT_ALL_SL", "STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason);
                         
+                        let fakeTriggerRejected = false; // Flag to identify false alarms
+
                         if (isOptionsTrade && broker && needsMarketPrice && trade.optionConfig) {
                             const fixedStrike = trade.optionConfig.strike;
                             const optType = trade.optionConfig.type; 
                             const exitTimeStr = `${h}:${m}`;
 
-                            // 🔥 Sniper ab har haal me chalega! Koi if(shift) ki shart nahi!
-                            console.log(`\n🔬 [EXIT SNIPER] Trigger at ${exitTimeStr} for ${trade.exitReason}. Fetching exact Close/Open for ${fixedStrike}...`);
+                            console.log(`\n🔬 [EXIT SNIPER] Trigger at ${exitTimeStr} for ${trade.exitReason}. Verifying exact OHLC for ${fixedStrike}...`);
                             
                             const axios = require('axios'); 
                             let reqExpiry = trade.legConfig.expiry || "WEEKLY";
@@ -4567,7 +4567,6 @@ const runBacktestSimulator = async (req, res) => {
                                 fromDate: dateStr, toDate: dateStr
                             };
 
-                            // "ATM" ko bhi list me dal diya taki agar shift na hua ho to bhi API data de!
                             const candidates = ["ATM", "ITM-1", "OTM-1", "-ITM1", "-OTM1", "-1", "-2", "-3", "ITM1", "ITM2", "ITM3", "OTM1", "OTM2", "OTM3", "ITM 1", "OTM 1"];
                             let foundExactExit = false;
                             
@@ -4587,22 +4586,40 @@ const runBacktestSimulator = async (req, res) => {
                                         }
                                         
                                         if(actualExitIndex !== -1 && exitData.strike && exitData.strike[actualExitIndex] === fixedStrike) {
-                                            console.log(`✅ [SNIPER BINGO] Dhan mapped ${fixedStrike} to [ ${guess} ] at ${exitTimeStr}!`);
-                                            
-                                            const mathPrice = trade.exitPrice; // Original calculated price
+                                            const mathPrice = trade.exitPrice; 
                                             const cOpen = exitData.open[actualExitIndex];
+                                            const cHigh = exitData.high[actualExitIndex];
+                                            const cLow = exitData.low[actualExitIndex];
                                             const cClose = exitData.close[actualExitIndex];
+
+                                            // 🛡️ THE GATEKEEPER CHECK: Did the real price actually hit the target/SL?
+                                            let isValidTrigger = true;
+                                            if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason)) {
+                                                if (trade.transaction === "BUY" && cLow > mathPrice) isValidTrigger = false; // BUY SL is below, low didn't reach
+                                                if (trade.transaction === "SELL" && cHigh < mathPrice) isValidTrigger = false; // SELL SL is above, high didn't reach
+                                            } else if (trade.exitReason === "TARGET") {
+                                                if (trade.transaction === "BUY" && cHigh < mathPrice) isValidTrigger = false;
+                                                if (trade.transaction === "SELL" && cLow > mathPrice) isValidTrigger = false;
+                                            }
+
+                                            if (!isValidTrigger) {
+                                                fakeTriggerRejected = true;
+                                                foundExactExit = true; 
+                                                break; // Reject and break!
+                                            }
+
+                                            console.log(`✅ [SNIPER BINGO] Verified! Dhan mapped ${fixedStrike} to [ ${guess} ] at ${exitTimeStr}!`);
 
                                             // 🚀 STRICT OVERWRITE TO CLOSE PRICE (Conservative Slippage)
                                             if (["STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason)) {
                                                 if (trade.transaction === "BUY") {
                                                     if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen < mathPrice) trade.exitPrice = cOpen;
                                                     else if (trade.exitReason === "TARGET" && cOpen > mathPrice) trade.exitPrice = cOpen;
-                                                    else trade.exitPrice = cClose; // FORCE OVERWRITE TO CLOSE PRICE!
+                                                    else trade.exitPrice = cClose; 
                                                 } else { // SELL Trade
                                                     if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen > mathPrice) trade.exitPrice = cOpen;
                                                     else if (trade.exitReason === "TARGET" && cOpen < mathPrice) trade.exitPrice = cOpen;
-                                                    else trade.exitPrice = cClose; // FORCE OVERWRITE TO CLOSE PRICE!
+                                                    else trade.exitPrice = cClose; 
                                                 }
                                             } else {
                                                 trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? cOpen : cClose;
@@ -4615,6 +4632,16 @@ const runBacktestSimulator = async (req, res) => {
                                 } catch(e) { }
                             }
                             
+                            // 🚀 GATEKEEPER REJECTION LOGIC
+                            if (fakeTriggerRejected) {
+                                console.log(`🛡️ [GATEKEEPER] Fake ${trade.exitReason} trigger rejected! Real High/Low didn't breach ${trade.exitPrice}. Trade continues...`);
+                                trade.markedForExit = false;
+                                trade.exitReason = null;
+                                trade.exitPrice = null; // Reset for next evaluation
+                                remainingTrades.push(trade);
+                                continue; // SKIP THIS EXIT, GO TO NEXT TRADE!
+                            }
+
                             if (!foundExactExit) {
                                 console.log(`❌ [SNIPER FAILED] Could not find ${fixedStrike} at ${exitTimeStr}. Using fallback.`);
                                 if (!trade.exitPrice) trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? trade.currentOpen : trade.currentPrice;
