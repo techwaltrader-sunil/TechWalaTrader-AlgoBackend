@@ -4642,12 +4642,23 @@ const runBacktestSimulator = async (req, res) => {
                                 continue; // SKIP THIS EXIT, GO TO NEXT TRADE!
                             }
 
+                            // =========================================================================
+                            // 🚨 ILLIQUID MINUTE (NO DATA) REJECTION LOGIC 🚨
+                            // =========================================================================
                             if (!foundExactExit) {
-                                console.log(`❌ [SNIPER FAILED] Could not find ${fixedStrike} at ${exitTimeStr}. Using fallback.`);
-                                if (!trade.exitPrice) trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? trade.currentOpen : trade.currentPrice;
+                                if (["STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason)) {
+                                    console.log(`❌ [SNIPER FAILED] No data found at ${exitTimeStr} (Illiquid minute). Treating as fake trigger. Trade continues...`);
+                                    trade.markedForExit = false;
+                                    trade.exitReason = null;
+                                    trade.exitPrice = null;
+                                    remainingTrades.push(trade);
+                                    continue; // 🚀 FALLBACK CANCELLED! Trade will survive to 15:15
+                                } else {
+                                    // Sirf TIME_SQUAREOFF ya EOD me fallback use hoga, kyunki wahan trade katna zaroori hai
+                                    console.log(`❌ [SNIPER FAILED] Could not find ${fixedStrike} at ${exitTimeStr}. Using fallback for ${trade.exitReason}.`);
+                                    if (!trade.exitPrice) trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? trade.currentOpen : trade.currentPrice;
+                                }
                             }
-                        } else {
-                            if (!trade.exitPrice) trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? trade.currentOpen : trade.currentPrice;
                         }
                         // =========================================================================
 
