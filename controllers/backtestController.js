@@ -4549,12 +4549,44 @@ const runBacktestSimulator = async (req, res) => {
                                                 // Time squareoff par OPEN price, baaki sab par CLOSE price
                                                
                                                
-                                                // 🔥 SL aur Target ke liye Exact Close Price (Real Market Slippage Simulation)
+                                                // // 🔥 SL aur Target ke liye Exact Close Price (Real Market Slippage Simulation)
+                                                // if (trade.exitReason === "STOPLOSS" || trade.exitReason === "TARGET" || trade.exitReason === "TRAILING_SL") {
+                                                //     trade.exitPrice = exitData.close[actualExitIndex]; 
+                                                // } else {
+                                                //     trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? exitData.open[actualExitIndex] : exitData.close[actualExitIndex];
+                                                // }
+
+
+                                                // 🔥 THE DOT-TO-DOT (WITH GAP SLIPPAGE) FIX:
                                                 if (trade.exitReason === "STOPLOSS" || trade.exitReason === "TARGET" || trade.exitReason === "TRAILING_SL") {
-                                                    trade.exitPrice = exitData.close[actualExitIndex]; 
+                                                    // Engine ne jo mathematical price nikala hai (e.g. 60.97)
+                                                    const exactMathPrice = trade.exitPrice; 
+                                                    const candleOpen = exitData.open[actualExitIndex];
+
+                                                    if (trade.transaction === "BUY") {
+                                                        // BUY Trade: SL niche hota hai, Target upar hota hai
+                                                        if ((trade.exitReason === "STOPLOSS" || trade.exitReason === "TRAILING_SL") && candleOpen < exactMathPrice) {
+                                                            trade.exitPrice = candleOpen; // Slippage hit (Gapped below SL)
+                                                        }
+                                                        if (trade.exitReason === "TARGET" && candleOpen > exactMathPrice) {
+                                                            trade.exitPrice = candleOpen; // Jackpot (Gapped above Target)
+                                                        }
+                                                    } else {
+                                                        // SELL Trade: SL upar hota hai, Target niche hota hai
+                                                        if ((trade.exitReason === "STOPLOSS" || trade.exitReason === "TRAILING_SL") && candleOpen > exactMathPrice) {
+                                                            trade.exitPrice = candleOpen; // Slippage hit (Gapped above SL)
+                                                        }
+                                                        if (trade.exitReason === "TARGET" && candleOpen < exactMathPrice) {
+                                                            trade.exitPrice = candleOpen; // Jackpot (Gapped below Target)
+                                                        }
+                                                    }
                                                 } else {
+                                                    // TIME_SQUAREOFF ke liye us exact minute ka OPEN price
+                                                    // Aur baki conditions (Indicator Exit etc.) ke liye CLOSE price
                                                     trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? exitData.open[actualExitIndex] : exitData.close[actualExitIndex];
                                                 }
+
+
                                                 
                                                 foundExactExit = true;
                                                 break;
