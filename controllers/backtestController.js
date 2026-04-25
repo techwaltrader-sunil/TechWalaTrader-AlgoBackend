@@ -11,14 +11,14 @@
 // // 🔥 NAYA FUNCTION: Indicator ke naam aur period ko nikalne ke liye
 // const formatIndName = (ind) => {
 //     if (!ind) return 'Value';
-    
+
 //     if (ind.display) {
 //         // e.g., "EMA(9,Close)" ko "EMA(9)" me convert karna
 //         const match = ind.display.match(/^([A-Za-z0-9_]+)\((\d+)/);
 //         if (match) return `${match[1]}(${match[2]})`;
 //         return ind.display.split(',')[0] + (ind.display.includes(',') ? ')' : '');
 //     }
-    
+
 //     let name = ind.name || ind.id || 'Value';
 //     let period = ind.params?.Period || ind.params?.period;
 //     if (period) return `${name}(${period})`;
@@ -29,7 +29,7 @@
 //     try {
 //         const { strategyId } = req.params;
 //         const { period, start, end } = req.query;
-        
+
 //         const strategy = await Strategy.collection.findOne({ _id: new mongoose.Types.ObjectId(strategyId) });
 //         if (!strategy) return res.status(404).json({ error: "Strategy not found" });
 
@@ -37,7 +37,7 @@
 
 //         let endDate = new Date();
 //         let startDate = new Date();
-        
+
 //         if (period === 'Custom' && start && end) {
 //             startDate = new Date(start);
 //             endDate = new Date(end);
@@ -58,12 +58,12 @@
 
 //         const instrumentsArr = strategy.instruments || strategy.data?.instruments || [];
 //         const instrumentData = instrumentsArr.length > 0 ? instrumentsArr[0] : {};
-        
+
 //         const symbol = instrumentData.name || instrumentData.symbol || "BANKNIFTY"; 
 //         const upperSymbol = symbol.toUpperCase().trim(); 
-        
+
 //         const isOptionsTrade = instrumentData.segment === "Option" || instrumentData.segment === "NFO";
-        
+
 //         let exchangeSegment = "IDX_I"; 
 //         if (upperSymbol.includes("NIFTY") || upperSymbol.includes("SENSEX") || upperSymbol === "BANKNIFTY" || upperSymbol === "NIFTY BANK") {
 //             exchangeSegment = "IDX_I";
@@ -71,11 +71,11 @@
 
 //         const cleanSymbolForMap = upperSymbol.replace(' 50', '').trim();
 //         const spotSecurityId = instrumentData.securityId || dhanIdMap[upperSymbol] || dhanIdMap[cleanSymbolForMap] || "25";
-        
+
 //         // 🔥 FIX: Deep extraction for interval to handle MongoDB nesting
 //         const rawInterval = strategy.interval || strategy.config?.interval || strategy.data?.config?.interval;
 //         let timeframe = rawInterval ? String(rawInterval).replace(' min', '').trim() : "5"; 
-        
+
 //         let cachedData = await HistoricalData.find({
 //             symbol: { $regex: new RegExp(cleanSymbolForMap, "i") }, timeframe, timestamp: { $gte: startDate, $lte: endDate }
 //         }).sort({ timestamp: 1 }).lean();
@@ -110,7 +110,7 @@
 //                     if (ms < 10000000000) ms = ms * 1000; 
 //                     bulkOps.push({ insertOne: { document: { symbol: upperSymbol, timeframe, timestamp: new Date(ms), open: open[i], high: high[i], low: low[i], close: close[i], volume: volume[i] } } });
 //                 }
-                
+
 //                 if (bulkOps.length > 0) {
 //                     await HistoricalData.bulkWrite(bulkOps, { ordered: false }).catch(e => console.log("Duplicates ignored"));
 //                     cachedData = await HistoricalData.find({ symbol: { $regex: new RegExp(cleanSymbolForMap, "i") }, timeframe, timestamp: { $gte: startDate, $lte: endDate } }).sort({ timestamp: 1 }).lean();
@@ -120,7 +120,7 @@
 //             }
 //         }
 
-        
+
 //         const findConditions = (obj) => {
 //             if (!obj || typeof obj !== 'object') return null;
 //             if (obj.longRules && Array.isArray(obj.longRules)) return obj;
@@ -167,7 +167,7 @@
 //         // 📊 PRE-CALCULATE EXIT INDICATORS (LONG & SHORT EXIT)
 //         // =========================================================
 //         let exitConds = {};
-        
+
 //         const possibleExits = strategy.exitConditions 
 //                            || strategy.data?.exitConditions 
 //                            || strategy.data?.entrySettings?.exitConditions 
@@ -184,10 +184,10 @@
 
 //         const rawExitLongRules = exitConds.longRules || [];
 //         const rawExitShortRules = exitConds.shortRules || [];
-        
+
 //         const exitLongRules = rawExitLongRules.filter(rule => rule.ind1 && (rule.ind1.id || rule.ind1.display));
 //         const exitShortRules = rawExitShortRules.filter(rule => rule.ind1 && (rule.ind1.id || rule.ind1.display));
-        
+
 //         const calcExitLongInd1 = []; const calcExitLongInd2 = [];
 //         if (exitLongRules.length > 0) {
 //             exitLongRules.forEach((rule, idx) => {
@@ -216,7 +216,7 @@
 
 //         let isPositionOpen = false; 
 //         let currentTrade = null; 
-        
+
 //         let tradeQuantity = strategy.legs?.[0]?.quantity || strategy.data?.legs?.[0]?.quantity; 
 //         if (!tradeQuantity || isNaN(tradeQuantity)) tradeQuantity = upperSymbol.includes("BANK") ? 30 : (upperSymbol.includes("NIFTY") ? 50 : 1);
 
@@ -243,7 +243,7 @@
 //             const d = new Date(tradeDateStr);
 //             const upSym = symbolStr.toUpperCase();
 //             let expiryDate = new Date(d);
-            
+
 //             if (upSym.includes("NIFTY") && !upSym.includes("BANK") && !upSym.includes("FIN") && !upSym.includes("MID")) {
 //                 let targetDay = 2; 
 //                 while (expiryDate.getDay() !== targetDay) {
@@ -253,13 +253,13 @@
 //             else {
 //                 let targetDay = 2; 
 //                 if (upSym.includes("MID")) targetDay = 1; 
-                
+
 //                 const lastDayOfMonth = new Date(expiryDate.getFullYear(), expiryDate.getMonth() + 1, 0);
 //                 expiryDate = new Date(lastDayOfMonth);
 //                 while (expiryDate.getDay() !== targetDay) {
 //                     expiryDate.setDate(expiryDate.getDate() - 1);
 //                 }
-                
+
 //                 if (d > expiryDate) {
 //                     const lastDayOfNextMonth = new Date(d.getFullYear(), d.getMonth() + 2, 0);
 //                     expiryDate = new Date(lastDayOfNextMonth);
@@ -276,7 +276,7 @@
 
 //             const today = new Date();
 //             today.setHours(0, 0, 0, 0); 
-            
+
 //             const expDateForCheck = new Date(expiryDate);
 //             expDateForCheck.setHours(0, 0, 0, 0);
 
@@ -321,7 +321,7 @@
 
 //                     const operator = rule.op || rule.params?.op || rule.ind1?.params?.op || rule.ind1?.op;
 //                     const ruleResult = evaluateCondition(val1, val2, prevVal1, prevVal2, operator);
-                    
+
 //                     if (idx === 0) overallResult = ruleResult;
 //                     else {
 //                         const logicalOp = entryConds.logicalOps[idx - 1]; 
@@ -344,7 +344,7 @@
 
 //                     const operator = rule.op || rule.params?.op || rule.ind1?.params?.op || rule.ind1?.op;
 //                     const ruleResult = evaluateCondition(val1, val2, prevVal1, prevVal2, operator);
-                    
+
 //                     if (idx === 0) overallResult = ruleResult;
 //                     else {
 //                         const logicalOp = entryConds.logicalOps[idx - 1]; 
@@ -374,7 +374,7 @@
 
 //                     const operator = rule.op || rule.params?.op || rule.ind1?.params?.op || rule.ind1?.op;
 //                     const ruleResult = evaluateCondition(val1, val2, prevVal1, prevVal2, operator);
-                    
+
 //                     if (idx === 0) overallResult = ruleResult;
 //                     else {
 //                         const logicalOp = exitConds.logicalOpsLong ? exitConds.logicalOpsLong[idx - 1] : 'AND'; 
@@ -397,7 +397,7 @@
 
 //                     const operator = rule.op || rule.params?.op || rule.ind1?.params?.op || rule.ind1?.op;
 //                     const ruleResult = evaluateCondition(val1, val2, prevVal1, prevVal2, operator);
-                    
+
 //                     if (idx === 0) overallResult = ruleResult;
 //                     else {
 //                         const logicalOp = exitConds.logicalOpsShort ? exitConds.logicalOpsShort[idx - 1] : 'AND'; 
@@ -425,7 +425,7 @@
 //             // 🔥 ENTRY X-RAY DEBUGGER (Jab koi trade open nahi hai)
 //             // =========================================================
 //             if (!isPositionOpen && isMarketOpen && !isTradingHaltedForDay) {
-                
+
 //                 // LONG ENTRY CHECK
 //                 if (txnType === 'Both Side' || txnType === 'Only Long') {
 //                     if (entryConds && entryConds.longRules && entryConds.longRules.length > 0) {
@@ -453,7 +453,7 @@
 //             // 5. 🛑 M2M RISK CHECK (SL/TP & Global Max Profit/Loss Check)
 //             // =========================================================
 //             if (isPositionOpen && currentTrade) {
-                
+
 //                 // 🔥 THE RESTORED UNSTOPPABLE X-RAY DEBUGGER (WITH SMART NAMES) 🔥
 //                 if (currentTrade.signalType === "SHORT") {
 //                     const v1 = calcExitShortInd1.length > 0 ? calcExitShortInd1[0][i] : null;
@@ -500,7 +500,7 @@
 //                         const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
 //                         return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
 //                     });
-                    
+
 //                     if (exactMatchIndex !== -1) {
 //                         let tempClose = currentTrade.premiumChart.close[exactMatchIndex];
 //                         if (tempClose > spotClosePrice * 0.5) {
@@ -532,7 +532,7 @@
 //                         hitSL = true; exitPrice = slPrice; exitReason = "STOPLOSS"; 
 //                     }
 //                 }
-                
+
 //                 if (tpValue > 0 && currentTrade.entryPrice > 0) {
 //                     if (currentTrade.transaction === "BUY" && currentHigh >= tpPrice) {
 //                         hitTP = true; exitPrice = tpPrice; exitReason = "TARGET";
@@ -557,7 +557,7 @@
 //                 const trailAmount = Number(riskSettings.trailAmount) || 0;
 
 //                 if (!hitSL && !hitTP && trailingType !== "No Trailing") {
-                    
+
 //                     if (currentTrade.lockedPnL === undefined) currentTrade.lockedPnL = -Infinity;
 //                     if (currentTrade.trailingPnL === undefined) currentTrade.trailingPnL = -Infinity;
 
@@ -573,7 +573,7 @@
 //                     if (trailingType === "Trail Profit" || (trailingType === "Lock and Trail" && currentTrade.tslLocked)) {
 //                         if (trailTrigger > 0) {
 //                             let trailingBasePnL = currentTrade.highestPnL;
-                            
+
 //                             if (trailingType === "Lock and Trail") {
 //                                 trailingBasePnL = currentTrade.highestPnL - lockTrigger;
 //                             }
@@ -596,7 +596,7 @@
 //                     if (activeFloorPnL !== -Infinity && openTradePnL <= activeFloorPnL) {
 //                         hitSL = true; 
 //                         exitReason = "TRAILING_SL";
-                        
+
 //                         if (currentTrade.transaction === "BUY") {
 //                             exitPrice = currentTrade.entryPrice + (activeFloorPnL / tradeQuantity);
 //                         } else {
@@ -633,7 +633,7 @@
 //                         exitReason = "INDICATOR_EXIT";
 //                     }
 //                 }
-                
+
 //                 // 🚀 EXIT EXECUTION
 //                 if (hitSL || hitTP || hitMaxProfit || hitMaxLoss || hitIndicatorExit) {
 //                     isPositionOpen = false;
@@ -643,13 +643,13 @@
 //                     currentTrade.exitPrice = exitPrice;
 //                     currentTrade.pnl = pnl;
 //                     currentTrade.exitType = exitReason;
-                    
+
 //                     dailyBreakdownMap[dateStr].tradesList.push(currentTrade);
 //                     dailyBreakdownMap[dateStr].pnl += pnl;
 //                     dailyBreakdownMap[dateStr].trades += 1;
 //                     if (pnl > 0) { winTrades++; if(pnl > maxProfitTrade) maxProfitTrade = pnl; } 
 //                     else { lossTrades++; if(pnl < maxLossTrade) maxLossTrade = pnl; }
-                    
+
 //                     console.log(`🎯 [${currentTrade.exitType}] Date: ${dateStr} | Exit Premium: ${exitPrice.toFixed(2)} | PnL: ${pnl.toFixed(2)}`);
 //                     currentTrade = null;
 //                     continue; 
@@ -666,16 +666,16 @@
 //             // 🟢 TAKE TRADE (ENTRY)
 //             // =========================================================
 //            if (!isPositionOpen && isMarketOpen && !isTradingHaltedForDay && (finalLongSignal || finalShortSignal)) {
-                
+
 //                 const transActionTypeStr = (legData.action || "BUY").toUpperCase();
-                
+
 //                 let activeOptionType = "";
 //                 if (transActionTypeStr === "BUY") {
 //                     activeOptionType = finalLongSignal ? "CE" : "PE";
 //                 } else if (transActionTypeStr === "SELL") {
 //                     activeOptionType = finalLongSignal ? "PE" : "CE"; 
 //                 }
-                
+
 //                 let tradeSymbol = upperSymbol;
 //                 let finalEntryPrice = spotClosePrice;
 //                 let validTrade = true;
@@ -684,7 +684,7 @@
 
 //                 if(isOptionsTrade && broker) {
 //                     let apiSuccess = false;
-                    
+
 //                     const strikeCriteria = legData.strikeCriteria || "ATM pt";
 //                     const strikeType = legData.strikeType || "ATM";
 //                     const reqExpiry = legData.expiry || "WEEKLY";
@@ -692,7 +692,7 @@
 //                     console.log(`🔍 [X-RAY] Fetching Option ID -> Base: ${upperSymbol}, OptType: ${activeOptionType}`);
 
 //                     const optionConfig = getOptionSecurityId(upperSymbol, spotClosePrice, strikeCriteria, strikeType, activeOptionType, reqExpiry);
-                    
+
 //                     if (optionConfig && optionConfig.strike) {
 //                         targetStrike = optionConfig.strike; // Update targetStrike dynamically
 //                     }
@@ -713,7 +713,7 @@
 //                             } 
 //                         } catch(e) { }
 //                     } 
-                    
+
 //                     if (!apiSuccess) {
 //                         try {
 //                             await sleep(500);
@@ -724,7 +724,7 @@
 //                                     return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
 //                                 });
 //                                 finalEntryPrice = exactMatchIndex !== -1 ? expRes.data.close[exactMatchIndex] : expRes.data.close[0];
-                                
+
 //                                 const expiryLabel = getNearestExpiryString(dateStr, upperSymbol);
 //                                 tradeSymbol = `${upperSymbol} ${targetStrike} ${activeOptionType} (${expiryLabel})`;
 
@@ -761,8 +761,8 @@
 //                 }
 //             }
 
-            
-            
+
+
 //             // =========================================================
 //             // 🔴 EXIT TRADE (TIME SQAUREOFF)
 //             // =========================================================
@@ -773,10 +773,10 @@
 //                 if(isOptionsTrade && currentTrade.optionConfig && broker) {
 //                     let apiSuccess = false;
 //                     const targetStrike = currentTrade.optionConfig.strike;
-                    
+
 //                     const reqExpiry = legData.expiry || "WEEKLY";
 //                     const optionConfig = getOptionSecurityId(upperSymbol, targetStrike, "ATM pt", "ATM", currentTrade.optionConfig.type, reqExpiry);
-                    
+
 //                     if(optionConfig) {
 //                         try {
 //                             await sleep(500);
@@ -819,7 +819,7 @@
 //                 currentTrade.pnl = pnl;
 //                 currentTrade.exitType = isLastCandleOfDay ? "EOD_SQUAREOFF" : "TIME_SQUAREOFF";
 //                 dailyBreakdownMap[dateStr].tradesList.push(currentTrade);
-                
+
 //                 console.log(`❌ [TRADE CLOSE] Date: ${dateStr} | Premium: ${finalExitPrice.toFixed(2)} | PnL: ${pnl.toFixed(2)}`);
 //                 currentTrade = null; 
 
@@ -903,13 +903,13 @@
 // // Indicator ke naam aur period ko nikalne ke liye
 // const formatIndName = (ind) => {
 //     if (!ind) return 'Value';
-    
+
 //     if (ind.display) {
 //         const match = ind.display.match(/^([A-Za-z0-9_]+)\((\d+)/);
 //         if (match) return `${match[1]}(${match[2]})`;
 //         return ind.display.split(',')[0] + (ind.display.includes(',') ? ')' : '');
 //     }
-    
+
 //     let name = ind.name || ind.id || 'Value';
 //     let period = ind.params?.Period || ind.params?.period;
 //     if (period) return `${name}(${period})`;
@@ -920,7 +920,7 @@
 //     try {
 //         const { strategyId } = req.params;
 //         const { period, start, end } = req.query;
-        
+
 //         const strategy = await Strategy.collection.findOne({ _id: new mongoose.Types.ObjectId(strategyId) });
 //         if (!strategy) return res.status(404).json({ error: "Strategy not found" });
 
@@ -928,7 +928,7 @@
 
 //         let endDate = new Date();
 //         let startDate = new Date();
-        
+
 //         if (period === 'Custom' && start && end) {
 //             startDate = new Date(start);
 //             endDate = new Date(end);
@@ -949,12 +949,12 @@
 
 //         const instrumentsArr = strategy.instruments || strategy.data?.instruments || [];
 //         const instrumentData = instrumentsArr.length > 0 ? instrumentsArr[0] : {};
-        
+
 //         const symbol = instrumentData.name || instrumentData.symbol || "BANKNIFTY"; 
 //         const upperSymbol = symbol.toUpperCase().trim(); 
-        
+
 //         const isOptionsTrade = instrumentData.segment === "Option" || instrumentData.segment === "NFO";
-        
+
 //         let exchangeSegment = "IDX_I"; 
 //         if (upperSymbol.includes("NIFTY") || upperSymbol.includes("SENSEX") || upperSymbol === "BANKNIFTY" || upperSymbol === "NIFTY BANK") {
 //             exchangeSegment = "IDX_I";
@@ -962,10 +962,10 @@
 
 //         const cleanSymbolForMap = upperSymbol.replace(' 50', '').trim();
 //         const spotSecurityId = instrumentData.securityId || dhanIdMap[upperSymbol] || dhanIdMap[cleanSymbolForMap] || "25";
-        
+
 //         const rawInterval = strategy.interval || strategy.config?.interval || strategy.data?.config?.interval;
 //         let timeframe = rawInterval ? String(rawInterval).replace(' min', '').trim() : "5"; 
-        
+
 //         let cachedData = await HistoricalData.find({
 //             symbol: { $regex: new RegExp(cleanSymbolForMap, "i") }, timeframe, timestamp: { $gte: startDate, $lte: endDate }
 //         }).sort({ timestamp: 1 }).lean();
@@ -1000,7 +1000,7 @@
 //                     if (ms < 10000000000) ms = ms * 1000; 
 //                     bulkOps.push({ insertOne: { document: { symbol: upperSymbol, timeframe, timestamp: new Date(ms), open: open[i], high: high[i], low: low[i], close: close[i], volume: volume[i] } } });
 //                 }
-                
+
 //                 if (bulkOps.length > 0) {
 //                     await HistoricalData.bulkWrite(bulkOps, { ordered: false }).catch(e => console.log("Duplicates ignored"));
 //                     cachedData = await HistoricalData.find({ symbol: { $regex: new RegExp(cleanSymbolForMap, "i") }, timeframe, timestamp: { $gte: startDate, $lte: endDate } }).sort({ timestamp: 1 }).lean();
@@ -1066,10 +1066,10 @@
 
 //         const rawExitLongRules = exitConds.longRules || [];
 //         const rawExitShortRules = exitConds.shortRules || [];
-        
+
 //         const exitLongRules = rawExitLongRules.filter(rule => rule.ind1 && (rule.ind1.id || rule.ind1.display));
 //         const exitShortRules = rawExitShortRules.filter(rule => rule.ind1 && (rule.ind1.id || rule.ind1.display));
-        
+
 //         const calcExitLongInd1 = []; const calcExitLongInd2 = [];
 //         if (exitLongRules.length > 0) {
 //             exitLongRules.forEach((rule, idx) => {
@@ -1098,7 +1098,7 @@
 
 //         let isPositionOpen = false; 
 //         let currentTrade = null; 
-        
+
 //         let tradeQuantity = strategy.legs?.[0]?.quantity || strategy.data?.legs?.[0]?.quantity; 
 //         if (!tradeQuantity || isNaN(tradeQuantity)) tradeQuantity = upperSymbol.includes("BANK") ? 30 : (upperSymbol.includes("NIFTY") ? 50 : 1);
 
@@ -1125,7 +1125,7 @@
 //             const d = new Date(tradeDateStr);
 //             const upSym = symbolStr.toUpperCase();
 //             let expiryDate = new Date(d);
-            
+
 //             if (upSym.includes("NIFTY") && !upSym.includes("BANK") && !upSym.includes("FIN") && !upSym.includes("MID")) {
 //                 let targetDay = 2; 
 //                 while (expiryDate.getDay() !== targetDay) {
@@ -1134,13 +1134,13 @@
 //             } else {
 //                 let targetDay = 2; 
 //                 if (upSym.includes("MID")) targetDay = 1; 
-                
+
 //                 const lastDayOfMonth = new Date(expiryDate.getFullYear(), expiryDate.getMonth() + 1, 0);
 //                 expiryDate = new Date(lastDayOfMonth);
 //                 while (expiryDate.getDay() !== targetDay) {
 //                     expiryDate.setDate(expiryDate.getDate() - 1);
 //                 }
-                
+
 //                 if (d > expiryDate) {
 //                     const lastDayOfNextMonth = new Date(d.getFullYear(), d.getMonth() + 2, 0);
 //                     expiryDate = new Date(lastDayOfNextMonth);
@@ -1157,7 +1157,7 @@
 
 //             const today = new Date();
 //             today.setHours(0, 0, 0, 0); 
-            
+
 //             const expDateForCheck = new Date(expiryDate);
 //             expDateForCheck.setHours(0, 0, 0, 0);
 
@@ -1196,7 +1196,7 @@
 
 //                     const operator = rule.op || rule.params?.op || rule.ind1?.params?.op || rule.ind1?.op;
 //                     const ruleResult = evaluateCondition(val1, val2, prevVal1, prevVal2, operator);
-                    
+
 //                     if (idx === 0) overallResult = ruleResult;
 //                     else {
 //                         const logicalOp = entryConds.logicalOps[idx - 1]; 
@@ -1218,7 +1218,7 @@
 
 //                     const operator = rule.op || rule.params?.op || rule.ind1?.params?.op || rule.ind1?.op;
 //                     const ruleResult = evaluateCondition(val1, val2, prevVal1, prevVal2, operator);
-                    
+
 //                     if (idx === 0) overallResult = ruleResult;
 //                     else {
 //                         const logicalOp = entryConds.logicalOps[idx - 1]; 
@@ -1244,7 +1244,7 @@
 
 //                     const operator = rule.op || rule.params?.op || rule.ind1?.params?.op || rule.ind1?.op;
 //                     const ruleResult = evaluateCondition(val1, val2, prevVal1, prevVal2, operator);
-                    
+
 //                     if (idx === 0) overallResult = ruleResult;
 //                     else {
 //                         const logicalOp = exitConds.logicalOpsLong ? exitConds.logicalOpsLong[idx - 1] : 'AND'; 
@@ -1266,7 +1266,7 @@
 
 //                     const operator = rule.op || rule.params?.op || rule.ind1?.params?.op || rule.ind1?.op;
 //                     const ruleResult = evaluateCondition(val1, val2, prevVal1, prevVal2, operator);
-                    
+
 //                     if (idx === 0) overallResult = ruleResult;
 //                     else {
 //                         const logicalOp = exitConds.logicalOpsShort ? exitConds.logicalOpsShort[idx - 1] : 'AND'; 
@@ -1359,7 +1359,7 @@
 //                         const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
 //                         return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
 //                     });
-                    
+
 //                     if (exactMatchIndex !== -1) {
 //                         let tempClose = currentTrade.premiumChart.close[exactMatchIndex];
 //                         if (tempClose > spotClosePrice * 0.5) {
@@ -1390,7 +1390,7 @@
 //                         hitSL = true; exitPrice = slPrice; exitReason = "STOPLOSS"; 
 //                     }
 //                 }
-                
+
 //                 if (tpValue > 0 && currentTrade.entryPrice > 0) {
 //                     if (currentTrade.transaction === "BUY" && currentHigh >= tpPrice) {
 //                         hitTP = true; exitPrice = tpPrice; exitReason = "TARGET";
@@ -1407,7 +1407,7 @@
 //                 if (!hitSL && !hitTP) { 
 //                     // 1. Math check karo ki kya TSL modify hone ka time aa gaya hai?
 //                     const tslResult = evaluateTrailingSL(currentTrade, openTradePnL, riskSettings, tradeQuantity);
-                    
+
 //                     // Agar modify hua hai, to array me save karo aur log print karo
 //                     if (tslResult.isModified) {
 //                         currentTrade.trailingSL = tslResult.newTrailingSL;
@@ -1451,7 +1451,7 @@
 //                         exitReason = "INDICATOR_EXIT";
 //                     }
 //                 }
-                
+
 //                 if (hitSL || hitTP || hitMaxProfit || hitMaxLoss || hitIndicatorExit) {
 //                     isPositionOpen = false;
 //                     const pnl = calcTradePnL(currentTrade.entryPrice, exitPrice, tradeQuantity, currentTrade.transaction);
@@ -1460,13 +1460,13 @@
 //                     currentTrade.exitPrice = exitPrice;
 //                     currentTrade.pnl = pnl;
 //                     currentTrade.exitType = exitReason;
-                    
+
 //                     dailyBreakdownMap[dateStr].tradesList.push(currentTrade);
 //                     dailyBreakdownMap[dateStr].pnl += pnl;
 //                     dailyBreakdownMap[dateStr].trades += 1;
 //                     if (pnl > 0) { winTrades++; if(pnl > maxProfitTrade) maxProfitTrade = pnl; } 
 //                     else { lossTrades++; if(pnl < maxLossTrade) maxLossTrade = pnl; }
-                    
+
 //                     console.log(`🎯 [${currentTrade.exitType}] Date: ${dateStr} | Exit Premium: ${exitPrice.toFixed(2)} | PnL: ${pnl.toFixed(2)}`);
 //                     currentTrade = null;
 //                     continue; 
@@ -1479,16 +1479,16 @@
 //             }
 
 //             if (!isPositionOpen && isMarketOpen && !isTradingHaltedForDay && (finalLongSignal || finalShortSignal)) {
-                
+
 //                 const transActionTypeStr = (legData.action || "BUY").toUpperCase();
-                
+
 //                 let activeOptionType = "";
 //                 if (transActionTypeStr === "BUY") {
 //                     activeOptionType = finalLongSignal ? "CE" : "PE";
 //                 } else if (transActionTypeStr === "SELL") {
 //                     activeOptionType = finalLongSignal ? "PE" : "CE"; 
 //                 }
-                
+
 //                 let tradeSymbol = upperSymbol;
 //                 let finalEntryPrice = spotClosePrice;
 //                 let validTrade = true;
@@ -1497,7 +1497,7 @@
 
 //                 if(isOptionsTrade && broker) {
 //                     let apiSuccess = false;
-                    
+
 //                     const strikeCriteria = legData.strikeCriteria || "ATM pt";
 //                     const strikeType = legData.strikeType || "ATM";
 //                     const reqExpiry = legData.expiry || "WEEKLY";
@@ -1505,7 +1505,7 @@
 //                     console.log(`🔍 [X-RAY] Fetching Option ID -> Base: ${upperSymbol}, OptType: ${activeOptionType}`);
 
 //                     const optionConfig = getOptionSecurityId(upperSymbol, spotClosePrice, strikeCriteria, strikeType, activeOptionType, reqExpiry);
-                    
+
 //                     if (optionConfig && optionConfig.strike) {
 //                         targetStrike = optionConfig.strike;
 //                     }
@@ -1526,7 +1526,7 @@
 //                             } 
 //                         } catch(e) { }
 //                     } 
-                    
+
 //                     if (!apiSuccess) {
 //                         try {
 //                             await sleep(500);
@@ -1537,7 +1537,7 @@
 //                                     return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
 //                                 });
 //                                 finalEntryPrice = exactMatchIndex !== -1 ? expRes.data.close[exactMatchIndex] : expRes.data.close[0];
-                                
+
 //                                 const expiryLabel = getNearestExpiryString(dateStr, upperSymbol);
 //                                 tradeSymbol = `${upperSymbol} ${targetStrike} ${activeOptionType} (${expiryLabel})`;
 
@@ -1581,10 +1581,10 @@
 //                 if(isOptionsTrade && currentTrade.optionConfig && broker) {
 //                     let apiSuccess = false;
 //                     const targetStrike = currentTrade.optionConfig.strike;
-                    
+
 //                     const reqExpiry = legData.expiry || "WEEKLY";
 //                     const optionConfig = getOptionSecurityId(upperSymbol, targetStrike, "ATM pt", "ATM", currentTrade.optionConfig.type, reqExpiry);
-                    
+
 //                     if(optionConfig) {
 //                         try {
 //                             await sleep(500);
@@ -1627,7 +1627,7 @@
 //                 currentTrade.pnl = pnl;
 //                 currentTrade.exitType = isLastCandleOfDay ? "EOD_SQUAREOFF" : "TIME_SQUAREOFF";
 //                 dailyBreakdownMap[dateStr].tradesList.push(currentTrade);
-                
+
 //                 console.log(`❌ [TRADE CLOSE] Date: ${dateStr} | Premium: ${finalExitPrice.toFixed(2)} | PnL: ${pnl.toFixed(2)}`);
 //                 currentTrade = null; 
 
@@ -1723,7 +1723,7 @@
 //     try {
 //         const { strategyId } = req.params;
 //         const { period, start, end } = req.query;
-        
+
 //         const strategy = await Strategy.collection.findOne({ _id: new mongoose.Types.ObjectId(strategyId) });
 //         if (!strategy) return res.status(404).json({ error: "Strategy not found" });
 
@@ -1731,7 +1731,7 @@
 
 //         let endDate = new Date();
 //         let startDate = new Date();
-        
+
 //         if (period === 'Custom' && start && end) {
 //             startDate = new Date(start);
 //             endDate = new Date(end);
@@ -1752,12 +1752,12 @@
 
 //         const instrumentsArr = strategy.instruments || strategy.data?.instruments || [];
 //         const instrumentData = instrumentsArr.length > 0 ? instrumentsArr[0] : {};
-        
+
 //         const symbol = instrumentData.name || instrumentData.symbol || "BANKNIFTY"; 
 //         const upperSymbol = symbol.toUpperCase().trim(); 
-        
+
 //         const isOptionsTrade = instrumentData.segment === "Option" || instrumentData.segment === "NFO";
-        
+
 //         let exchangeSegment = "IDX_I"; 
 //         if (upperSymbol.includes("NIFTY") || upperSymbol.includes("SENSEX") || upperSymbol === "BANKNIFTY" || upperSymbol === "NIFTY BANK") {
 //             exchangeSegment = "IDX_I";
@@ -1765,10 +1765,10 @@
 
 //         const cleanSymbolForMap = upperSymbol.replace(' 50', '').trim();
 //         const spotSecurityId = instrumentData.securityId || dhanIdMap[upperSymbol] || dhanIdMap[cleanSymbolForMap] || "25";
-        
+
 //         const rawInterval = strategy.interval || strategy.config?.interval || strategy.data?.config?.interval;
 //         let timeframe = rawInterval ? String(rawInterval).replace(' min', '').trim() : "5"; 
-        
+
 //         let cachedData = await HistoricalData.find({
 //             symbol: { $regex: new RegExp(cleanSymbolForMap, "i") }, timeframe, timestamp: { $gte: startDate, $lte: endDate }
 //         }).sort({ timestamp: 1 }).lean();
@@ -1803,7 +1803,7 @@
 //                     if (ms < 10000000000) ms = ms * 1000; 
 //                     bulkOps.push({ insertOne: { document: { symbol: upperSymbol, timeframe, timestamp: new Date(ms), open: open[i], high: high[i], low: low[i], close: close[i], volume: volume[i] } } });
 //                 }
-                
+
 //                 if (bulkOps.length > 0) {
 //                     await HistoricalData.bulkWrite(bulkOps, { ordered: false }).catch(e => console.log("Duplicates ignored"));
 //                     cachedData = await HistoricalData.find({ symbol: { $regex: new RegExp(cleanSymbolForMap, "i") }, timeframe, timestamp: { $gte: startDate, $lte: endDate } }).sort({ timestamp: 1 }).lean();
@@ -1869,10 +1869,10 @@
 
 //         const rawExitLongRules = exitConds.longRules || [];
 //         const rawExitShortRules = exitConds.shortRules || [];
-        
+
 //         const exitLongRules = rawExitLongRules.filter(rule => rule.ind1 && (rule.ind1.id || rule.ind1.display));
 //         const exitShortRules = rawExitShortRules.filter(rule => rule.ind1 && (rule.ind1.id || rule.ind1.display));
-        
+
 //         const calcExitLongInd1 = []; const calcExitLongInd2 = [];
 //         if (exitLongRules.length > 0) {
 //             exitLongRules.forEach((rule, idx) => {
@@ -1901,7 +1901,7 @@
 
 //         let isPositionOpen = false; 
 //         let currentTrade = null; 
-        
+
 //         let tradeQuantity = strategy.legs?.[0]?.quantity || strategy.data?.legs?.[0]?.quantity; 
 //         if (!tradeQuantity || isNaN(tradeQuantity)) tradeQuantity = upperSymbol.includes("BANK") ? 30 : (upperSymbol.includes("NIFTY") ? 50 : 1);
 
@@ -1909,11 +1909,11 @@
 //         const transactionType = legData.action || "BUY";
 
 //         const riskSettings = strategy.data?.riskManagement || strategy.riskManagement || {};
-        
+
 //         // 🔥 FIX: Re-declared global limits for Exact Price Math
 //         const globalMaxProfit = Number(riskSettings.maxProfit) || 0;
 //         const globalMaxLoss = Number(riskSettings.maxLoss) || 0;
-        
+
 //         let isTradingHaltedForDay = false; 
 //         let currentDayTracker = "";
 
@@ -1931,7 +1931,7 @@
 //             const d = new Date(tradeDateStr);
 //             const upSym = symbolStr.toUpperCase();
 //             let expiryDate = new Date(d);
-            
+
 //             if (upSym.includes("NIFTY") && !upSym.includes("BANK") && !upSym.includes("FIN") && !upSym.includes("MID")) {
 //                 let targetDay = 2; 
 //                 while (expiryDate.getDay() !== targetDay) {
@@ -1940,13 +1940,13 @@
 //             } else {
 //                 let targetDay = 2; 
 //                 if (upSym.includes("MID")) targetDay = 1; 
-                
+
 //                 const lastDayOfMonth = new Date(expiryDate.getFullYear(), expiryDate.getMonth() + 1, 0);
 //                 expiryDate = new Date(lastDayOfMonth);
 //                 while (expiryDate.getDay() !== targetDay) {
 //                     expiryDate.setDate(expiryDate.getDate() - 1);
 //                 }
-                
+
 //                 if (d > expiryDate) {
 //                     const lastDayOfNextMonth = new Date(d.getFullYear(), d.getMonth() + 2, 0);
 //                     expiryDate = new Date(lastDayOfNextMonth);
@@ -1963,7 +1963,7 @@
 
 //             const today = new Date();
 //             today.setHours(0, 0, 0, 0); 
-            
+
 //             const expDateForCheck = new Date(expiryDate);
 //             expDateForCheck.setHours(0, 0, 0, 0);
 
@@ -2002,7 +2002,7 @@
 
 //                     const operator = rule.op || rule.params?.op || rule.ind1?.params?.op || rule.ind1?.op;
 //                     const ruleResult = evaluateCondition(val1, val2, prevVal1, prevVal2, operator);
-                    
+
 //                     if (idx === 0) overallResult = ruleResult;
 //                     else {
 //                         const logicalOp = entryConds.logicalOps[idx - 1]; 
@@ -2024,7 +2024,7 @@
 
 //                     const operator = rule.op || rule.params?.op || rule.ind1?.params?.op || rule.ind1?.op;
 //                     const ruleResult = evaluateCondition(val1, val2, prevVal1, prevVal2, operator);
-                    
+
 //                     if (idx === 0) overallResult = ruleResult;
 //                     else {
 //                         const logicalOp = entryConds.logicalOps[idx - 1]; 
@@ -2050,7 +2050,7 @@
 
 //                     const operator = rule.op || rule.params?.op || rule.ind1?.params?.op || rule.ind1?.op;
 //                     const ruleResult = evaluateCondition(val1, val2, prevVal1, prevVal2, operator);
-                    
+
 //                     if (idx === 0) overallResult = ruleResult;
 //                     else {
 //                         const logicalOp = exitConds.logicalOpsLong ? exitConds.logicalOpsLong[idx - 1] : 'AND'; 
@@ -2072,7 +2072,7 @@
 
 //                     const operator = rule.op || rule.params?.op || rule.ind1?.params?.op || rule.ind1?.op;
 //                     const ruleResult = evaluateCondition(val1, val2, prevVal1, prevVal2, operator);
-                    
+
 //                     if (idx === 0) overallResult = ruleResult;
 //                     else {
 //                         const logicalOp = exitConds.logicalOpsShort ? exitConds.logicalOpsShort[idx - 1] : 'AND'; 
@@ -2165,7 +2165,7 @@
 //                         const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
 //                         return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
 //                     });
-                    
+
 //                     if (exactMatchIndex !== -1) {
 //                         let tempClose = currentTrade.premiumChart.close[exactMatchIndex];
 //                         if (tempClose > spotClosePrice * 0.5) {
@@ -2196,7 +2196,7 @@
 //                         hitSL = true; exitPrice = slPrice; exitReason = "STOPLOSS"; 
 //                     }
 //                 }
-                
+
 //                 if (tpValue > 0 && currentTrade.entryPrice > 0) {
 //                     if (currentTrade.transaction === "BUY" && currentHigh >= tpPrice) {
 //                         hitTP = true; exitPrice = tpPrice; exitReason = "TARGET";
@@ -2210,7 +2210,7 @@
 //                 // 🔥 SHARED TRAILING STOP LOSS (TSL) ENGINE
 //                 if (!hitSL && !hitTP) { 
 //                     const tslResult = evaluateTrailingSL(currentTrade, openTradePnL, riskSettings, tradeQuantity);
-                    
+
 //                     if (tslResult.isModified) {
 //                         currentTrade.trailingSL = tslResult.newTrailingSL;
 //                         // console.log(tslResult.logMessage);
@@ -2228,7 +2228,7 @@
 //                 // // 🔥 2. CHECK GLOBAL MAX PROFIT / MAX LOSS (SHARED LOGIC)
 //                 // if (!hitSL && !hitTP) { 
 //                 //     const mtmResult = evaluateMtmLogic(dailyBreakdownMap[dateStr].pnl, openTradePnL, riskSettings);
-                    
+
 //                 //     if (mtmResult.isHalted) {
 //                 //         hitMaxProfit = mtmResult.exitReason === "MAX_PROFIT";
 //                 //         hitMaxLoss = mtmResult.exitReason === "MAX_LOSS";
@@ -2244,7 +2244,7 @@
 //                 // =========================================================
 //                 if (!hitSL && !hitTP) { 
 //                     const realizedDailyPnL = dailyBreakdownMap[dateStr].pnl;
-                    
+
 //                     // Target PnL needed from current trade to hit global limits
 //                     const pnlNeededForMaxProfit = globalMaxProfit > 0 ? (globalMaxProfit - realizedDailyPnL) : Infinity;
 //                     const pnlNeededForMaxLoss = globalMaxLoss > 0 ? (-globalMaxLoss - realizedDailyPnL) : -Infinity;
@@ -2298,7 +2298,7 @@
 //                         exitReason = "INDICATOR_EXIT";
 //                     }
 //                 }
-                
+
 //                 if (hitSL || hitTP || hitMaxProfit || hitMaxLoss || hitIndicatorExit) {
 //                     isPositionOpen = false;
 //                     const pnl = calcTradePnL(currentTrade.entryPrice, exitPrice, tradeQuantity, currentTrade.transaction);
@@ -2307,13 +2307,13 @@
 //                     currentTrade.exitPrice = exitPrice;
 //                     currentTrade.pnl = pnl;
 //                     currentTrade.exitType = exitReason;
-                    
+
 //                     dailyBreakdownMap[dateStr].tradesList.push(currentTrade);
 //                     dailyBreakdownMap[dateStr].pnl += pnl;
 //                     dailyBreakdownMap[dateStr].trades += 1;
 //                     if (pnl > 0) { winTrades++; if(pnl > maxProfitTrade) maxProfitTrade = pnl; } 
 //                     else { lossTrades++; if(pnl < maxLossTrade) maxLossTrade = pnl; }
-                    
+
 //                     console.log(`🎯 [${currentTrade.exitType}] Date: ${dateStr} | Exit Premium: ${exitPrice.toFixed(2)} | PnL: ${pnl.toFixed(2)}`);
 //                     currentTrade = null;
 //                     continue; 
@@ -2329,16 +2329,16 @@
 //             }
 
 //             if (!isPositionOpen && isMarketOpen && !isTradingHaltedForDay && (finalLongSignal || finalShortSignal)) {
-                
+
 //                 const transActionTypeStr = (legData.action || "BUY").toUpperCase();
-                
+
 //                 let activeOptionType = "";
 //                 if (transActionTypeStr === "BUY") {
 //                     activeOptionType = finalLongSignal ? "CE" : "PE";
 //                 } else if (transActionTypeStr === "SELL") {
 //                     activeOptionType = finalLongSignal ? "PE" : "CE"; 
 //                 }
-                
+
 //                 let tradeSymbol = upperSymbol;
 //                 let finalEntryPrice = spotClosePrice;
 //                 let validTrade = true;
@@ -2347,7 +2347,7 @@
 
 //                 if(isOptionsTrade && broker) {
 //                     let apiSuccess = false;
-                    
+
 //                     const strikeCriteria = legData.strikeCriteria || "ATM pt";
 //                     const strikeType = legData.strikeType || "ATM";
 //                     const reqExpiry = legData.expiry || "WEEKLY";
@@ -2355,7 +2355,7 @@
 //                     console.log(`🔍 [X-RAY] Fetching Option ID -> Base: ${upperSymbol}, OptType: ${activeOptionType}`);
 
 //                     const optionConfig = getOptionSecurityId(upperSymbol, spotClosePrice, strikeCriteria, strikeType, activeOptionType, reqExpiry);
-                    
+
 //                     if (optionConfig && optionConfig.strike) {
 //                         targetStrike = optionConfig.strike;
 //                     }
@@ -2376,7 +2376,7 @@
 //                             } 
 //                         } catch(e) { }
 //                     } 
-                    
+
 //                     if (!apiSuccess) {
 //                         try {
 //                             await sleep(500);
@@ -2387,7 +2387,7 @@
 //                                     return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
 //                                 });
 //                                 finalEntryPrice = exactMatchIndex !== -1 ? expRes.data.close[exactMatchIndex] : expRes.data.close[0];
-                                
+
 //                                 const expiryLabel = getNearestExpiryString(dateStr, upperSymbol);
 //                                 tradeSymbol = `${upperSymbol} ${targetStrike} ${activeOptionType} (${expiryLabel})`;
 
@@ -2431,10 +2431,10 @@
 //                 if(isOptionsTrade && currentTrade.optionConfig && broker) {
 //                     let apiSuccess = false;
 //                     const targetStrike = currentTrade.optionConfig.strike;
-                    
+
 //                     const reqExpiry = legData.expiry || "WEEKLY";
 //                     const optionConfig = getOptionSecurityId(upperSymbol, targetStrike, "ATM pt", "ATM", currentTrade.optionConfig.type, reqExpiry);
-                    
+
 //                     if(optionConfig) {
 //                         try {
 //                             await sleep(500);
@@ -2477,7 +2477,7 @@
 //                 currentTrade.pnl = pnl;
 //                 currentTrade.exitType = isLastCandleOfDay ? "EOD_SQUAREOFF" : "TIME_SQUAREOFF";
 //                 dailyBreakdownMap[dateStr].tradesList.push(currentTrade);
-                
+
 //                 console.log(`❌ [TRADE CLOSE] Date: ${dateStr} | Premium: ${finalExitPrice.toFixed(2)} | PnL: ${pnl.toFixed(2)}`);
 //                 currentTrade = null; 
 
@@ -2574,7 +2574,7 @@
 //     try {
 //         const { strategyId } = req.params;
 //         const { period, start, end } = req.query;
-        
+
 //         const strategy = await Strategy.collection.findOne({ _id: new mongoose.Types.ObjectId(strategyId) });
 //         if (!strategy) return res.status(404).json({ error: "Strategy not found" });
 
@@ -2582,7 +2582,7 @@
 
 //         let endDate = new Date();
 //         let startDate = new Date();
-        
+
 //         if (period === 'Custom' && start && end) {
 //             startDate = new Date(start);
 //             endDate = new Date(end);
@@ -2606,7 +2606,7 @@
 //         const symbol = instrumentData.name || instrumentData.symbol || "BANKNIFTY"; 
 //         const upperSymbol = symbol.toUpperCase().trim(); 
 //         const isOptionsTrade = instrumentData.segment === "Option" || instrumentData.segment === "NFO";
-        
+
 //         let exchangeSegment = "IDX_I"; 
 //         if (upperSymbol.includes("NIFTY") || upperSymbol.includes("SENSEX") || upperSymbol === "BANKNIFTY" || upperSymbol === "NIFTY BANK") {
 //             exchangeSegment = "IDX_I";
@@ -2614,10 +2614,10 @@
 
 //         const cleanSymbolForMap = upperSymbol.replace(' 50', '').trim();
 //         const spotSecurityId = instrumentData.securityId || dhanIdMap[upperSymbol] || dhanIdMap[cleanSymbolForMap] || "25";
-        
+
 //         const rawInterval = strategy.interval || strategy.config?.interval || strategy.data?.config?.interval;
 //         let timeframe = rawInterval ? String(rawInterval).replace(' min', '').trim() : "5"; 
-        
+
 //         let cachedData = await HistoricalData.find({
 //             symbol: { $regex: new RegExp(cleanSymbolForMap, "i") }, timeframe, timestamp: { $gte: startDate, $lte: endDate }
 //         }).sort({ timestamp: 1 }).lean();
@@ -2652,7 +2652,7 @@
 //                     if (ms < 10000000000) ms = ms * 1000; 
 //                     bulkOps.push({ insertOne: { document: { symbol: upperSymbol, timeframe, timestamp: new Date(ms), open: open[i], high: high[i], low: low[i], close: close[i], volume: volume[i] } } });
 //                 }
-                
+
 //                 if (bulkOps.length > 0) {
 //                     await HistoricalData.bulkWrite(bulkOps, { ordered: false }).catch(e => console.log("Duplicates ignored"));
 //                     cachedData = await HistoricalData.find({ symbol: { $regex: new RegExp(cleanSymbolForMap, "i") }, timeframe, timestamp: { $gte: startDate, $lte: endDate } }).sort({ timestamp: 1 }).lean();
@@ -2710,7 +2710,7 @@
 //         const rawExitShortRules = exitConds.shortRules || [];
 //         const exitLongRules = rawExitLongRules.filter(rule => rule.ind1 && (rule.ind1.id || rule.ind1.display));
 //         const exitShortRules = rawExitShortRules.filter(rule => rule.ind1 && (rule.ind1.id || rule.ind1.display));
-        
+
 //         const calcExitLongInd1 = []; const calcExitLongInd2 = [];
 //         if (exitLongRules.length > 0) {
 //             exitLongRules.forEach((rule, idx) => {
@@ -2741,7 +2741,7 @@
 //         const riskSettings = strategy.data?.riskManagement || strategy.riskManagement || {};
 //         const globalMaxProfit = Number(riskSettings.maxProfit) || 0;
 //         const globalMaxLoss = Number(riskSettings.maxLoss) || 0;
-        
+
 //         let isTradingHaltedForDay = false; 
 //         let currentDayTracker = ""; 
 
@@ -2759,7 +2759,7 @@
 //             const d = new Date(tradeDateStr);
 //             const upSym = symbolStr.toUpperCase();
 //             let expiryDate = new Date(d);
-            
+
 //             if (upSym.includes("NIFTY") && !upSym.includes("BANK") && !upSym.includes("FIN") && !upSym.includes("MID")) {
 //                 let targetDay = 2; 
 //                 while (expiryDate.getDay() !== targetDay) expiryDate.setDate(expiryDate.getDate() + 1);
@@ -2768,7 +2768,7 @@
 //                 const lastDayOfMonth = new Date(expiryDate.getFullYear(), expiryDate.getMonth() + 1, 0);
 //                 expiryDate = new Date(lastDayOfMonth);
 //                 while (expiryDate.getDay() !== targetDay) expiryDate.setDate(expiryDate.getDate() - 1);
-                
+
 //                 if (d > expiryDate) {
 //                     const lastDayOfNextMonth = new Date(d.getFullYear(), d.getMonth() + 2, 0);
 //                     expiryDate = new Date(lastDayOfNextMonth);
@@ -2903,7 +2903,7 @@
 //                             const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
 //                             return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
 //                         });
-                        
+
 //                         if (exactMatchIndex !== -1) {
 //                             let tempClose = trade.premiumChart.close[exactMatchIndex];
 //                             if (tempClose > spotClosePrice * 0.5) {
@@ -2920,7 +2920,7 @@
 //                     } else if (!isOptionsTrade) {
 //                         trade.currentHigh = parseFloat(candle.high); trade.currentLow = parseFloat(candle.low); currentClose = parseFloat(candle.close);
 //                     }
-                    
+
 //                     trade.currentPrice = currentClose;
 //                     trade.openPnL = calcTradePnL(trade.entryPrice, currentClose, trade.quantity, trade.transaction);
 //                     combinedOpenPnL += trade.openPnL;
@@ -2933,7 +2933,7 @@
 
 //                 const realizedDailyPnL = dailyBreakdownMap[dateStr].pnl;
 //                 const mtmResult = evaluateMtmLogic(realizedDailyPnL, combinedOpenPnL, riskSettings);
-                
+
 //                 if (mtmResult.isHalted) {
 //                     hitGlobalMaxProfit = mtmResult.exitReason === "MAX_PROFIT";
 //                     hitGlobalMaxLoss = mtmResult.exitReason === "MAX_LOSS";
@@ -3018,20 +3018,20 @@
 //                         }
 
 //                         const pnl = calcTradePnL(trade.entryPrice, trade.exitPrice, trade.quantity, trade.transaction);
-                        
+
 //                         const completedTrade = {
 //                             ...trade,
 //                             exitTime: `${h}:${m}:00`,
 //                             pnl: pnl,
 //                             exitType: trade.exitReason
 //                         };
-                        
+
 //                         dailyBreakdownMap[dateStr].tradesList.push(completedTrade);
 //                         dailyBreakdownMap[dateStr].pnl += pnl;
 //                         dailyBreakdownMap[dateStr].trades += 1;
 //                         if (pnl > 0) { winTrades++; if(pnl > maxProfitTrade) maxProfitTrade = pnl; } 
 //                         else { lossTrades++; if(pnl < maxLossTrade) maxLossTrade = pnl; }
-                        
+
 //                         console.log(`🎯 [${completedTrade.exitType}] Date: ${dateStr} | Symbol: ${trade.symbol} | Exit: ${trade.exitPrice.toFixed(2)} | PnL: ${pnl.toFixed(2)}`);
 //                     } else {
 //                         remainingTrades.push(trade); // Keep it open
@@ -3053,20 +3053,20 @@
 //             // 🔥 2. MULTI-LEG ENTRY LOGIC
 //             // =========================================================
 //             if (openTrades.length === 0 && isMarketOpen && !isTradingHaltedForDay && (finalLongSignal || finalShortSignal)) {
-                
+
 //                 // Loop through all legs defined in the strategy
 //                 for (let legIndex = 0; legIndex < strategyLegs.length; legIndex++) {
 //                     const legData = strategyLegs[legIndex];
-                    
+
 //                     let tradeQuantity = legData.quantity; 
 //                     if (!tradeQuantity || isNaN(tradeQuantity)) tradeQuantity = upperSymbol.includes("BANK") ? 30 : (upperSymbol.includes("NIFTY") ? 50 : 1);
 
 //                     const transActionTypeStr = (legData.action || "BUY").toUpperCase();
-                    
+
 //                     let activeOptionType = "";
 //                     if (transActionTypeStr === "BUY") activeOptionType = finalLongSignal ? "CE" : "PE";
 //                     else if (transActionTypeStr === "SELL") activeOptionType = finalLongSignal ? "PE" : "CE"; 
-                    
+
 //                     let tradeSymbol = upperSymbol;
 //                     let finalEntryPrice = spotClosePrice;
 //                     let validTrade = true;
@@ -3098,7 +3098,7 @@
 //                                 } 
 //                             } catch(e) { }
 //                         } 
-                        
+
 //                         if (!apiSuccess) {
 //                             try {
 //                                 await sleep(500);
@@ -3224,7 +3224,7 @@
 //     try {
 //         const { strategyId } = req.params;
 //         const { period, start, end } = req.query;
-        
+
 //         const strategy = await Strategy.collection.findOne({ _id: new mongoose.Types.ObjectId(strategyId) });
 //         if (!strategy) return res.status(404).json({ error: "Strategy not found" });
 
@@ -3232,7 +3232,7 @@
 
 //         let endDate = new Date();
 //         let startDate = new Date();
-        
+
 //         if (period === 'Custom' && start && end) {
 //             startDate = new Date(start);
 //             endDate = new Date(end);
@@ -3256,7 +3256,7 @@
 //         const symbol = instrumentData.name || instrumentData.symbol || "BANKNIFTY"; 
 //         const upperSymbol = symbol.toUpperCase().trim(); 
 //         const isOptionsTrade = instrumentData.segment === "Option" || instrumentData.segment === "NFO";
-        
+
 //         let exchangeSegment = "IDX_I"; 
 //         if (upperSymbol.includes("NIFTY") || upperSymbol.includes("SENSEX") || upperSymbol === "BANKNIFTY" || upperSymbol === "NIFTY BANK") {
 //             exchangeSegment = "IDX_I";
@@ -3264,10 +3264,10 @@
 
 //         const cleanSymbolForMap = upperSymbol.replace(' 50', '').trim();
 //         const spotSecurityId = instrumentData.securityId || dhanIdMap[upperSymbol] || dhanIdMap[cleanSymbolForMap] || "25";
-        
+
 //         const rawInterval = strategy.interval || strategy.config?.interval || strategy.data?.config?.interval;
 //         let timeframe = rawInterval ? String(rawInterval).replace(' min', '').trim() : "5"; 
-        
+
 //         let cachedData = await HistoricalData.find({
 //             symbol: { $regex: new RegExp(cleanSymbolForMap, "i") }, timeframe, timestamp: { $gte: startDate, $lte: endDate }
 //         }).sort({ timestamp: 1 }).lean();
@@ -3303,7 +3303,7 @@
 //             }
 
 //             console.log(`📡 Fetching missing historical data from API in ${chunkedRanges.length} safe chunks...`);
-            
+
 //             for (let range of chunkedRanges) {
 //                 const dhanRes = await fetchDhanHistoricalData(broker.clientId, broker.apiSecret, spotSecurityId, exchangeSegment, "INDEX", range.start.toISOString().split('T')[0], range.end.toISOString().split('T')[0], timeframe);
 //                 const timeArray = dhanRes.data ? (dhanRes.data.start_Time || dhanRes.data.timestamp) : null;
@@ -3321,9 +3321,9 @@
 //                     console.error(`❌ [DHAN API ERROR] Chunk Failed. Dhan says:`, dhanRes.message || "Returned Empty Data");
 //                 }
 //             }
-            
+
 //             cachedData = await HistoricalData.find({ symbol: { $regex: new RegExp(cleanSymbolForMap, "i") }, timeframe, timestamp: { $gte: startDate, $lte: endDate } }).sort({ timestamp: 1 }).lean();
-            
+
 //             if (cachedData.length === 0) {
 //                 return res.status(404).json({ success: false, errorType: "NO_DATA", message: "Spot Data not available for this period." });
 //             }
@@ -3371,7 +3371,7 @@
 //         const rawExitShortRules = exitConds.shortRules || [];
 //         const exitLongRules = rawExitLongRules.filter(rule => rule.ind1 && (rule.ind1.id || rule.ind1.display));
 //         const exitShortRules = rawExitShortRules.filter(rule => rule.ind1 && (rule.ind1.id || rule.ind1.display));
-        
+
 //         const calcExitLongInd1 = []; const calcExitLongInd2 = [];
 //         if (exitLongRules.length > 0) {
 //             exitLongRules.forEach((rule, idx) => {
@@ -3401,7 +3401,7 @@
 //         const riskSettings = strategy.data?.riskManagement || strategy.riskManagement || {};
 //         const globalMaxProfit = Number(riskSettings.maxProfit) || 0;
 //         const globalMaxLoss = Number(riskSettings.maxLoss) || 0;
-        
+
 //         let isTradingHaltedForDay = false; 
 //         let currentDayTracker = ""; 
 
@@ -3419,7 +3419,7 @@
 //             const d = new Date(tradeDateStr);
 //             const upSym = symbolStr.toUpperCase();
 //             let expiryDate = new Date(d);
-            
+
 //             if (upSym.includes("NIFTY") && !upSym.includes("BANK") && !upSym.includes("FIN") && !upSym.includes("MID")) {
 //                 let targetDay = 2; 
 //                 while (expiryDate.getDay() !== targetDay) expiryDate.setDate(expiryDate.getDate() + 1);
@@ -3428,7 +3428,7 @@
 //                 const lastDayOfMonth = new Date(expiryDate.getFullYear(), expiryDate.getMonth() + 1, 0);
 //                 expiryDate = new Date(lastDayOfMonth);
 //                 while (expiryDate.getDay() !== targetDay) expiryDate.setDate(expiryDate.getDate() - 1);
-                
+
 //                 if (d > expiryDate) {
 //                     const lastDayOfNextMonth = new Date(d.getFullYear(), d.getMonth() + 2, 0);
 //                     expiryDate = new Date(lastDayOfNextMonth);
@@ -3498,15 +3498,15 @@
 
 //             // 🔥 FIX 3: THE MISSING TIME-BASED ENGINE LOGIC
 //             const isTimeBased = (strategy.config?.strategyType === 'Time Based' || strategy.data?.config?.strategyType === 'Time Based' || strategy.type === 'Time Based');
-            
+
 //             if (isTimeBased) {
 //                 const sTime = strategy.startTime || strategy.config?.startTime || strategy.data?.config?.startTime || strategy.entrySettings?.startTime || strategy.data?.entrySettings?.startTime;
-                
+
 //                 if (sTime) {
 //                     const [sh, sm] = sTime.split(':');
 //                     let startMin = parseInt(sh) * 60 + parseInt(sm.split(' ')[0]);
 //                     if (sTime.toUpperCase().includes('PM') && parseInt(sh) !== 12) startMin += 720;
-                    
+
 //                     // Trigger entry if current time is >= Start Time and we haven't traded yet today
 //                     if (timeInMinutes >= startMin && !dailyBreakdownMap[dateStr].hasTradedTimeBased) {
 //                         longSignal = true; // Use longSignal to force the engine to enter
@@ -3583,7 +3583,7 @@
 //                             const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
 //                             return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
 //                         });
-                        
+
 //                         if (exactMatchIndex !== -1) {
 //                             let tempClose = trade.premiumChart.close[exactMatchIndex];
 //                             if (tempClose > spotClosePrice * 0.5) {
@@ -3600,7 +3600,7 @@
 //                     } else if (!isOptionsTrade) {
 //                         trade.currentHigh = parseFloat(candle.high); trade.currentLow = parseFloat(candle.low); currentClose = parseFloat(candle.close);
 //                     }
-                    
+
 //                     trade.currentPrice = currentClose;
 //                     trade.openPnL = calcTradePnL(trade.entryPrice, currentClose, trade.quantity, trade.transaction);
 //                     combinedOpenPnL += trade.openPnL;
@@ -3612,7 +3612,7 @@
 
 //                 const realizedDailyPnL = dailyBreakdownMap[dateStr].pnl;
 //                 const mtmResult = evaluateMtmLogic(realizedDailyPnL, combinedOpenPnL, riskSettings);
-                
+
 //                 if (mtmResult.isHalted) {
 //                     hitGlobalMaxProfit = mtmResult.exitReason === "MAX_PROFIT";
 //                     hitGlobalMaxLoss = mtmResult.exitReason === "MAX_LOSS";
@@ -3689,20 +3689,20 @@
 //                         }
 
 //                         const pnl = calcTradePnL(trade.entryPrice, trade.exitPrice, trade.quantity, trade.transaction);
-                        
+
 //                         const completedTrade = {
 //                             ...trade,
 //                             exitTime: `${h}:${m}:00`,
 //                             pnl: pnl,
 //                             exitType: trade.exitReason
 //                         };
-                        
+
 //                         dailyBreakdownMap[dateStr].tradesList.push(completedTrade);
 //                         dailyBreakdownMap[dateStr].pnl += pnl;
 //                         dailyBreakdownMap[dateStr].trades += 1;
 //                         if (pnl > 0) { winTrades++; if(pnl > maxProfitTrade) maxProfitTrade = pnl; } 
 //                         else { lossTrades++; if(pnl < maxLossTrade) maxLossTrade = pnl; }
-                        
+
 //                         console.log(`🎯 [${completedTrade.exitType}] Date: ${dateStr} | Symbol: ${trade.symbol} | Exit: ${trade.exitPrice.toFixed(2)} | PnL: ${pnl.toFixed(2)}`);
 //                     } else {
 //                         remainingTrades.push(trade); 
@@ -3723,15 +3723,15 @@
 //             // 🔥 2. MULTI-LEG ENTRY LOGIC
 //             // =========================================================
 //             if (openTrades.length === 0 && isMarketOpen && !isTradingHaltedForDay && (finalLongSignal || finalShortSignal)) {
-                
+
 //                 for (let legIndex = 0; legIndex < strategyLegs.length; legIndex++) {
 //                     const legData = strategyLegs[legIndex];
-                    
+
 //                     let tradeQuantity = legData.quantity; 
 //                     if (!tradeQuantity || isNaN(tradeQuantity)) tradeQuantity = upperSymbol.includes("BANK") ? 30 : (upperSymbol.includes("NIFTY") ? 50 : 1);
 
 //                     const transActionTypeStr = (legData.action || "BUY").toUpperCase();
-                    
+
 //                     let activeOptionType = "";
 
 //                     // 🔥 FIX 4: PREVENT CE/PE OVERRIDE IN TIME-BASED
@@ -3741,7 +3741,7 @@
 //                         if (transActionTypeStr === "BUY") activeOptionType = finalLongSignal ? "CE" : "PE";
 //                         else if (transActionTypeStr === "SELL") activeOptionType = finalLongSignal ? "PE" : "CE"; 
 //                     }
-                    
+
 //                     let tradeSymbol = upperSymbol;
 //                     let finalEntryPrice = spotClosePrice;
 //                     let validTrade = true;
@@ -3773,7 +3773,7 @@
 //                                 } 
 //                             } catch(e) { }
 //                         } 
-                        
+
 //                         if (!apiSuccess) {
 //                             try {
 //                                 await sleep(500);
@@ -3868,7 +3868,7 @@
 // module.exports = { runBacktestSimulator };
 
 
-const mongoose = require('mongoose'); 
+const mongoose = require('mongoose');
 const Strategy = require('../models/Strategy');
 const HistoricalData = require('../models/HistoricalData');
 const Broker = require('../models/Broker');
@@ -3898,7 +3898,7 @@ const runBacktestSimulator = async (req, res) => {
     try {
         const { strategyId } = req.params;
         const { period, start, end } = req.query;
-        
+
         const strategy = await Strategy.collection.findOne({ _id: new mongoose.Types.ObjectId(strategyId) });
         if (!strategy) return res.status(404).json({ error: "Strategy not found" });
 
@@ -3906,18 +3906,18 @@ const runBacktestSimulator = async (req, res) => {
 
         let endDate = new Date();
         let startDate = new Date();
-        
+
         if (period === 'Custom' && start && end) {
             startDate = new Date(start);
             endDate = new Date(end);
-            endDate.setHours(23, 59, 59, 999); 
+            endDate.setHours(23, 59, 59, 999);
         }
-        else if (period === '1M') startDate.setMonth(startDate.getMonth() - 1); 
-        else if (period === '3M') startDate.setMonth(startDate.getMonth() - 3); 
-        else if (period === '6M') startDate.setMonth(startDate.getMonth() - 6); 
-        else if (period === '1Y') startDate.setFullYear(startDate.getFullYear() - 1); 
-        else if (period === '2Y') startDate.setFullYear(startDate.getFullYear() - 2); 
-        else startDate.setMonth(startDate.getMonth() - 1); 
+        else if (period === '1M') startDate.setMonth(startDate.getMonth() - 1);
+        else if (period === '3M') startDate.setMonth(startDate.getMonth() - 3);
+        else if (period === '6M') startDate.setMonth(startDate.getMonth() - 6);
+        else if (period === '1Y') startDate.setFullYear(startDate.getFullYear() - 1);
+        else if (period === '2Y') startDate.setFullYear(startDate.getFullYear() - 2);
+        else startDate.setMonth(startDate.getMonth() - 1);
 
         const dhanIdMap = {
             "NIFTY": "13", "NIFTY 50": "13", "BANKNIFTY": "25", "NIFTY BANK": "25",
@@ -3927,21 +3927,21 @@ const runBacktestSimulator = async (req, res) => {
 
         const instrumentsArr = strategy.instruments || strategy.data?.instruments || [];
         const instrumentData = instrumentsArr.length > 0 ? instrumentsArr[0] : {};
-        const symbol = instrumentData.name || instrumentData.symbol || "BANKNIFTY"; 
-        const upperSymbol = symbol.toUpperCase().trim(); 
+        const symbol = instrumentData.name || instrumentData.symbol || "BANKNIFTY";
+        const upperSymbol = symbol.toUpperCase().trim();
         const isOptionsTrade = instrumentData.segment === "Option" || instrumentData.segment === "NFO";
-        
-        let exchangeSegment = "IDX_I"; 
+
+        let exchangeSegment = "IDX_I";
         if (upperSymbol.includes("NIFTY") || upperSymbol.includes("SENSEX") || upperSymbol === "BANKNIFTY" || upperSymbol === "NIFTY BANK") {
             exchangeSegment = "IDX_I";
         }
 
         const cleanSymbolForMap = upperSymbol.replace(' 50', '').trim();
         const spotSecurityId = instrumentData.securityId || dhanIdMap[upperSymbol] || dhanIdMap[cleanSymbolForMap] || "25";
-        
+
         const rawInterval = strategy.interval || strategy.config?.interval || strategy.data?.config?.interval;
-        let timeframe = rawInterval ? String(rawInterval).replace(' min', '').trim() : "5"; 
-        
+        let timeframe = rawInterval ? String(rawInterval).replace(' min', '').trim() : "5";
+
         let cachedData = await HistoricalData.find({
             symbol: { $regex: new RegExp(cleanSymbolForMap, "i") }, timeframe, timestamp: { $gte: startDate, $lte: endDate }
         }).sort({ timestamp: 1 }).lean();
@@ -3969,12 +3969,12 @@ const runBacktestSimulator = async (req, res) => {
             let currentStart = new Date(startDate);
             while (currentStart <= endDate) {
                 let currentEnd = new Date(currentStart);
-                currentEnd.setDate(currentStart.getDate() + 4); 
+                currentEnd.setDate(currentStart.getDate() + 4);
                 if (currentEnd > endDate) currentEnd = new Date(endDate);
                 chunkedRanges.push({ start: new Date(currentStart), end: new Date(currentEnd) });
                 currentStart.setDate(currentStart.getDate() + 5);
             }
-            
+
             for (let range of chunkedRanges) {
                 const dhanRes = await fetchDhanHistoricalData(broker.clientId, broker.apiSecret, spotSecurityId, exchangeSegment, "INDEX", range.start.toISOString().split('T')[0], range.end.toISOString().split('T')[0], timeframe);
                 const timeArray = dhanRes.data ? (dhanRes.data.start_Time || dhanRes.data.timestamp) : null;
@@ -3984,13 +3984,13 @@ const runBacktestSimulator = async (req, res) => {
                     const bulkOps = [];
                     for (let i = 0; i < timeArray.length; i++) {
                         let ms = timeArray[i];
-                        if (ms < 10000000000) ms = ms * 1000; 
+                        if (ms < 10000000000) ms = ms * 1000;
                         bulkOps.push({ insertOne: { document: { symbol: upperSymbol, timeframe, timestamp: new Date(ms), open: open[i], high: high[i], low: low[i], close: close[i], volume: volume[i] } } });
                     }
                     if (bulkOps.length > 0) await HistoricalData.bulkWrite(bulkOps, { ordered: false }).catch(e => console.log("Duplicates ignored"));
                 }
             }
-            
+
             cachedData = await HistoricalData.find({ symbol: { $regex: new RegExp(cleanSymbolForMap, "i") }, timeframe, timestamp: { $gte: startDate, $lte: endDate } }).sort({ timestamp: 1 }).lean();
             if (cachedData.length === 0) return res.status(404).json({ success: false, errorType: "NO_DATA", message: "Spot Data not available for this period." });
         }
@@ -4011,16 +4011,16 @@ const runBacktestSimulator = async (req, res) => {
         const calcLongInd1 = []; const calcLongInd2 = [];
         if (entryConds && entryConds.longRules && entryConds.longRules.length > 0) {
             entryConds.longRules.forEach((rule, idx) => {
-                calcLongInd1[idx] = calculateIndicator({...rule.ind1, params: extractParams(rule.ind1, rule.params)}, cachedData);
-                calcLongInd2[idx] = calculateIndicator({...rule.ind2, params: extractParams(rule.ind2, null)}, cachedData);
+                calcLongInd1[idx] = calculateIndicator({ ...rule.ind1, params: extractParams(rule.ind1, rule.params) }, cachedData);
+                calcLongInd2[idx] = calculateIndicator({ ...rule.ind2, params: extractParams(rule.ind2, null) }, cachedData);
             });
         }
 
         const calcShortInd1 = []; const calcShortInd2 = [];
         if (entryConds && entryConds.shortRules && entryConds.shortRules.length > 0) {
             entryConds.shortRules.forEach((rule, idx) => {
-                calcShortInd1[idx] = calculateIndicator({...rule.ind1, params: extractParams(rule.ind1, rule.params)}, cachedData);
-                calcShortInd2[idx] = calculateIndicator({...rule.ind2, params: extractParams(rule.ind2, null)}, cachedData);
+                calcShortInd1[idx] = calculateIndicator({ ...rule.ind1, params: extractParams(rule.ind1, rule.params) }, cachedData);
+                calcShortInd2[idx] = calculateIndicator({ ...rule.ind2, params: extractParams(rule.ind2, null) }, cachedData);
             });
         }
 
@@ -4033,20 +4033,20 @@ const runBacktestSimulator = async (req, res) => {
         const rawExitShortRules = exitConds.shortRules || [];
         const exitLongRules = rawExitLongRules.filter(rule => rule.ind1 && (rule.ind1.id || rule.ind1.display));
         const exitShortRules = rawExitShortRules.filter(rule => rule.ind1 && (rule.ind1.id || rule.ind1.display));
-        
+
         const calcExitLongInd1 = []; const calcExitLongInd2 = [];
         if (exitLongRules.length > 0) {
             exitLongRules.forEach((rule, idx) => {
-                calcExitLongInd1[idx] = calculateIndicator({...rule.ind1, params: extractParams(rule.ind1, rule.params)}, cachedData);
-                calcExitLongInd2[idx] = calculateIndicator({...rule.ind2, params: extractParams(rule.ind2, null)}, cachedData);
+                calcExitLongInd1[idx] = calculateIndicator({ ...rule.ind1, params: extractParams(rule.ind1, rule.params) }, cachedData);
+                calcExitLongInd2[idx] = calculateIndicator({ ...rule.ind2, params: extractParams(rule.ind2, null) }, cachedData);
             });
         }
 
         const calcExitShortInd1 = []; const calcExitShortInd2 = [];
         if (exitShortRules.length > 0) {
             exitShortRules.forEach((rule, idx) => {
-                calcExitShortInd1[idx] = calculateIndicator({...rule.ind1, params: extractParams(rule.ind1, rule.params)}, cachedData);
-                calcExitShortInd2[idx] = calculateIndicator({...rule.ind2, params: extractParams(rule.ind2, null)}, cachedData);
+                calcExitShortInd1[idx] = calculateIndicator({ ...rule.ind1, params: extractParams(rule.ind1, rule.params) }, cachedData);
+                calcExitShortInd2[idx] = calculateIndicator({ ...rule.ind2, params: extractParams(rule.ind2, null) }, cachedData);
             });
         }
 
@@ -4054,9 +4054,9 @@ const runBacktestSimulator = async (req, res) => {
         let winDays = 0, lossDays = 0, winTrades = 0, lossTrades = 0;
         let currentWinStreak = 0, currentLossStreak = 0, maxWinStreak = 0, maxLossStreak = 0;
         let maxProfitTrade = 0, maxLossTrade = 0;
-        const equityCurve = []; const daywiseBreakdown = []; let dailyBreakdownMap = {}; 
+        const equityCurve = []; const daywiseBreakdown = []; let dailyBreakdownMap = {};
 
-        let openTrades = []; 
+        let openTrades = [];
         const strategyLegs = strategy.legs || strategy.data?.legs || [];
 
         // 🔥 FIX: Robustly map advance features (Database compatibility)
@@ -4064,7 +4064,7 @@ const runBacktestSimulator = async (req, res) => {
         const riskSettings = strategy.data?.riskManagement || strategy.riskManagement || {};
         const globalMaxProfit = Number(riskSettings.maxProfit) || 0;
         const globalMaxLoss = Number(riskSettings.maxLoss) || 0;
-        
+
         // 🔥 FIX 1: DYNAMIC SQUARE-OFF TIME (UI se padhna)
         const sqTime = strategy.config?.squareOff || strategy.data?.config?.squareOff || strategy.config?.squareOffTime || strategy.data?.config?.squareOffTime || "03:15 PM";
         let exitMin = 915; // default 15:15
@@ -4077,28 +4077,28 @@ const runBacktestSimulator = async (req, res) => {
                 exitMin = h * 60 + parseInt(em);
             }
         }
-        
-        let isTradingHaltedForDay = false; 
-        let currentDayTracker = ""; 
+
+        let isTradingHaltedForDay = false;
+        let currentDayTracker = "";
 
         const calculateATM = (spotPrice, symbolStr) => {
-            if(symbolStr.includes("BANK")) return Math.round(spotPrice / 100) * 100;
+            if (symbolStr.includes("BANK")) return Math.round(spotPrice / 100) * 100;
             return Math.round(spotPrice / 50) * 50;
         };
 
         const calcTradePnL = (entryP, exitP, qty, action) => {
-            if(action === "BUY") return (exitP - entryP) * qty;
-            return (entryP - exitP) * qty; 
+            if (action === "BUY") return (exitP - entryP) * qty;
+            return (entryP - exitP) * qty;
         };
 
-                // 🔥 NEW: SEBI COMPLIANT DATE CALCULATOR (WITH ORIGINAL UI FORMATTING)
+        // 🔥 NEW: SEBI COMPLIANT DATE CALCULATOR (WITH ORIGINAL UI FORMATTING)
         const getNearestExpiryString = (tradeDateStr, symbolStr, reqExpiry = "WEEKLY") => {
             const d = new Date(tradeDateStr);
             const upSym = symbolStr.toUpperCase();
             let expiryDate = new Date(d);
 
             // 🔥 SEBI NEW RULE: Ab sabka Expiry TUESDAY (2) ho gaya hai!
-            const targetDay = 2; 
+            const targetDay = 2;
             let forceMonthly = false;
 
             // NIFTY 50 ko chhodkar baki sab (Bank, Fin, Midcap) zabardasti Monthly hain
@@ -4122,12 +4122,12 @@ const runBacktestSimulator = async (req, res) => {
                 // MONTHLY LOGIC (For Bank/Fin/Midcap, or Nifty Monthly) -> Target Day: Last Tuesday
                 const lastDayOfMonth = new Date(expiryDate.getFullYear(), expiryDate.getMonth() + 1, 0);
                 expiryDate = new Date(lastDayOfMonth);
-                
+
                 // Find the last Tuesday of the month
                 while (expiryDate.getDay() !== targetDay) {
                     expiryDate.setDate(expiryDate.getDate() - 1);
                 }
-                
+
                 // Agar aaj ka din is mahine ki expiry ke BAAD ka hai, to agle mahine ka Last Tuesday lo
                 if (d > expiryDate) {
                     const lastDayOfNextMonth = new Date(d.getFullYear(), d.getMonth() + 2, 0);
@@ -4140,14 +4140,14 @@ const runBacktestSimulator = async (req, res) => {
 
             // Date ko format karna (e.g., 28APR26)
             const formattedDate = `${String(expiryDate.getDate()).padStart(2, '0')}${expiryDate.toLocaleString('en-US', { month: 'short' }).toUpperCase()}${String(expiryDate.getFullYear()).slice(-2)}`;
-            
+
             // 🔥 ORIGINAL UI FORMATTING (Aapke purane code se)
-            const today = new Date(); 
-            today.setHours(0, 0, 0, 0); 
-            const expDateForCheck = new Date(expiryDate); 
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const expDateForCheck = new Date(expiryDate);
             expDateForCheck.setHours(0, 0, 0, 0);
-            
-            return `${(expDateForCheck < today) ? "EXP" : "Upcoming EXP"} ${formattedDate}`; 
+
+            return `${(expDateForCheck < today) ? "EXP" : "Upcoming EXP"} ${formattedDate}`;
         };
 
 
@@ -4158,14 +4158,14 @@ const runBacktestSimulator = async (req, res) => {
             const candle = cachedData[i];
             const candleTime = new Date(candle.timestamp).getTime();
             const istDate = new Date(candleTime + (5.5 * 60 * 60 * 1000));
-            const h = String(istDate.getUTCHours()).padStart(2, '0'); 
+            const h = String(istDate.getUTCHours()).padStart(2, '0');
             const m = String(istDate.getUTCMinutes()).padStart(2, '0');
-            const timeInMinutes = (istDate.getUTCHours() * 60) + istDate.getUTCMinutes(); 
+            const timeInMinutes = (istDate.getUTCHours() * 60) + istDate.getUTCMinutes();
             const dateStr = istDate.toISOString().split('T')[0];
 
             if (dateStr !== currentDayTracker) {
                 currentDayTracker = dateStr;
-                isTradingHaltedForDay = false; 
+                isTradingHaltedForDay = false;
             }
 
             if (!dailyBreakdownMap[dateStr]) dailyBreakdownMap[dateStr] = { pnl: 0, trades: 0, tradesList: [], hasTradedTimeBased: false };
@@ -4177,11 +4177,11 @@ const runBacktestSimulator = async (req, res) => {
                     const operator = rule.op || rule.params?.op || rule.ind1?.params?.op || rule.ind1?.op;
                     const ruleResult = evaluateCondition(
                         calcLongInd1[idx] ? calcLongInd1[idx][i] : null, calcLongInd2[idx] ? calcLongInd2[idx][i] : null,
-                        (i > 0 && calcLongInd1[idx]) ? calcLongInd1[idx][i-1] : null, (i > 0 && calcLongInd2[idx]) ? calcLongInd2[idx][i-1] : null, operator
+                        (i > 0 && calcLongInd1[idx]) ? calcLongInd1[idx][i - 1] : null, (i > 0 && calcLongInd2[idx]) ? calcLongInd2[idx][i - 1] : null, operator
                     );
                     if (idx === 0) overallResult = ruleResult;
                     else {
-                        const logicalOp = entryConds.logicalOps[idx - 1]; 
+                        const logicalOp = entryConds.logicalOps[idx - 1];
                         overallResult = logicalOp === 'AND' ? (overallResult && ruleResult) : (overallResult || ruleResult);
                     }
                 });
@@ -4195,11 +4195,11 @@ const runBacktestSimulator = async (req, res) => {
                     const operator = rule.op || rule.params?.op || rule.ind1?.params?.op || rule.ind1?.op;
                     const ruleResult = evaluateCondition(
                         calcShortInd1[idx] ? calcShortInd1[idx][i] : null, calcShortInd2[idx] ? calcShortInd2[idx][i] : null,
-                        (i > 0 && calcShortInd1[idx]) ? calcShortInd1[idx][i-1] : null, (i > 0 && calcShortInd2[idx]) ? calcShortInd2[idx][i-1] : null, operator
+                        (i > 0 && calcShortInd1[idx]) ? calcShortInd1[idx][i - 1] : null, (i > 0 && calcShortInd2[idx]) ? calcShortInd2[idx][i - 1] : null, operator
                     );
                     if (idx === 0) overallResult = ruleResult;
                     else {
-                        const logicalOp = entryConds.logicalOps[idx - 1]; 
+                        const logicalOp = entryConds.logicalOps[idx - 1];
                         overallResult = logicalOp === 'AND' ? (overallResult && ruleResult) : (overallResult || ruleResult);
                     }
                 });
@@ -4207,18 +4207,18 @@ const runBacktestSimulator = async (req, res) => {
             }
 
             const isTimeBased = (strategy.config?.strategyType === 'Time Based' || strategy.data?.config?.strategyType === 'Time Based' || strategy.type === 'Time Based');
-            
+
             if (isTimeBased) {
                 const sTime = strategy.startTime || strategy.config?.startTime || strategy.data?.config?.startTime || strategy.entrySettings?.startTime || strategy.data?.entrySettings?.startTime;
-                
+
                 if (sTime) {
                     const [sh, sm] = sTime.split(':');
                     let startMin = parseInt(sh) * 60 + parseInt(sm.split(' ')[0]);
                     if (sTime.toUpperCase().includes('PM') && parseInt(sh) !== 12) startMin += 720;
-                    
+
                     if (timeInMinutes >= startMin && !dailyBreakdownMap[dateStr].hasTradedTimeBased) {
-                        longSignal = true; 
-                        dailyBreakdownMap[dateStr].hasTradedTimeBased = true; 
+                        longSignal = true;
+                        dailyBreakdownMap[dateStr].hasTradedTimeBased = true;
                     }
                 }
             }
@@ -4234,11 +4234,11 @@ const runBacktestSimulator = async (req, res) => {
                     const operator = rule.op || rule.params?.op || rule.ind1?.params?.op || rule.ind1?.op;
                     const ruleResult = evaluateCondition(
                         calcExitLongInd1[idx] ? calcExitLongInd1[idx][i] : null, calcExitLongInd2[idx] ? calcExitLongInd2[idx][i] : null,
-                        (i > 0 && calcExitLongInd1[idx]) ? calcExitLongInd1[idx][i-1] : null, (i > 0 && calcExitLongInd2[idx]) ? calcExitLongInd2[idx][i-1] : null, operator
+                        (i > 0 && calcExitLongInd1[idx]) ? calcExitLongInd1[idx][i - 1] : null, (i > 0 && calcExitLongInd2[idx]) ? calcExitLongInd2[idx][i - 1] : null, operator
                     );
                     if (idx === 0) overallResult = ruleResult;
                     else {
-                        const logicalOp = exitConds.logicalOpsLong ? exitConds.logicalOpsLong[idx - 1] : 'AND'; 
+                        const logicalOp = exitConds.logicalOpsLong ? exitConds.logicalOpsLong[idx - 1] : 'AND';
                         overallResult = logicalOp === 'AND' ? (overallResult && ruleResult) : (overallResult || ruleResult);
                     }
                 });
@@ -4252,11 +4252,11 @@ const runBacktestSimulator = async (req, res) => {
                     const operator = rule.op || rule.params?.op || rule.ind1?.params?.op || rule.ind1?.op;
                     const ruleResult = evaluateCondition(
                         calcExitShortInd1[idx] ? calcExitShortInd1[idx][i] : null, calcExitShortInd2[idx] ? calcExitShortInd2[idx][i] : null,
-                        (i > 0 && calcExitShortInd1[idx]) ? calcExitShortInd1[idx][i-1] : null, (i > 0 && calcExitShortInd2[idx]) ? calcExitShortInd2[idx][i-1] : null, operator
+                        (i > 0 && calcExitShortInd1[idx]) ? calcExitShortInd1[idx][i - 1] : null, (i > 0 && calcExitShortInd2[idx]) ? calcExitShortInd2[idx][i - 1] : null, operator
                     );
                     if (idx === 0) overallResult = ruleResult;
                     else {
-                        const logicalOp = exitConds.logicalOpsShort ? exitConds.logicalOpsShort[idx - 1] : 'AND'; 
+                        const logicalOp = exitConds.logicalOpsShort ? exitConds.logicalOpsShort[idx - 1] : 'AND';
                         overallResult = logicalOp === 'AND' ? (overallResult && ruleResult) : (overallResult || ruleResult);
                     }
                 });
@@ -4264,12 +4264,12 @@ const runBacktestSimulator = async (req, res) => {
             }
 
             // Using the dynamic exitMin defined earlier
-            const isMarketOpen = timeInMinutes >= 555 && timeInMinutes < exitMin; 
-            const isExitTime = timeInMinutes >= exitMin; 
+            const isMarketOpen = timeInMinutes >= 555 && timeInMinutes < exitMin;
+            const isExitTime = timeInMinutes >= exitMin;
             let isLastCandleOfDay = false;
             if (i === cachedData.length - 1) isLastCandleOfDay = true;
             else {
-                const nextCandleIst = new Date(new Date(cachedData[i+1].timestamp).getTime() + (5.5 * 60 * 60 * 1000));
+                const nextCandleIst = new Date(new Date(cachedData[i + 1].timestamp).getTime() + (5.5 * 60 * 60 * 1000));
                 if (nextCandleIst.toISOString().split('T')[0] !== dateStr) isLastCandleOfDay = true;
             }
 
@@ -4280,10 +4280,10 @@ const runBacktestSimulator = async (req, res) => {
             // =========================================================
             if (openTrades.length > 0) {
                 let combinedOpenPnL = 0;
-                let triggerReasonForExitAll = null; 
+                let triggerReasonForExitAll = null;
 
                 openTrades.forEach(trade => {
-                    let currentClose = spotClosePrice; 
+                    let currentClose = spotClosePrice;
                     let currentHigh = spotClosePrice;
                     let currentLow = spotClosePrice;
                     let currentOpen = spotClosePrice; // Extracted for Time-Squareoff
@@ -4293,7 +4293,7 @@ const runBacktestSimulator = async (req, res) => {
                             const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
                             return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
                         });
-                        
+
                         // 🔥 FIX 2: GHOST CANDLE VOLATILITY FIX (Bawandar Fix)
                         let isFallbackCandle = false;
                         if (exactMatchIndex === -1) {
@@ -4302,15 +4302,15 @@ const runBacktestSimulator = async (req, res) => {
                                 const optTime = new Date(trade.premiumChart.start_Time[k] * 1000 + (5.5 * 60 * 60 * 1000));
                                 if (optTime <= istDate) { nearestIdx = k; break; }
                             }
-                            exactMatchIndex = nearestIdx; 
+                            exactMatchIndex = nearestIdx;
                             isFallbackCandle = true;
                         }
-                        
+
                         if (exactMatchIndex !== -1) {
                             let tempClose = trade.premiumChart.close[exactMatchIndex];
                             if (tempClose > spotClosePrice * 0.5) {
                                 currentClose = trade.lastKnownPremium || trade.entryPrice;
-                                currentHigh = currentLow = currentOpen = currentClose; 
+                                currentHigh = currentLow = currentOpen = currentClose;
                             } else {
                                 currentClose = tempClose;
                                 if (isFallbackCandle) {
@@ -4321,9 +4321,9 @@ const runBacktestSimulator = async (req, res) => {
                                 } else {
                                     currentHigh = trade.premiumChart.high[exactMatchIndex];
                                     currentLow = trade.premiumChart.low[exactMatchIndex];
-                                    currentOpen = trade.premiumChart.open[exactMatchIndex]; 
+                                    currentOpen = trade.premiumChart.open[exactMatchIndex];
                                 }
-                                trade.lastKnownPremium = currentClose; 
+                                trade.lastKnownPremium = currentClose;
                             }
                         } else {
                             currentClose = trade.lastKnownPremium || trade.entryPrice;
@@ -4332,7 +4332,7 @@ const runBacktestSimulator = async (req, res) => {
                     } else if (!isOptionsTrade) {
                         currentHigh = parseFloat(candle.high); currentLow = parseFloat(candle.low); currentClose = parseFloat(candle.close); currentOpen = parseFloat(candle.open);
                     }
-                    
+
                     trade.currentPrice = currentClose;
                     trade.currentHigh = currentHigh;
                     trade.currentLow = currentLow;
@@ -4343,20 +4343,20 @@ const runBacktestSimulator = async (req, res) => {
 
                 const realizedDailyPnL = dailyBreakdownMap[dateStr].pnl;
                 const currentTotalPnL = realizedDailyPnL + combinedOpenPnL;
-                
+
                 let hitGlobalMaxProfit = false;
                 let hitGlobalMaxLoss = false;
-                
+
                 if (globalMaxProfit > 0 && currentTotalPnL >= globalMaxProfit) {
                     hitGlobalMaxProfit = true;
-                    isTradingHaltedForDay = true; 
+                    isTradingHaltedForDay = true;
                     triggerReasonForExitAll = "MAX_PROFIT";
                 } else if (globalMaxLoss > 0 && currentTotalPnL <= -globalMaxLoss) {
                     hitGlobalMaxLoss = true;
-                    isTradingHaltedForDay = true; 
+                    isTradingHaltedForDay = true;
                     triggerReasonForExitAll = "MAX_LOSS";
                 }
-                
+
 
 
                 // 🔥 FIX 3: MOVE SL TO COST TRACKERS
@@ -4365,7 +4365,7 @@ const runBacktestSimulator = async (req, res) => {
 
                 // 🚀 ROLLBACK: Wapas forEach loop me aa gaye (No API Spam, Fast Speed)
                 openTrades.forEach((trade, idx) => {
-                    if (trade.markedForExit) return; 
+                    if (trade.markedForExit) return;
 
                     if (hitGlobalMaxProfit || hitGlobalMaxLoss) {
                         trade.markedForExit = true;
@@ -4384,10 +4384,10 @@ const runBacktestSimulator = async (req, res) => {
 
                     const legData = trade.legConfig;
                     const slValue = Number(legData.slValue || 0);
-                    const slType = legData.slType || "Points"; 
+                    const slType = legData.slType || "Points";
                     const tpValue = Number(legData.tpValue || 0);
                     const tpType = legData.tpType || "Points";
-                    
+
                     let slPrice = 0, tpPrice = 0;
                     let isSlMovedToCost = false;
                     if (advanceFeaturesSettings.moveSLToCost && (anyLegHitSlPast || anyLegHitSlThisTick)) {
@@ -4418,10 +4418,10 @@ const runBacktestSimulator = async (req, res) => {
                         const entrySpot = trade.optionConfig.strike; // Strike ko hi Base Spot manenge
 
                         // Aapka Idea: "30 Rs ka Option Gap = 60 point Spot Gap" -> Yani Delta = 0.5
-                        const assumedDelta = 0.5; 
+                        const assumedDelta = 0.5;
                         const slGap = Math.abs(slPrice - trade.entryPrice);
                         const tpGap = Math.abs(tpPrice - trade.entryPrice);
-                        
+
                         // Option gap ko Spot points me convert kiya (e.g., 30 / 0.5 = 60 points)
                         const reqSpotMoveSl = slGap / assumedDelta;
                         const reqSpotMoveTp = tpGap / assumedDelta;
@@ -4451,14 +4451,14 @@ const runBacktestSimulator = async (req, res) => {
                     if ((!isSlMovedToCost && slValue > 0) || isSlMovedToCost) {
                         // Agar aapke Spot Tracker ne SL pakda OR Rolling chart ne (Dono me se jo pehle ho)
                         if (spotTriggeredSl || (trade.transaction === "BUY" && trade.currentLow <= slPrice) || (trade.transaction === "SELL" && trade.currentHigh >= slPrice)) {
-                            trade.markedForExit = true; 
-                            trade.exitReason = isSlMovedToCost ? "SL_MOVED_TO_COST" : "STOPLOSS"; 
+                            trade.markedForExit = true;
+                            trade.exitReason = isSlMovedToCost ? "SL_MOVED_TO_COST" : "STOPLOSS";
                             trade.exitPrice = slPrice;
                             triggerReasonForExitAll = "STOPLOSS";
-                            anyLegHitSlThisTick = true; 
+                            anyLegHitSlThisTick = true;
                         }
-                    } 
-                    
+                    }
+
                     if (tpValue > 0 && !trade.markedForExit) {
                         if (spotTriggeredTp || (trade.transaction === "BUY" && trade.currentHigh >= tpPrice) || (trade.transaction === "SELL" && trade.currentLow <= tpPrice)) {
                             trade.markedForExit = true; trade.exitReason = "TARGET"; trade.exitPrice = tpPrice;
@@ -4485,7 +4485,7 @@ const runBacktestSimulator = async (req, res) => {
                 });
 
 
-                
+
 
                 if (triggerReasonForExitAll && !hitGlobalMaxProfit && !hitGlobalMaxLoss) {
                     const exitAllCheck = evaluateExitAllLogic(advanceFeaturesSettings, triggerReasonForExitAll);
@@ -4493,8 +4493,8 @@ const runBacktestSimulator = async (req, res) => {
                         openTrades.forEach(trade => {
                             if (!trade.markedForExit) {
                                 trade.markedForExit = true;
-                                trade.exitReason = exitAllCheck.exitReason; 
-                                trade.exitPrice = trade.currentPrice; 
+                                trade.exitReason = exitAllCheck.exitReason;
+                                trade.exitPrice = trade.currentPrice;
                             }
                         });
                     }
@@ -4510,20 +4510,20 @@ const runBacktestSimulator = async (req, res) => {
                 //         }
 
                 //         const pnl = calcTradePnL(trade.entryPrice, trade.exitPrice, trade.quantity, trade.transaction);
-                        
+
                 //         const completedTrade = {
                 //             ...trade,
                 //             exitTime: `${h}:${m}:00`,
                 //             pnl: pnl,
                 //             exitType: trade.exitReason
                 //         };
-                        
+
                 //         dailyBreakdownMap[dateStr].tradesList.push(completedTrade);
                 //         dailyBreakdownMap[dateStr].pnl += pnl;
                 //         dailyBreakdownMap[dateStr].trades += 1;
                 //         if (pnl > 0) { winTrades++; if(pnl > maxProfitTrade) maxProfitTrade = pnl; } 
                 //         else { lossTrades++; if(pnl < maxLossTrade) maxLossTrade = pnl; }
-                        
+
                 //         console.log(`🎯 [${completedTrade.exitType}] Date: ${dateStr} | Symbol: ${trade.symbol} | Exit: ${trade.exitPrice.toFixed(2)} | PnL: ${pnl.toFixed(2)}`);
                 //     } else {
                 //         remainingTrades.push(trade); 
@@ -4543,26 +4543,26 @@ const runBacktestSimulator = async (req, res) => {
                         // 🔴 THE SNIPER GATEKEEPER (REJECTS FAKE TRIGGERS) 🔴
                         // =========================================================================
                         const needsMarketPrice = ["TIME_SQUAREOFF", "EOD_SQUAREOFF", "INDICATOR_EXIT", "MAX_PROFIT", "MAX_LOSS", "EXIT_ALL_TGT", "EXIT_ALL_SL", "STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason);
-                        
+
                         let fakeTriggerRejected = false; // Flag to identify false alarms
 
                         if (isOptionsTrade && broker && needsMarketPrice && trade.optionConfig) {
                             const fixedStrike = trade.optionConfig.strike;
-                            const optType = trade.optionConfig.type; 
+                            const optType = trade.optionConfig.type;
                             const exitTimeStr = `${h}:${m}`;
 
                             console.log(`\n🔬 [EXIT SNIPER] Trigger at ${exitTimeStr} for ${trade.exitReason}. Verifying exact OHLC for ${fixedStrike}...`);
-                            
-                            const axios = require('axios'); 
+
+                            const axios = require('axios');
                             let reqExpiry = trade.legConfig.expiry || "WEEKLY";
-                            let expFlag = "WEEK"; let expCode = 1; 
-                            if (reqExpiry.toUpperCase() === "MONTHLY") { expFlag = "MONTH"; expCode = 1; } 
+                            let expFlag = "WEEK"; let expCode = 1;
+                            if (reqExpiry.toUpperCase() === "MONTHLY") { expFlag = "MONTH"; expCode = 1; }
                             else if (reqExpiry.toUpperCase() === "NEXT WEEKLY" || reqExpiry.toUpperCase() === "NEXT WEEK") { expFlag = "WEEK"; expCode = 2; }
-                            
+
                             const basePayload = {
                                 exchangeSegment: "NSE_FNO", interval: "1", securityId: Number(spotSecurityId), instrument: "OPTIDX",
-                                expiryFlag: expFlag, expiryCode: expCode, 
-                                drvOptionType: optType === "CE" ? "CALL" : "PUT", 
+                                expiryFlag: expFlag, expiryCode: expCode,
+                                drvOptionType: optType === "CE" ? "CALL" : "PUT",
                                 requiredData: ["open", "high", "low", "close", "strike"],
                                 fromDate: dateStr, toDate: dateStr
                             };
@@ -4572,27 +4572,27 @@ const runBacktestSimulator = async (req, res) => {
                             // =========================================================================
                             const currentAtmAtExit = calculateATM(spotClosePrice, upperSymbol);
                             const strikeDiff = Math.abs(fixedStrike - currentAtmAtExit);
-                            const stepSize = (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) ? 100 : 50; 
+                            const stepSize = (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) ? 100 : 50;
                             const exactStep = Math.round(strikeDiff / stepSize);
 
                             let rawCandidates = ["ATM"];
                             if (exactStep > 0) {
                                 // Agar 11 step dur hai, to safety ke liye 10, 11, 12 teeno check karenge!
-                                for(let s = Math.max(1, exactStep - 2); s <= exactStep + 2; s++) {
+                                for (let s = Math.max(1, exactStep - 2); s <= exactStep + 2; s++) {
                                     rawCandidates.push(`ITM${s}`, `OTM${s}`, `ITM-${s}`, `OTM-${s}`, `ITM ${s}`, `OTM ${s}`, `-${s}`);
                                 }
                             } else {
                                 rawCandidates.push("ITM1", "OTM1", "ITM-1", "OTM-1", "-1");
                             }
-                            
+
                             // Duplicates hatane ke liye Set ka use
                             const candidates = [...new Set(rawCandidates)];
                             console.log(`\n🤿 [DEEP DIVER] Market shifted by ${exactStep} steps. Generated Deep Candidates:`, candidates.join(', '));
                             //=========================================================================
-                            
+
                             let foundExactExit = false;
-                            
-                            for(let guess of candidates) {
+
+                            for (let guess of candidates) {
                                 try {
                                     const exitRes = await axios.post('https://api.dhan.co/v2/charts/rollingoption', { ...basePayload, strike: guess }, {
                                         headers: { 'access-token': broker.apiSecret, 'client-id': broker.clientId, 'Content-Type': 'application/json' }
@@ -4602,13 +4602,13 @@ const runBacktestSimulator = async (req, res) => {
 
                                     if (exitData && exitData.timestamp) {
                                         let actualExitIndex = -1;
-                                        for(let k=0; k<exitData.timestamp.length; k++){
+                                        for (let k = 0; k < exitData.timestamp.length; k++) {
                                             const optTime = new Date(exitData.timestamp[k] * 1000 + (5.5 * 3600000));
-                                            if(optTime.toISOString().split('T')[1].substring(0, 5) === exitTimeStr) { actualExitIndex = k; break; }
+                                            if (optTime.toISOString().split('T')[1].substring(0, 5) === exitTimeStr) { actualExitIndex = k; break; }
                                         }
-                                        
-                                        if(actualExitIndex !== -1 && exitData.strike && exitData.strike[actualExitIndex] === fixedStrike) {
-                                            const mathPrice = trade.exitPrice; 
+
+                                        if (actualExitIndex !== -1 && exitData.strike && exitData.strike[actualExitIndex] === fixedStrike) {
+                                            const mathPrice = trade.exitPrice;
                                             const cOpen = exitData.open[actualExitIndex];
                                             const cHigh = exitData.high[actualExitIndex];
                                             const cLow = exitData.low[actualExitIndex];
@@ -4626,7 +4626,7 @@ const runBacktestSimulator = async (req, res) => {
 
                                             if (!isValidTrigger) {
                                                 fakeTriggerRejected = true;
-                                                foundExactExit = true; 
+                                                foundExactExit = true;
                                                 break; // Reject and break!
                                             }
 
@@ -4637,23 +4637,23 @@ const runBacktestSimulator = async (req, res) => {
                                                 if (trade.transaction === "BUY") {
                                                     if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen < mathPrice) trade.exitPrice = cOpen;
                                                     else if (trade.exitReason === "TARGET" && cOpen > mathPrice) trade.exitPrice = cOpen;
-                                                    else trade.exitPrice = cClose; 
+                                                    else trade.exitPrice = cClose;
                                                 } else { // SELL Trade
                                                     if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen > mathPrice) trade.exitPrice = cOpen;
                                                     else if (trade.exitReason === "TARGET" && cOpen < mathPrice) trade.exitPrice = cOpen;
-                                                    else trade.exitPrice = cClose; 
+                                                    else trade.exitPrice = cClose;
                                                 }
                                             } else {
                                                 trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? cOpen : cClose;
                                             }
-                                            
+
                                             foundExactExit = true;
                                             break;
                                         }
                                     }
-                                } catch(e) { }
+                                } catch (e) { }
                             }
-                            
+
                             // 🚀 GATEKEEPER REJECTION LOGIC
                             if (fakeTriggerRejected) {
                                 console.log(`🛡️ [GATEKEEPER] Fake ${trade.exitReason} trigger rejected! Real High/Low didn't breach ${trade.exitPrice}. Trade continues...`);
@@ -4665,50 +4665,71 @@ const runBacktestSimulator = async (req, res) => {
                             }
 
                             // =========================================================================
-                            // 🚨 ILLIQUID MINUTE (NO DATA) REJECTION LOGIC 🚨
+                            // 🚨 ILLIQUID MINUTE & DEEP OTM/ITM SMART FALLBACK 🚨
                             // =========================================================================
                             if (!foundExactExit) {
                                 if (["STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason)) {
-                                    console.log(`❌ [SNIPER FAILED] No data found at ${exitTimeStr} (Illiquid minute). Treating as fake trigger. Trade continues...`);
+                                    console.log(`❌ [SNIPER FAILED] No data found at ${exitTimeStr}. Treating as fake trigger. Trade continues...`);
                                     trade.markedForExit = false;
                                     trade.exitReason = null;
                                     trade.exitPrice = null;
                                     remainingTrades.push(trade);
-                                    continue; // 🚀 FALLBACK CANCELLED! Trade will survive to 15:15
+                                    continue;
                                 } else {
-                                    // Sirf TIME_SQUAREOFF ya EOD me fallback use hoga, kyunki wahan trade katna zaroori hai
-                                    console.log(`❌ [SNIPER FAILED] Could not find ${fixedStrike} at ${exitTimeStr}. Using fallback for ${trade.exitReason}.`);
-                                    if (!trade.exitPrice) trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? trade.currentOpen : trade.currentPrice;
+                                    // 🔥 THE SMART OPTIONS PRICING ESTIMATOR (For TIME_SQUAREOFF & EOD)
+                                    // Agar Dhan API Deep strikes ka data reject kar de, to hum fake ATM price nahi lenge!
+                                    // Hum Intrinsic Value + Decayed Time Value ka formula lagayenge.
+                                    const currentAtmAtFallback = calculateATM(spotClosePrice, upperSymbol);
+                                    const stepSize = (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) ? 100 : 50;
+                                    const stepDiff = Math.round(Math.abs(fixedStrike - currentAtmAtFallback) / stepSize);
+
+                                    let intrinsicValue = 0;
+                                    if (optType === "CE") intrinsicValue = Math.max(0, spotClosePrice - fixedStrike);
+                                    else intrinsicValue = Math.max(0, fixedStrike - spotClosePrice);
+
+                                    // Fake ATM rolling price (e.g., 176.40)
+                                    const rollingAtmPrice = trade.exitReason === "TIME_SQUAREOFF" ? trade.currentOpen : trade.currentPrice;
+
+                                    // Decay formula: ATM Price / (1.2 ^ steps) -> Accurately estimates deep option time value!
+                                    const estimatedTimeValue = rollingAtmPrice / Math.pow(1.2, stepDiff);
+                                    const estimatedFinalPrice = intrinsicValue + estimatedTimeValue;
+
+                                    console.log(`🛠️ [SMART FALLBACK] API failed for ${fixedStrike}. Spot: ${spotClosePrice}, IV: ${intrinsicValue.toFixed(2)}, Est. Time Value: ${estimatedTimeValue.toFixed(2)} -> Final Price: ${estimatedFinalPrice.toFixed(2)}`);
+
+                                    if (!trade.exitPrice) trade.exitPrice = estimatedFinalPrice;
                                 }
                             }
+                        } else {
+                            if (!trade.exitPrice) trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? trade.currentOpen : trade.currentPrice;
                         }
+
                         // =========================================================================
 
                         const pnl = calcTradePnL(trade.entryPrice, trade.exitPrice, trade.quantity, trade.transaction);
-                        
+
                         const completedTrade = {
                             ...trade,
                             exitTime: `${h}:${m}:00`,
                             pnl: pnl,
                             exitType: trade.exitReason
                         };
-                        
+
                         dailyBreakdownMap[dateStr].tradesList.push(completedTrade);
                         dailyBreakdownMap[dateStr].pnl += pnl;
                         dailyBreakdownMap[dateStr].trades += 1;
-                        if (pnl > 0) { winTrades++; if(pnl > maxProfitTrade) maxProfitTrade = pnl; } 
-                        else { lossTrades++; if(pnl < maxLossTrade) maxLossTrade = pnl; }
-                        
+                        if (pnl > 0) { winTrades++; if (pnl > maxProfitTrade) maxProfitTrade = pnl; }
+                        else { lossTrades++; if (pnl < maxLossTrade) maxLossTrade = pnl; }
+
                         console.log(`🎯 [${completedTrade.exitType}] Date: ${dateStr} | Symbol: ${trade.symbol} | Exit: ${trade.exitPrice.toFixed(2)} | PnL: ${pnl.toFixed(2)}`);
                     } else {
-                        remainingTrades.push(trade); 
+                        remainingTrades.push(trade);
                     }
                 }
 
                 openTrades = remainingTrades;
 
 
-            } 
+            }
             else if (!isTradingHaltedForDay) {
                 const mtmResult = evaluateMtmLogic(dailyBreakdownMap[dateStr].pnl, 0, riskSettings);
                 if (mtmResult.isHalted) {
@@ -4718,15 +4739,15 @@ const runBacktestSimulator = async (req, res) => {
             }
 
 
-        // =========================================================
+            // =========================================================
             // 🔥 2. MULTI-LEG ENTRY LOGIC (THE SMART ROUTER)
             // =========================================================
             if (openTrades.length === 0 && isMarketOpen && !isTradingHaltedForDay && (finalLongSignal || finalShortSignal)) {
-                
+
                 for (let legIndex = 0; legIndex < strategyLegs.length; legIndex++) {
                     const legData = strategyLegs[legIndex];
-                    
-                    let tradeQuantity = legData.quantity; 
+
+                    let tradeQuantity = legData.quantity;
                     if (!tradeQuantity || isNaN(tradeQuantity)) tradeQuantity = upperSymbol.includes("BANK") ? 30 : (upperSymbol.includes("NIFTY") ? 50 : 1);
 
                     const transActionTypeStr = (legData.action || "BUY").toUpperCase();
@@ -4736,12 +4757,12 @@ const runBacktestSimulator = async (req, res) => {
                         activeOptionType = (legData.optionType || "Call").toUpperCase().includes("C") ? "CE" : "PE";
                     } else {
                         if (transActionTypeStr === "BUY") activeOptionType = finalLongSignal ? "CE" : "PE";
-                        else if (transActionTypeStr === "SELL") activeOptionType = finalLongSignal ? "PE" : "CE"; 
+                        else if (transActionTypeStr === "SELL") activeOptionType = finalLongSignal ? "PE" : "CE";
                     }
-                    
-                    let finalEntryPrice = isOptionsTrade ? 0 : spotClosePrice; 
+
+                    let finalEntryPrice = isOptionsTrade ? 0 : spotClosePrice;
                     let validTrade = true;
-                    let premiumChartData = null; 
+                    let premiumChartData = null;
                     let targetStrike = calculateATM(spotClosePrice, upperSymbol);
                     const strikeCriteria = legData.strikeCriteria || "ATM pt";
                     const strikeType = legData.strikeType || "ATM";
@@ -4750,7 +4771,7 @@ const runBacktestSimulator = async (req, res) => {
                     const expiryLabel = getNearestExpiryString(dateStr, upperSymbol, reqExpiry);
                     let tradeSymbol = `${upperSymbol} ${targetStrike} ${activeOptionType} (${expiryLabel})`;
 
-                    if(isOptionsTrade && broker) {
+                    if (isOptionsTrade && broker) {
                         let apiSuccess = false;
 
                         // 🔥 EXTRACT EXPECTED DATE (e.g., "28 APR") TO VERIFY LIVE ID
@@ -4761,15 +4782,15 @@ const runBacktestSimulator = async (req, res) => {
 
                         // 🟢 STEP 1: SMART LIVE API CHECK (For Fixed Strike Accuracy)
                         const optionConfig = getOptionSecurityId(upperSymbol, spotClosePrice, strikeCriteria, strikeType, activeOptionType, reqExpiry);
-                        
+
                         // Check if Live ID exists AND it matches our required historical date!
                         if (optionConfig && optionConfig.strike && optionConfig.tradingSymbol.includes(expectedDhanDateStr)) {
                             targetStrike = optionConfig.strike;
                             // UI text ko sundar rakhne ke liye tradeSymbol overwrite nahi karenge
                             try {
-                                await sleep(500); 
+                                await sleep(500);
                                 const optRes = await fetchDhanHistoricalData(broker.clientId, broker.apiSecret, optionConfig.id, "NSE_FNO", "OPTIDX", dateStr, dateStr, "1");
-                                if(optRes.success && optRes.data && optRes.data.close) {
+                                if (optRes.success && optRes.data && optRes.data.close) {
                                     const exactMatchIndex = optRes.data.start_Time.findIndex(t => {
                                         const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
                                         return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
@@ -4779,20 +4800,20 @@ const runBacktestSimulator = async (req, res) => {
                                     } else {
                                         finalEntryPrice = exactMatchIndex !== -1 ? optRes.data.close[exactMatchIndex] : optRes.data.close[0];
                                     }
-                                    premiumChartData = optRes.data; 
+                                    premiumChartData = optRes.data;
                                     apiSuccess = true;
-                                } 
-                            } catch(e) { }
+                                }
+                            } catch (e) { }
                         }
 
                         // 🔴 STEP 2: FALLBACK TO ROLLING API (Only for deleted/expired Weekly contracts)
                         if (!apiSuccess) {
                             try {
                                 await sleep(500);
-                                const formattedStrikeForRolling = strikeType.replace(/\s+/g, '').toUpperCase(); 
+                                const formattedStrikeForRolling = strikeType.replace(/\s+/g, '').toUpperCase();
                                 const expRes = await fetchExpiredOptionData(broker.clientId, broker.apiSecret, spotSecurityId, formattedStrikeForRolling, activeOptionType, dateStr, dateStr, reqExpiry);
-                                
-                                if(expRes.success && expRes.data && expRes.data.close) {
+
+                                if (expRes.success && expRes.data && expRes.data.close) {
                                     const exactMatchIndex = expRes.data.start_Time.findIndex(t => {
                                         const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
                                         return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
@@ -4802,10 +4823,10 @@ const runBacktestSimulator = async (req, res) => {
                                     } else {
                                         finalEntryPrice = exactMatchIndex !== -1 ? expRes.data.close[exactMatchIndex] : expRes.data.close[0];
                                     }
-                                    premiumChartData = expRes.data; 
+                                    premiumChartData = expRes.data;
                                     apiSuccess = true;
                                 }
-                            } catch(e) { }
+                            } catch (e) { }
                         }
 
                         // Strict Validation
@@ -4822,21 +4843,21 @@ const runBacktestSimulator = async (req, res) => {
                         openTrades.push({
                             id: `leg_${legIndex}`,
                             legConfig: legData,
-                            symbol: tradeSymbol, 
-                            transaction: transActionTypeStr, 
+                            symbol: tradeSymbol,
+                            transaction: transActionTypeStr,
                             quantity: tradeQuantity,
-                            entryTime: `${h}:${m}:00`, 
+                            entryTime: `${h}:${m}:00`,
                             entryPrice: finalEntryPrice,
                             exitTime: null, exitPrice: null, pnl: null, exitType: null,
                             optionConfig: isOptionsTrade ? { strike: targetStrike, type: activeOptionType } : null,
                             premiumChart: premiumChartData,
                             signalType: finalLongSignal ? "LONG" : "SHORT",
                             lastKnownPremium: finalEntryPrice,
-                            markedForExit: false 
+                            markedForExit: false
                         });
                         console.log(`✅ [TRADE OPEN] Leg ${legIndex + 1} | Time: ${h}:${m} | Spot: ${spotClosePrice} | Premium: ${finalEntryPrice} | Type: ${activeOptionType}`);
                     }
-                } 
+                }
             }
         }
 
@@ -4851,14 +4872,14 @@ const runBacktestSimulator = async (req, res) => {
             const drawdown = currentEquity - peakEquity;
             if (drawdown < maxDrawdown) maxDrawdown = drawdown;
 
-            if (data.pnl > 0) { 
-                winDays++; currentWinStreak++; currentLossStreak = 0; 
-                if (currentWinStreak > maxWinStreak) maxWinStreak = currentWinStreak; 
-            } 
-            else if (data.pnl < 0) { 
-                lossDays++; currentLossStreak++; currentWinStreak = 0; 
-                if (currentLossStreak > maxLossStreak) maxLossStreak = currentLossStreak; 
-            } 
+            if (data.pnl > 0) {
+                winDays++; currentWinStreak++; currentLossStreak = 0;
+                if (currentWinStreak > maxWinStreak) maxWinStreak = currentWinStreak;
+            }
+            else if (data.pnl < 0) {
+                lossDays++; currentLossStreak++; currentWinStreak = 0;
+                if (currentLossStreak > maxLossStreak) maxLossStreak = currentLossStreak;
+            }
             else {
                 currentWinStreak = 0; currentLossStreak = 0;
             }
@@ -4868,12 +4889,12 @@ const runBacktestSimulator = async (req, res) => {
         }
 
         const backtestResult = {
-            summary: { 
-                totalPnL: currentEquity, maxDrawdown, tradingDays: totalMarketDays, winDays, lossDays, 
-                totalTrades: winTrades + lossTrades, winTrades, lossTrades, maxWinStreak, maxLossStreak, 
-                maxProfit: maxProfitTrade, maxLoss: maxLossTrade 
+            summary: {
+                totalPnL: currentEquity, maxDrawdown, tradingDays: totalMarketDays, winDays, lossDays,
+                totalTrades: winTrades + lossTrades, winTrades, lossTrades, maxWinStreak, maxLossStreak,
+                maxProfit: maxProfitTrade, maxLoss: maxLossTrade
             },
-            equityCurve, 
+            equityCurve,
             daywiseBreakdown: daywiseBreakdown.reverse()
         };
 
