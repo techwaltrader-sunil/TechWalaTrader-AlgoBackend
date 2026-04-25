@@ -4567,7 +4567,29 @@ const runBacktestSimulator = async (req, res) => {
                                 fromDate: dateStr, toDate: dateStr
                             };
 
-                            const candidates = ["ATM", "ITM-1", "OTM-1", "-ITM1", "-OTM1", "-1", "-2", "-3", "ITM1", "ITM2", "ITM3", "OTM1", "OTM2", "OTM3", "ITM 1", "OTM 1"];
+                            // =========================================================================
+                            // 🤿 THE DEEP-SEA DIVER (Dynamic Step Calculator for Deep ITM/OTM)
+                            // =========================================================================
+                            const currentAtmAtExit = calculateATM(spotClosePrice, upperSymbol);
+                            const strikeDiff = Math.abs(fixedStrike - currentAtmAtExit);
+                            const stepSize = (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) ? 100 : 50; 
+                            const exactStep = Math.round(strikeDiff / stepSize);
+
+                            let rawCandidates = ["ATM"];
+                            if (exactStep > 0) {
+                                // Agar 11 step dur hai, to safety ke liye 10, 11, 12 teeno check karenge!
+                                for(let s = Math.max(1, exactStep - 2); s <= exactStep + 2; s++) {
+                                    rawCandidates.push(`ITM${s}`, `OTM${s}`, `ITM-${s}`, `OTM-${s}`, `ITM ${s}`, `OTM ${s}`, `-${s}`);
+                                }
+                            } else {
+                                rawCandidates.push("ITM1", "OTM1", "ITM-1", "OTM-1", "-1");
+                            }
+                            
+                            // Duplicates hatane ke liye Set ka use
+                            const candidates = [...new Set(rawCandidates)];
+                            console.log(`\n🤿 [DEEP DIVER] Market shifted by ${exactStep} steps. Generated Deep Candidates:`, candidates.join(', '));
+                            //=========================================================================
+                            
                             let foundExactExit = false;
                             
                             for(let guess of candidates) {
