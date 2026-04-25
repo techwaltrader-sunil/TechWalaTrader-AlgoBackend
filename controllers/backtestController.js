@@ -4356,14 +4356,16 @@ const runBacktestSimulator = async (req, res) => {
                     isTradingHaltedForDay = true; 
                     triggerReasonForExitAll = "MAX_LOSS";
                 }
+                
 
+                
                 // 🔥 FIX 3: MOVE SL TO COST TRACKERS
                 let anyLegHitSlPast = dailyBreakdownMap[dateStr].tradesList.some(t => t.exitType === "STOPLOSS" || t.exitType === "SL_MOVED_TO_COST");
                 let anyLegHitSlThisTick = false;
 
-                // 🚀 CHANGED: forEach ko for...of me badla gaya taki Smart Verifier API call kar sake
-                for (let trade of openTrades) {
-                    if (trade.markedForExit) continue; // CHANGED: return ko continue kiya gaya
+                // 🚀 ROLLBACK: Wapas forEach loop me aa gaye (No API Spam, Fast Speed)
+                openTrades.forEach((trade, idx) => {
+                    if (trade.markedForExit) return; 
 
                     if (hitGlobalMaxProfit || hitGlobalMaxLoss) {
                         trade.markedForExit = true;
@@ -4377,7 +4379,7 @@ const runBacktestSimulator = async (req, res) => {
                         } else {
                             trade.exitPrice = trade.currentPrice;
                         }
-                        continue; // CHANGED: return ko continue kiya gaya
+                        return;
                     }
 
                     const legData = trade.legConfig;
@@ -4403,46 +4405,51 @@ const runBacktestSimulator = async (req, res) => {
                     }
 
                     // =========================================================================
-                    // 🚀🚀🚀 THE SPOT-SYNCED DELTA TRACKER (100% ACCURATE TIMING) 🚀🚀🚀
+                    // 🚀🚀🚀 SUNIL BHAI'S MASTER IDEA: THE SPOT-DELTA TRACKER 🚀🚀🚀
+                    // (Option Rolling Chart ka Lag khatam karne ke liye Spot Chart se tracking)
                     // =========================================================================
                     let spotTriggeredSl = false;
                     let spotTriggeredTp = false;
 
-                    if (isOptionsTrade && trade.optionConfig) {
+                    // Hum sirf tabhi spot tracker use karenge jab SL move na hua ho. 
+                    // Move to cost ke liye purana logic hi best hai, CE wala trade safe rahega.
+                    if (isOptionsTrade && trade.optionConfig && !isSlMovedToCost) {
                         const optType = trade.optionConfig.type; // CE ya PE
-                        const entrySpot = trade.optionConfig.strike; // Approximate Spot at Entry
+                        const entrySpot = trade.optionConfig.strike; // Strike ko hi Base Spot manenge
 
-                        // Nifty/BankNifty ka average ATM Delta 0.5 hota hai
+                        // Aapka Idea: "30 Rs ka Option Gap = 60 point Spot Gap" -> Yani Delta = 0.5
                         const assumedDelta = 0.5; 
-                        const slPremiumDiff = Math.abs(slPrice - trade.entryPrice);
-                        const tpPremiumDiff = Math.abs(tpPrice - trade.entryPrice);
+                        const slGap = Math.abs(slPrice - trade.entryPrice);
+                        const tpGap = Math.abs(tpPrice - trade.entryPrice);
                         
-                        const reqSpotMoveSl = slPremiumDiff / assumedDelta;
-                        const reqSpotMoveTp = tpPremiumDiff / assumedDelta;
+                        // Option gap ko Spot points me convert kiya (e.g., 30 / 0.5 = 60 points)
+                        const reqSpotMoveSl = slGap / assumedDelta;
+                        const reqSpotMoveTp = tpGap / assumedDelta;
 
-                        // Spot chart Option chart se 100% accurate aur fast hota hai
                         if (trade.transaction === "BUY") {
                             if (optType === "CE") {
                                 if (slValue > 0 && spotClosePrice <= entrySpot - reqSpotMoveSl) spotTriggeredSl = true;
                                 if (tpValue > 0 && spotClosePrice >= entrySpot + reqSpotMoveTp) spotTriggeredTp = true;
-                            } else { // PE
+                            } else { // PE BUY
                                 if (slValue > 0 && spotClosePrice >= entrySpot + reqSpotMoveSl) spotTriggeredSl = true;
                                 if (tpValue > 0 && spotClosePrice <= entrySpot - reqSpotMoveTp) spotTriggeredTp = true;
                             }
-                        } else { // SELL Trade
+                        } else { // SELL Trade (Aapka PE Sell scenario)
                             if (optType === "CE") {
                                 if (slValue > 0 && spotClosePrice >= entrySpot + reqSpotMoveSl) spotTriggeredSl = true;
                                 if (tpValue > 0 && spotClosePrice <= entrySpot - reqSpotMoveTp) spotTriggeredTp = true;
-                            } else { // PE
+                            } else { // PE SELL
+                                // PE Sell me SL tab hit hoga jab market girega (Spot niche jayega)
                                 if (slValue > 0 && spotClosePrice <= entrySpot - reqSpotMoveSl) spotTriggeredSl = true;
                                 if (tpValue > 0 && spotClosePrice >= entrySpot + reqSpotMoveTp) spotTriggeredTp = true;
                             }
                         }
                     }
+                    // =========================================================================
 
-                    // 🛡️ AB ENGINE NORMAL KAAM KAREGA, PAR "SPOT-TIMING" KE SATH!
+                    // 🛡️ AB ENGINE NORMAL KAAM KAREGA, PAR "SPOT-TIMING" KI TAQAT KE SATH!
                     if ((!isSlMovedToCost && slValue > 0) || isSlMovedToCost) {
-                        // Agar Option Chart (currentLow/High) ya Spot Chart kisi ne bhi SL pakda, to exit!
+                        // Agar aapke Spot Tracker ne SL pakda OR Rolling chart ne (Dono me se jo pehle ho)
                         if (spotTriggeredSl || (trade.transaction === "BUY" && trade.currentLow <= slPrice) || (trade.transaction === "SELL" && trade.currentHigh >= slPrice)) {
                             trade.markedForExit = true; 
                             trade.exitReason = isSlMovedToCost ? "SL_MOVED_TO_COST" : "STOPLOSS"; 
@@ -4475,7 +4482,10 @@ const runBacktestSimulator = async (req, res) => {
                             trade.markedForExit = true; trade.exitReason = "INDICATOR_EXIT"; trade.exitPrice = trade.currentPrice;
                         }
                     }
-                }
+                });
+
+
+                
 
                 if (triggerReasonForExitAll && !hitGlobalMaxProfit && !hitGlobalMaxLoss) {
                     const exitAllCheck = evaluateExitAllLogic(advanceFeaturesSettings, triggerReasonForExitAll);
