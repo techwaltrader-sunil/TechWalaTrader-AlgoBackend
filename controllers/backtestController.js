@@ -3872,6 +3872,7 @@ const mongoose = require('mongoose');
 const Strategy = require('../models/Strategy');
 const HistoricalData = require('../models/HistoricalData');
 const Broker = require('../models/Broker');
+
 const { calculateIndicator, extractParams, evaluateCondition } = require('../services/indicatorService');
 const { getOptionSecurityId, sleep } = require('../services/instrumentService');
 const { fetchDhanHistoricalData, fetchExpiredOptionData } = require('../services/dhanService');
@@ -3880,6 +3881,36 @@ const { fetchDhanHistoricalData, fetchExpiredOptionData } = require('../services
 const { evaluateTrailingSL } = require('../engine/features/riskManagement/trailingLogic');
 const { evaluateMtmLogic } = require('../engine/features/riskManagement/mtmSquareOff');
 const { evaluateExitAllLogic } = require('../engine/features/advanceFeatures/exitAllOnSlTgt');
+
+
+// =========================================================================
+// 🔥 THE MISSING DELAY & ANTI-THROTTLING ARMOR (Rollback se delete ho gaye the)
+// =========================================================================
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const withRetry = async (apiCallFn, maxRetries = 3, delayMs = 1500) => {
+    for (let i = 0; i < maxRetries; i++) {
+        try {
+            const result = await apiCallFn();
+            if ((result && result.success && result.data && result.data.close) || 
+                (result && result.data && result.data.data)) {
+                return result;
+            }
+            console.log(`⚠️ Dhan API Empty. Cooling down (${i + 1}/${maxRetries})...`);
+            await delay(delayMs * (i + 1)); 
+        } catch (error) {
+            const status = error.response ? error.response.status : 0;
+            if (status === 429 || (error.response && error.response.data && error.response.data.errorCode === 'DH-904')) {
+                console.log(`🛑 Rate Limit (429) on Entry! 5-sec cooldown...`);
+                await delay(5000);
+            } else {
+                await delay(delayMs * (i + 1));
+            }
+        }
+    }
+    return { success: false, data: null }; 
+};
+
 
 const formatIndName = (ind) => {
     if (!ind) return 'Value';
@@ -4591,7 +4622,7 @@ const runBacktestSimulator = async (req, res) => {
                                 } else {
                                     rawCandidates.push("ITM1", "OTM1", "ITM-1", "OTM-1", "-1");
                                 }
-                                
+
                                 const candidates = [...new Set(rawCandidates)];
 
                                 // 🔥 SMART SNIPER ESCAPE: Agar 429 aaye to fasna nahi hai, Fallback use karna hai!
@@ -4804,7 +4835,7 @@ const runBacktestSimulator = async (req, res) => {
                             // UI text ko sundar rakhne ke liye tradeSymbol overwrite nahi karenge
                             try {
                                 await sleep(500);
-                                const optRes = await fetchDhanHistoricalData(broker.clientId, broker.apiSecret, optionConfig.id, "NSE_FNO", "OPTIDX", dateStr, dateStr, "1");
+                                const optRes = await withRetry(() => fetchDhanHistoricalData(broker.clientId, broker.apiSecret, optionConfig.id, "NSE_FNO", "OPTIDX", dateStr, dateStr, "1"));
                                 if (optRes.success && optRes.data && optRes.data.close) {
                                     const exactMatchIndex = optRes.data.start_Time.findIndex(t => {
                                         const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
@@ -4826,8 +4857,7 @@ const runBacktestSimulator = async (req, res) => {
                             try {
                                 await sleep(500);
                                 const formattedStrikeForRolling = strikeType.replace(/\s+/g, '').toUpperCase();
-                                const expRes = await fetchExpiredOptionData(broker.clientId, broker.apiSecret, spotSecurityId, formattedStrikeForRolling, activeOptionType, dateStr, dateStr, reqExpiry);
-
+                                const expRes = await withRetry(() => fetchExpiredOptionData(broker.clientId, broker.apiSecret, spotSecurityId, formattedStrikeForRolling, activeOptionType, dateStr, dateStr, reqExpiry));
                                 if (expRes.success && expRes.data && expRes.data.close) {
                                     const exactMatchIndex = expRes.data.start_Time.findIndex(t => {
                                         const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
