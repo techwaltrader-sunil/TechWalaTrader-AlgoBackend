@@ -4591,15 +4591,25 @@ const runBacktestSimulator = async (req, res) => {
                                 } else {
                                     rawCandidates.push("ITM1", "OTM1", "ITM-1", "OTM-1", "-1");
                                 }
+                                
                                 const candidates = [...new Set(rawCandidates)];
 
+                                // 🔥 SMART SNIPER ESCAPE: Agar 429 aaye to fasna nahi hai, Fallback use karna hai!
+                                let rateLimitBreached = false;
+
                                 for(let guess of candidates) {
+                                    if (rateLimitBreached) break; // Dhan gussa hai, loop tod do aur Fallback pe jao!
+
+                                    await delay(200); // Halke se 200ms ka gap taki Dhan block na kare
+                                    
                                     try {
+                                        // Yahan withRetry nahi use karenge, direct Axios hit karenge
                                         const exitRes = await axios.post('https://api.dhan.co/v2/charts/rollingoption', { ...basePayload, strike: guess }, {
                                             headers: { 'access-token': broker.apiSecret, 'client-id': broker.clientId, 'Content-Type': 'application/json' }
                                         });
+                                        
                                         const optKey = optType === "CE" ? "ce" : "pe";
-                                        let tempExitData = exitRes.data.data ? exitRes.data.data[optKey] : null;
+                                        let tempExitData = exitRes.data && exitRes.data.data ? exitRes.data.data[optKey] : null;
 
                                         if (tempExitData && tempExitData.timestamp) {
                                             let tempIndex = -1;
@@ -4612,11 +4622,18 @@ const runBacktestSimulator = async (req, res) => {
                                                 exitData = tempExitData;
                                                 actualExitIndex = tempIndex;
                                                 foundExactExit = true;
-                                                optionDataCache[cacheKey] = exitData; // 🔥 SAVED TO RAM FOR THE REST OF THE DAY!
+                                                optionDataCache[cacheKey] = exitData; // RAM me save
                                                 break;
                                             }
                                         }
-                                    } catch(e) { }
+                                    } catch (e) {
+                                        const status = e.response ? e.response.status : 0;
+                                        if (status === 429 || (e.response && e.response.data && e.response.data.errorCode === 'DH-904')) {
+                                            console.log(`🛑 Sniper hit Rate Limit (429). Aborting deep search -> using Smart Fallback!`);
+                                            rateLimitBreached = true; // Agle candidates check nahi honge!
+                                            break;
+                                        }
+                                    }
                                 }
                             }
 
