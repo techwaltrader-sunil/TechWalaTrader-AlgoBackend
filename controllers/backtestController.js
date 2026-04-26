@@ -4368,7 +4368,10 @@ const runBacktestSimulator = async (req, res) => {
                 let anyLegHitSlPast = dailyBreakdownMap[dateStr].tradesList.some(t => t.exitType === "STOPLOSS" || t.exitType === "SL_MOVED_TO_COST");
                 let anyLegHitSlThisTick = false;
 
-                // 🚀 ROLLBACK: Wapas forEach loop me aa gaye (No API Spam, Fast Speed)
+                // 🔥 THE GATEKEEPER PARADOX FIX (No more 'ThisTick' fake triggers)
+                // Jab tak Gatekeeper verify karke tradesList me SL hit nahi daal deta, dusra leg cost par nahi aayega!
+                let isSlMovedToCostGlobal = dailyBreakdownMap[dateStr].tradesList.some(t => t.exitType === "STOPLOSS" || t.exitType === "SL_MOVED_TO_COST");
+
                 openTrades.forEach((trade, idx) => {
                     if (trade.markedForExit) return;
 
@@ -4395,7 +4398,8 @@ const runBacktestSimulator = async (req, res) => {
 
                     let slPrice = 0, tpPrice = 0;
                     let isSlMovedToCost = false;
-                    if (advanceFeaturesSettings.moveSLToCost && (anyLegHitSlPast || anyLegHitSlThisTick)) {
+
+                    if (advanceFeaturesSettings.moveSLToCost && isSlMovedToCostGlobal) {
                         isSlMovedToCost = true;
                     }
 
@@ -4409,25 +4413,16 @@ const runBacktestSimulator = async (req, res) => {
                         tpPrice = tpType === "Points" ? trade.entryPrice - tpValue : trade.entryPrice * (1 - tpValue / 100);
                     }
 
-                    // =========================================================================
-                    // 🚀🚀🚀 SUNIL BHAI'S MASTER IDEA: THE SPOT-DELTA TRACKER 🚀🚀🚀
-                    // (Option Rolling Chart ka Lag khatam karne ke liye Spot Chart se tracking)
-                    // =========================================================================
+                    // Spot-Delta Tracker
                     let spotTriggeredSl = false;
                     let spotTriggeredTp = false;
 
-                    // Hum sirf tabhi spot tracker use karenge jab SL move na hua ho. 
-                    // Move to cost ke liye purana logic hi best hai, CE wala trade safe rahega.
                     if (isOptionsTrade && trade.optionConfig) {
-                        const optType = trade.optionConfig.type; // CE ya PE
-                        const entrySpot = trade.optionConfig.strike; // Strike ko hi Base Spot manenge
-
-                        // Aapka Idea: "30 Rs ka Option Gap = 60 point Spot Gap" -> Yani Delta = 0.5
+                        const optType = trade.optionConfig.type;
+                        const entrySpot = trade.optionConfig.strike;
                         const assumedDelta = 0.5;
                         const slGap = Math.abs(slPrice - trade.entryPrice);
                         const tpGap = Math.abs(tpPrice - trade.entryPrice);
-
-                        // Option gap ko Spot points me convert kiya (e.g., 30 / 0.5 = 60 points)
                         const reqSpotMoveSl = slGap / assumedDelta;
                         const reqSpotMoveTp = tpGap / assumedDelta;
 
@@ -4435,32 +4430,28 @@ const runBacktestSimulator = async (req, res) => {
                             if (optType === "CE") {
                                 if (slValue > 0 && spotClosePrice <= entrySpot - reqSpotMoveSl) spotTriggeredSl = true;
                                 if (tpValue > 0 && spotClosePrice >= entrySpot + reqSpotMoveTp) spotTriggeredTp = true;
-                            } else { // PE BUY
+                            } else {
                                 if (slValue > 0 && spotClosePrice >= entrySpot + reqSpotMoveSl) spotTriggeredSl = true;
                                 if (tpValue > 0 && spotClosePrice <= entrySpot - reqSpotMoveTp) spotTriggeredTp = true;
                             }
-                        } else { // SELL Trade (Aapka PE Sell scenario)
+                        } else {
                             if (optType === "CE") {
                                 if (slValue > 0 && spotClosePrice >= entrySpot + reqSpotMoveSl) spotTriggeredSl = true;
                                 if (tpValue > 0 && spotClosePrice <= entrySpot - reqSpotMoveTp) spotTriggeredTp = true;
-                            } else { // PE SELL
-                                // PE Sell me SL tab hit hoga jab market girega (Spot niche jayega)
+                            } else {
                                 if (slValue > 0 && spotClosePrice <= entrySpot - reqSpotMoveSl) spotTriggeredSl = true;
                                 if (tpValue > 0 && spotClosePrice >= entrySpot + reqSpotMoveTp) spotTriggeredTp = true;
                             }
                         }
                     }
-                    // =========================================================================
 
-                    // 🛡️ AB ENGINE NORMAL KAAM KAREGA, PAR "SPOT-TIMING" KI TAQAT KE SATH!
                     if ((!isSlMovedToCost && slValue > 0) || isSlMovedToCost) {
-                        // Agar aapke Spot Tracker ne SL pakda OR Rolling chart ne (Dono me se jo pehle ho)
                         if (spotTriggeredSl || (trade.transaction === "BUY" && trade.currentLow <= slPrice) || (trade.transaction === "SELL" && trade.currentHigh >= slPrice)) {
                             trade.markedForExit = true;
                             trade.exitReason = isSlMovedToCost ? "SL_MOVED_TO_COST" : "STOPLOSS";
                             trade.exitPrice = slPrice;
                             triggerReasonForExitAll = "STOPLOSS";
-                            anyLegHitSlThisTick = true;
+                            // 🔥 Yahan se 'anyLegHitSlThisTick = true' humesha ke liye delete kar diya gaya hai!
                         }
                     }
 
