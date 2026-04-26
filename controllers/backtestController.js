@@ -4625,16 +4625,16 @@ const runBacktestSimulator = async (req, res) => {
 
                                 const candidates = [...new Set(rawCandidates)];
 
-                                // 🔥 SMART SNIPER ESCAPE: Agar 429 aaye to fasna nahi hai, Fallback use karna hai!
+                               // 🔥 SMART SNIPER ESCAPE (Rollback se delete ho gaya tha, wapas laya gaya!)
                                 let rateLimitBreached = false;
 
                                 for(let guess of candidates) {
-                                    if (rateLimitBreached) break; // Dhan gussa hai, loop tod do aur Fallback pe jao!
+                                    if (rateLimitBreached) break; // Dhan API gussa hai, loop tod do aur Fallback pe jao!
 
-                                    await delay(200); // Halke se 200ms ka gap taki Dhan block na kare
+                                    await delay(300); // 300ms ka saans
                                     
                                     try {
-                                        // Yahan withRetry nahi use karenge, direct Axios hit karenge
+                                        // 🛑 DHYAN DEIN: Yahan 'withRetry' use NAHI karna hai! Direct Axios hit karenge.
                                         const exitRes = await axios.post('https://api.dhan.co/v2/charts/rollingoption', { ...basePayload, strike: guess }, {
                                             headers: { 'access-token': broker.apiSecret, 'client-id': broker.clientId, 'Content-Type': 'application/json' }
                                         });
@@ -4660,9 +4660,9 @@ const runBacktestSimulator = async (req, res) => {
                                     } catch (e) {
                                         const status = e.response ? e.response.status : 0;
                                         if (status === 429 || (e.response && e.response.data && e.response.data.errorCode === 'DH-904')) {
-                                            console.log(`🛑 Sniper hit Rate Limit (429). Aborting deep search -> using Smart Fallback!`);
-                                            rateLimitBreached = true; // Agle candidates check nahi honge!
-                                            break;
+                                            console.log(`🛑 Sniper hit Rate Limit (429) for ${guess}. Aborting deep search -> Using Smart Fallback!`);
+                                            rateLimitBreached = true; 
+                                            break; // Loop tod do, time barbad nahi karna!
                                         }
                                     }
                                 }
