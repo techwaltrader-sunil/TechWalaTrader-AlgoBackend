@@ -4714,40 +4714,49 @@ const runBacktestSimulator = async (req, res) => {
                                 }
                             }
                             
-                            // 🚀 4. SILENT GATEKEEPER REJECTION (No console logs to avoid terminal freezing)
+                           // 🚀 4. SILENT GATEKEEPER REJECTION (Ghost Buster Fixed)
                             if (fakeTriggerRejected) {
-                                trade.markedForExit = false;
-                                trade.exitReason = null;
-                                trade.exitPrice = null;
-                                remainingTrades.push(trade);
-                                continue; 
-                            }
-
-                            // 🚨 5. ILLIQUID MINUTE & SMART FALLBACK
-                            if (!foundExactExit) {
-                                if (["STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason)) {
+                                if (isExitTime || isLastCandleOfDay) {
+                                    // Agar market band ho raha hai, to reject mat karo! Force Square-off karo!
+                                    trade.exitReason = isLastCandleOfDay ? "EOD_SQUAREOFF" : "TIME_SQUAREOFF";
+                                } else {
                                     trade.markedForExit = false;
                                     trade.exitReason = null;
                                     trade.exitPrice = null;
                                     remainingTrades.push(trade);
                                     continue; 
-                                } else {
-                                    const currentAtmAtFallback = calculateATM(spotClosePrice, upperSymbol);
-                                    const stepSize = (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) ? 100 : 50;
-                                    const stepDiff = Math.round(Math.abs(fixedStrike - currentAtmAtFallback) / stepSize);
-                                    
-                                    let intrinsicValue = 0;
-                                    if (optType === "CE") intrinsicValue = Math.max(0, spotClosePrice - fixedStrike);
-                                    else intrinsicValue = Math.max(0, fixedStrike - spotClosePrice);
-
-                                    const rollingAtmPrice = trade.exitReason === "TIME_SQUAREOFF" ? trade.currentOpen : trade.currentPrice;
-                                    const estimatedTimeValue = rollingAtmPrice / Math.pow(1.2, stepDiff);
-                                    
-                                    if (!trade.exitPrice) trade.exitPrice = intrinsicValue + estimatedTimeValue;
                                 }
                             }
-                        } else {
-                            if (!trade.exitPrice) trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? trade.currentOpen : trade.currentPrice;
+
+                            // 🚨 5. ILLIQUID MINUTE & SMART FALLBACK
+                            if (!foundExactExit) {
+                                if (["STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason)) {
+                                    if (isExitTime || isLastCandleOfDay) {
+                                        // Market closing time pe Data na mile, to usko Force Square-off me convert kar do
+                                        trade.exitReason = isLastCandleOfDay ? "EOD_SQUAREOFF" : "TIME_SQUAREOFF";
+                                    } else {
+                                        trade.markedForExit = false;
+                                        trade.exitReason = null;
+                                        trade.exitPrice = null;
+                                        remainingTrades.push(trade);
+                                        continue; 
+                                    }
+                                } 
+                                
+                                // 🛡️ THE FALLBACK (Ab TIME_SQUAREOFF wale trades yahan se nikalenge)
+                                const currentAtmAtFallback = calculateATM(spotClosePrice, upperSymbol);
+                                const stepSize = (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) ? 100 : 50;
+                                const stepDiff = Math.round(Math.abs(fixedStrike - currentAtmAtFallback) / stepSize);
+                                
+                                let intrinsicValue = 0;
+                                if (optType === "CE") intrinsicValue = Math.max(0, spotClosePrice - fixedStrike);
+                                else intrinsicValue = Math.max(0, fixedStrike - spotClosePrice);
+
+                                const rollingAtmPrice = (trade.exitReason === "TIME_SQUAREOFF" || trade.exitReason === "EOD_SQUAREOFF") ? trade.currentOpen : trade.currentPrice;
+                                const estimatedTimeValue = rollingAtmPrice / Math.pow(1.2, stepDiff);
+                                
+                                if (!trade.exitPrice) trade.exitPrice = intrinsicValue + estimatedTimeValue;
+                            }
                         }
                         // =========================================================================
 
