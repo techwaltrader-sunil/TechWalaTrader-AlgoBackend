@@ -266,7 +266,7 @@ const axios = require('axios');
 
 // 🔥 1. APNI DETAILS YAHAN DALEIN
 const CLIENT_ID = "YOUR_CLIENT_ID"; 
-const ACCESS_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzc3MTczOTE1LCJpYXQiOjE3NzcwODc1MTUsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTAzMjM4NzQ0In0.j1H5u2ON-dKxTQnk_8iS1yXO3eiKWGRmXswV_qjqHYsDw9YIGo8QXEhg-SeqSNi9O7cEW3mfW4uUup5BOiqwpg";
+const ACCESS_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzc3MjYxMzc1LCJpYXQiOjE3NzcxNzQ5NzUsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTAzMjM4NzQ0In0.qkUZSXGBmcnNY7vUafdaSjKIJ7twd8UxKVfVpi1qpvujfmAeUaNcx0iht0qwSy85zaLf82ksfIRaVOpKm2H42g";
 
 // =========================================================================
 // 🚀 THE MASTER FUNCTION (Precision Sniper + Minus Hack + Entry OHLC)
@@ -375,7 +375,7 @@ async function fetchFixedStrikeData(dateStr, reqExpiry, optType, initialStrikeTy
 }
 
 async function runAllTests() {
-    await fetchFixedStrikeData("2026-02-01", "WEEKLY", "PE", "ATM", "09:45", "12:11");
+    await fetchFixedStrikeData("2026-02-16", "WEEKLY", "CE", "ATM", "09:45", "10:02");
 }
 
 runAllTests();

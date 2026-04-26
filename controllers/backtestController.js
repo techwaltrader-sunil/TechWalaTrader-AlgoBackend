@@ -3897,7 +3897,10 @@ const formatIndName = (ind) => {
 const runBacktestSimulator = async (req, res) => {
     try {
         const { strategyId } = req.params;
-        const { period, start, end } = req.query;
+
+        const { period, start, end, slippage } = req.query;
+        // Default true manenge agar frontend se kuch nahi aaya
+        const useRealisticSlippage = slippage !== 'false';
 
         const strategy = await Strategy.collection.findOne({ _id: new mongoose.Types.ObjectId(strategyId) });
         if (!strategy) return res.status(404).json({ error: "Strategy not found" });
@@ -4632,25 +4635,69 @@ const runBacktestSimulator = async (req, res) => {
 
                                             console.log(`✅ [SNIPER BINGO] Verified! Dhan mapped ${fixedStrike} to [ ${guess} ] at ${exitTimeStr}!`);
 
-                                            // 🚀 REALISTIC EXECUTION (Removing overly punishing Close price)
+                                            // // 🚀 STRICT OVERWRITE TO CLOSE PRICE (Conservative Slippage)
+                                            // if (["STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason)) {
+                                            //     if (trade.transaction === "BUY") {
+                                            //         if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen < mathPrice) trade.exitPrice = cOpen;
+                                            //         else if (trade.exitReason === "TARGET" && cOpen > mathPrice) trade.exitPrice = cOpen;
+                                            //         else trade.exitPrice = cClose; 
+                                            //     } else { // SELL Trade
+                                            //         if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen > mathPrice) trade.exitPrice = cOpen;
+                                            //         else if (trade.exitReason === "TARGET" && cOpen < mathPrice) trade.exitPrice = cOpen;
+                                            //         else trade.exitPrice = cClose; 
+                                            //     }
+                                            // } else {
+                                            //     trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? cOpen : cClose;
+                                            // }
+                                           
+                                           
+                                            // // 🚀 REALISTIC EXECUTION (Removing overly punishing Close price)
+                                            // if (["STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason)) {
+                                            //     if (trade.transaction === "BUY") {
+                                            //         // Gap Down Slippage (Open is worse than SL)
+                                            //         if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen < mathPrice) trade.exitPrice = cOpen;
+                                            //         // Gap Up Jackpot (Open is better than Target)
+                                            //         else if (trade.exitReason === "TARGET" && cOpen > mathPrice) trade.exitPrice = cOpen;
+                                            //         // Smooth hit: Executed exactly at the trigger price (No artificial penalty)
+                                            //         else trade.exitPrice = mathPrice; 
+                                            //     } else { // SELL Trade
+                                            //         // Gap Up Slippage (Open is worse than SL)
+                                            //         if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen > mathPrice) trade.exitPrice = cOpen;
+                                            //         // Gap Down Jackpot (Open is better than Target)
+                                            //         else if (trade.exitReason === "TARGET" && cOpen < mathPrice) trade.exitPrice = cOpen;
+                                            //         // Smooth hit: Executed exactly at the trigger price
+                                            //         else trade.exitPrice = mathPrice; 
+                                            //     }
+                                            // } else {
+                                            //     // TIME_SQUAREOFF ke liye exact OPEN price
+                                            //     trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? cOpen : cClose;
+                                            // }
+
+
+
+                                            // 🚀 DYNAMIC EXECUTION (Based on User UI Toggle)
                                             if (["STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason)) {
-                                                if (trade.transaction === "BUY") {
-                                                    // Gap Down Slippage (Open is worse than SL)
-                                                    if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen < mathPrice) trade.exitPrice = cOpen;
-                                                    // Gap Up Jackpot (Open is better than Target)
-                                                    else if (trade.exitReason === "TARGET" && cOpen > mathPrice) trade.exitPrice = cOpen;
-                                                    // Smooth hit: Executed exactly at the trigger price (No artificial penalty)
-                                                    else trade.exitPrice = mathPrice; 
-                                                } else { // SELL Trade
-                                                    // Gap Up Slippage (Open is worse than SL)
-                                                    if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen > mathPrice) trade.exitPrice = cOpen;
-                                                    // Gap Down Jackpot (Open is better than Target)
-                                                    else if (trade.exitReason === "TARGET" && cOpen < mathPrice) trade.exitPrice = cOpen;
-                                                    // Smooth hit: Executed exactly at the trigger price
-                                                    else trade.exitPrice = mathPrice; 
+                                                
+                                                if (!useRealisticSlippage) {
+                                                    // 🔥 FRONTEND TOGGLE OFF (Strict Open Price Mode - Worst Case Scenario)
+                                                    // User chahta hai ki hit hone par exactly us minute ka Open price hi mile
+                                                    trade.exitPrice = cOpen; 
+
+                                                } else {
+                                                    // 🔥 FRONTEND TOGGLE ON (Realistic Mode - Smooth hits + Gap verification)
+                                                    if (trade.transaction === "BUY") {
+                                                        if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen < mathPrice) trade.exitPrice = cOpen;
+                                                        else if (trade.exitReason === "TARGET" && cOpen > mathPrice) trade.exitPrice = cOpen;
+                                                        else trade.exitPrice = mathPrice; // Smooth hit
+                                                    } else { // SELL Trade
+                                                        if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen > mathPrice) trade.exitPrice = cOpen;
+                                                        else if (trade.exitReason === "TARGET" && cOpen < mathPrice) trade.exitPrice = cOpen;
+                                                        else trade.exitPrice = mathPrice; // Smooth hit
+                                                    }
                                                 }
+
                                             } else {
-                                                // TIME_SQUAREOFF ke liye exact OPEN price
+                                                // TIME_SQUAREOFF always exits at EXACT OPEN price. 
                                                 trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? cOpen : cClose;
                                             }
 
