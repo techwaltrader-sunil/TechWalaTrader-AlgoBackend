@@ -4649,19 +4649,28 @@ const runBacktestSimulator = async (req, res) => {
                                 if (!isValidTrigger) {
                                     fakeTriggerRejected = true;
                                 } else {
-                                    // FrontEnd Toggle check
-                                    if (!useRealisticSlippage) {
-                                        trade.exitPrice = cOpen; 
-                                    } else {
-                                        if (trade.transaction === "BUY") {
-                                            if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen < mathPrice) trade.exitPrice = cOpen;
-                                            else if (trade.exitReason === "TARGET" && cOpen > mathPrice) trade.exitPrice = cOpen;
-                                            else trade.exitPrice = mathPrice; 
-                                        } else { 
-                                            if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen > mathPrice) trade.exitPrice = cOpen;
-                                            else if (trade.exitReason === "TARGET" && cOpen < mathPrice) trade.exitPrice = cOpen;
-                                            else trade.exitPrice = mathPrice; 
+                                    // 🔥 THE MISSING LINK FIX: Sirf SL/Target ke liye Slippage logic chalega
+                                    if (["STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason)) {
+                                        
+                                        // FrontEnd Toggle check
+                                        if (!useRealisticSlippage) {
+                                            trade.exitPrice = cOpen; 
+                                        } else {
+                                            if (trade.transaction === "BUY") {
+                                                if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen < mathPrice) trade.exitPrice = cOpen;
+                                                else if (trade.exitReason === "TARGET" && cOpen > mathPrice) trade.exitPrice = cOpen;
+                                                else trade.exitPrice = mathPrice; 
+                                            } else { 
+                                                if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen > mathPrice) trade.exitPrice = cOpen;
+                                                else if (trade.exitReason === "TARGET" && cOpen < mathPrice) trade.exitPrice = cOpen;
+                                                else trade.exitPrice = mathPrice; 
+                                            }
                                         }
+                                        
+                                    } else {
+                                        // 🛡️ Indicator, Time Squareoff, aur EXIT_ALL_SL ke liye normal Market Price!
+                                        // Yahan null aane ka sawal hi paida nahi hota!
+                                        trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? cOpen : cClose;
                                     }
                                 }
                             }
