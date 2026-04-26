@@ -4632,18 +4632,25 @@ const runBacktestSimulator = async (req, res) => {
 
                                             console.log(`✅ [SNIPER BINGO] Verified! Dhan mapped ${fixedStrike} to [ ${guess} ] at ${exitTimeStr}!`);
 
-                                            // 🚀 STRICT OVERWRITE TO CLOSE PRICE (Conservative Slippage)
+                                            // 🚀 REALISTIC EXECUTION (Removing overly punishing Close price)
                                             if (["STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason)) {
                                                 if (trade.transaction === "BUY") {
+                                                    // Gap Down Slippage (Open is worse than SL)
                                                     if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen < mathPrice) trade.exitPrice = cOpen;
+                                                    // Gap Up Jackpot (Open is better than Target)
                                                     else if (trade.exitReason === "TARGET" && cOpen > mathPrice) trade.exitPrice = cOpen;
-                                                    else trade.exitPrice = cClose;
+                                                    // Smooth hit: Executed exactly at the trigger price (No artificial penalty)
+                                                    else trade.exitPrice = mathPrice; 
                                                 } else { // SELL Trade
+                                                    // Gap Up Slippage (Open is worse than SL)
                                                     if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen > mathPrice) trade.exitPrice = cOpen;
+                                                    // Gap Down Jackpot (Open is better than Target)
                                                     else if (trade.exitReason === "TARGET" && cOpen < mathPrice) trade.exitPrice = cOpen;
-                                                    else trade.exitPrice = cClose;
+                                                    // Smooth hit: Executed exactly at the trigger price
+                                                    else trade.exitPrice = mathPrice; 
                                                 }
                                             } else {
+                                                // TIME_SQUAREOFF ke liye exact OPEN price
                                                 trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? cOpen : cClose;
                                             }
 
