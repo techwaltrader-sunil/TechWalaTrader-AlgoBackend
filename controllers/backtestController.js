@@ -4059,6 +4059,8 @@ const runBacktestSimulator = async (req, res) => {
         let maxProfitTrade = 0, maxLossTrade = 0;
         const equityCurve = []; const daywiseBreakdown = []; let dailyBreakdownMap = {};
 
+        let optionDataCache = {}; // 🔥 RAM CACHE (Super Fast Speed ke liye)
+
         let openTrades = [];
         const strategyLegs = strategy.legs || strategy.data?.legs || [];
 
@@ -4543,220 +4545,162 @@ const runBacktestSimulator = async (req, res) => {
                         }
 
                         // =========================================================================
-                        // 🔴 THE SNIPER GATEKEEPER (REJECTS FAKE TRIGGERS) 🔴
+                        // 🔴 THE SNIPER GATEKEEPER (WITH SUPER-FAST RAM CACHE) 🔴
                         // =========================================================================
                         const needsMarketPrice = ["TIME_SQUAREOFF", "EOD_SQUAREOFF", "INDICATOR_EXIT", "MAX_PROFIT", "MAX_LOSS", "EXIT_ALL_TGT", "EXIT_ALL_SL", "STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason);
-
-                        let fakeTriggerRejected = false; // Flag to identify false alarms
+                        
+                        let fakeTriggerRejected = false;
 
                         if (isOptionsTrade && broker && needsMarketPrice && trade.optionConfig) {
                             const fixedStrike = trade.optionConfig.strike;
-                            const optType = trade.optionConfig.type;
+                            const optType = trade.optionConfig.type; 
                             const exitTimeStr = `${h}:${m}`;
-
-                            console.log(`\n🔬 [EXIT SNIPER] Trigger at ${exitTimeStr} for ${trade.exitReason}. Verifying exact OHLC for ${fixedStrike}...`);
-
-                            const axios = require('axios');
-                            let reqExpiry = trade.legConfig.expiry || "WEEKLY";
-                            let expFlag = "WEEK"; let expCode = 1;
-                            if (reqExpiry.toUpperCase() === "MONTHLY") { expFlag = "MONTH"; expCode = 1; }
-                            else if (reqExpiry.toUpperCase() === "NEXT WEEKLY" || reqExpiry.toUpperCase() === "NEXT WEEK") { expFlag = "WEEK"; expCode = 2; }
-
-                            const basePayload = {
-                                exchangeSegment: "NSE_FNO", interval: "1", securityId: Number(spotSecurityId), instrument: "OPTIDX",
-                                expiryFlag: expFlag, expiryCode: expCode,
-                                drvOptionType: optType === "CE" ? "CALL" : "PUT",
-                                requiredData: ["open", "high", "low", "close", "strike"],
-                                fromDate: dateStr, toDate: dateStr
-                            };
-
-                            // =========================================================================
-                            // 🤿 THE DEEP-SEA DIVER (Dynamic Step Calculator for Deep ITM/OTM)
-                            // =========================================================================
-                            const currentAtmAtExit = calculateATM(spotClosePrice, upperSymbol);
-                            const strikeDiff = Math.abs(fixedStrike - currentAtmAtExit);
-                            const stepSize = (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) ? 100 : 50;
-                            const exactStep = Math.round(strikeDiff / stepSize);
-
-                            let rawCandidates = ["ATM"];
-                            if (exactStep > 0) {
-                                // Agar 11 step dur hai, to safety ke liye 10, 11, 12 teeno check karenge!
-                                for (let s = Math.max(1, exactStep - 2); s <= exactStep + 2; s++) {
-                                    rawCandidates.push(`ITM${s}`, `OTM${s}`, `ITM-${s}`, `OTM-${s}`, `ITM ${s}`, `OTM ${s}`, `-${s}`);
-                                }
-                            } else {
-                                rawCandidates.push("ITM1", "OTM1", "ITM-1", "OTM-1", "-1");
-                            }
-
-                            // Duplicates hatane ke liye Set ka use
-                            const candidates = [...new Set(rawCandidates)];
-                            console.log(`\n🤿 [DEEP DIVER] Market shifted by ${exactStep} steps. Generated Deep Candidates:`, candidates.join(', '));
-                            //=========================================================================
-
+                            const cacheKey = `${fixedStrike}_${optType}_${dateStr}`; // Unique key for RAM
+                            
+                            let exitData = null;
+                            let actualExitIndex = -1;
                             let foundExactExit = false;
 
-                            for (let guess of candidates) {
-                                try {
-                                    const exitRes = await axios.post('https://api.dhan.co/v2/charts/rollingoption', { ...basePayload, strike: guess }, {
-                                        headers: { 'access-token': broker.apiSecret, 'client-id': broker.clientId, 'Content-Type': 'application/json' }
-                                    });
-                                    const optKey = optType === "CE" ? "ce" : "pe";
-                                    let exitData = exitRes.data.data ? exitRes.data.data[optKey] : null;
+                            // ⚡ 1. CHECK RAM CACHE FIRST (0 Milliseconds, No API Spam)
+                            if (optionDataCache[cacheKey]) {
+                                exitData = optionDataCache[cacheKey];
+                                for(let k=0; k<exitData.timestamp.length; k++){
+                                    const optTime = new Date(exitData.timestamp[k] * 1000 + (5.5 * 3600000));
+                                    if(optTime.toISOString().split('T')[1].substring(0, 5) === exitTimeStr) { actualExitIndex = k; break; }
+                                }
+                                if(actualExitIndex !== -1) foundExactExit = true;
+                            } 
+                            
+                            // 🐢 2. IF NOT IN CACHE, CALL API ONCE (500 Milliseconds)
+                            if (!foundExactExit) {
+                                const axios = require('axios'); 
+                                let reqExpiry = trade.legConfig.expiry || "WEEKLY";
+                                let expFlag = "WEEK"; let expCode = 1; 
+                                if (reqExpiry.toUpperCase() === "MONTHLY") { expFlag = "MONTH"; expCode = 1; } 
+                                else if (reqExpiry.toUpperCase() === "NEXT WEEKLY" || reqExpiry.toUpperCase() === "NEXT WEEK") { expFlag = "WEEK"; expCode = 2; }
+                                
+                                const basePayload = {
+                                    exchangeSegment: "NSE_FNO", interval: "1", securityId: Number(spotSecurityId), instrument: "OPTIDX",
+                                    expiryFlag: expFlag, expiryCode: expCode, 
+                                    drvOptionType: optType === "CE" ? "CALL" : "PUT", 
+                                    requiredData: ["open", "high", "low", "close", "strike"],
+                                    fromDate: dateStr, toDate: dateStr
+                                };
 
-                                    if (exitData && exitData.timestamp) {
-                                        let actualExitIndex = -1;
-                                        for (let k = 0; k < exitData.timestamp.length; k++) {
-                                            const optTime = new Date(exitData.timestamp[k] * 1000 + (5.5 * 3600000));
-                                            if (optTime.toISOString().split('T')[1].substring(0, 5) === exitTimeStr) { actualExitIndex = k; break; }
-                                        }
+                                const currentAtmAtExit = calculateATM(spotClosePrice, upperSymbol);
+                                const strikeDiff = Math.abs(fixedStrike - currentAtmAtExit);
+                                const stepSize = (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) ? 100 : 50; 
+                                const exactStep = Math.round(strikeDiff / stepSize);
 
-                                        if (actualExitIndex !== -1 && exitData.strike && exitData.strike[actualExitIndex] === fixedStrike) {
-                                            const mathPrice = trade.exitPrice;
-                                            const cOpen = exitData.open[actualExitIndex];
-                                            const cHigh = exitData.high[actualExitIndex];
-                                            const cLow = exitData.low[actualExitIndex];
-                                            const cClose = exitData.close[actualExitIndex];
+                                let rawCandidates = ["ATM"];
+                                if (exactStep > 0) {
+                                    for(let s = Math.max(1, exactStep - 2); s <= exactStep + 2; s++) {
+                                        rawCandidates.push(`ITM${s}`, `OTM${s}`, `ITM-${s}`, `OTM-${s}`, `ITM ${s}`, `OTM ${s}`, `-${s}`);
+                                    }
+                                } else {
+                                    rawCandidates.push("ITM1", "OTM1", "ITM-1", "OTM-1", "-1");
+                                }
+                                const candidates = [...new Set(rawCandidates)];
 
-                                            // 🛡️ THE GATEKEEPER CHECK: Did the real price actually hit the target/SL?
-                                            let isValidTrigger = true;
-                                            if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason)) {
-                                                if (trade.transaction === "BUY" && cLow > mathPrice) isValidTrigger = false; // BUY SL is below, low didn't reach
-                                                if (trade.transaction === "SELL" && cHigh < mathPrice) isValidTrigger = false; // SELL SL is above, high didn't reach
-                                            } else if (trade.exitReason === "TARGET") {
-                                                if (trade.transaction === "BUY" && cHigh < mathPrice) isValidTrigger = false;
-                                                if (trade.transaction === "SELL" && cLow > mathPrice) isValidTrigger = false;
+                                for(let guess of candidates) {
+                                    try {
+                                        const exitRes = await axios.post('https://api.dhan.co/v2/charts/rollingoption', { ...basePayload, strike: guess }, {
+                                            headers: { 'access-token': broker.apiSecret, 'client-id': broker.clientId, 'Content-Type': 'application/json' }
+                                        });
+                                        const optKey = optType === "CE" ? "ce" : "pe";
+                                        let tempExitData = exitRes.data.data ? exitRes.data.data[optKey] : null;
+
+                                        if (tempExitData && tempExitData.timestamp) {
+                                            let tempIndex = -1;
+                                            for(let k=0; k<tempExitData.timestamp.length; k++){
+                                                const optTime = new Date(tempExitData.timestamp[k] * 1000 + (5.5 * 3600000));
+                                                if(optTime.toISOString().split('T')[1].substring(0, 5) === exitTimeStr) { tempIndex = k; break; }
                                             }
-
-                                            if (!isValidTrigger) {
-                                                fakeTriggerRejected = true;
+                                            
+                                            if(tempIndex !== -1 && tempExitData.strike && tempExitData.strike[tempIndex] === fixedStrike) {
+                                                exitData = tempExitData;
+                                                actualExitIndex = tempIndex;
                                                 foundExactExit = true;
-                                                break; // Reject and break!
+                                                optionDataCache[cacheKey] = exitData; // 🔥 SAVED TO RAM FOR THE REST OF THE DAY!
+                                                break;
                                             }
+                                        }
+                                    } catch(e) { }
+                                }
+                            }
 
-                                            console.log(`✅ [SNIPER BINGO] Verified! Dhan mapped ${fixedStrike} to [ ${guess} ] at ${exitTimeStr}!`);
+                            // 🛡️ 3. GATEKEEPER VALIDATION (Uses 0ms Cached Data)
+                            if (foundExactExit && exitData) {
+                                const mathPrice = trade.exitPrice; 
+                                const cOpen = exitData.open[actualExitIndex];
+                                const cHigh = exitData.high[actualExitIndex];
+                                const cLow = exitData.low[actualExitIndex];
+                                const cClose = exitData.close[actualExitIndex];
 
-                                            // // 🚀 STRICT OVERWRITE TO CLOSE PRICE (Conservative Slippage)
-                                            // if (["STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason)) {
-                                            //     if (trade.transaction === "BUY") {
-                                            //         if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen < mathPrice) trade.exitPrice = cOpen;
-                                            //         else if (trade.exitReason === "TARGET" && cOpen > mathPrice) trade.exitPrice = cOpen;
-                                            //         else trade.exitPrice = cClose; 
-                                            //     } else { // SELL Trade
-                                            //         if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen > mathPrice) trade.exitPrice = cOpen;
-                                            //         else if (trade.exitReason === "TARGET" && cOpen < mathPrice) trade.exitPrice = cOpen;
-                                            //         else trade.exitPrice = cClose; 
-                                            //     }
-                                            // } else {
-                                            //     trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? cOpen : cClose;
-                                            // }
-                                           
-                                           
-                                            // // 🚀 REALISTIC EXECUTION (Removing overly punishing Close price)
-                                            // if (["STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason)) {
-                                            //     if (trade.transaction === "BUY") {
-                                            //         // Gap Down Slippage (Open is worse than SL)
-                                            //         if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen < mathPrice) trade.exitPrice = cOpen;
-                                            //         // Gap Up Jackpot (Open is better than Target)
-                                            //         else if (trade.exitReason === "TARGET" && cOpen > mathPrice) trade.exitPrice = cOpen;
-                                            //         // Smooth hit: Executed exactly at the trigger price (No artificial penalty)
-                                            //         else trade.exitPrice = mathPrice; 
-                                            //     } else { // SELL Trade
-                                            //         // Gap Up Slippage (Open is worse than SL)
-                                            //         if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen > mathPrice) trade.exitPrice = cOpen;
-                                            //         // Gap Down Jackpot (Open is better than Target)
-                                            //         else if (trade.exitReason === "TARGET" && cOpen < mathPrice) trade.exitPrice = cOpen;
-                                            //         // Smooth hit: Executed exactly at the trigger price
-                                            //         else trade.exitPrice = mathPrice; 
-                                            //     }
-                                            // } else {
-                                            //     // TIME_SQUAREOFF ke liye exact OPEN price
-                                            //     trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? cOpen : cClose;
-                                            // }
+                                let isValidTrigger = true;
+                                if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason)) {
+                                    if (trade.transaction === "BUY" && cLow > mathPrice) isValidTrigger = false; 
+                                    if (trade.transaction === "SELL" && cHigh < mathPrice) isValidTrigger = false; 
+                                } else if (trade.exitReason === "TARGET") {
+                                    if (trade.transaction === "BUY" && cHigh < mathPrice) isValidTrigger = false;
+                                    if (trade.transaction === "SELL" && cLow > mathPrice) isValidTrigger = false;
+                                }
 
-
-
-                                            // 🚀 DYNAMIC EXECUTION (Based on User UI Toggle)
-                                            if (["STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason)) {
-                                                
-                                                if (!useRealisticSlippage) {
-                                                    // 🔥 FRONTEND TOGGLE OFF (Strict Open Price Mode - Worst Case Scenario)
-                                                    // User chahta hai ki hit hone par exactly us minute ka Open price hi mile
-                                                    trade.exitPrice = cOpen; 
-
-                                                } else {
-                                                    // 🔥 FRONTEND TOGGLE ON (Realistic Mode - Smooth hits + Gap verification)
-                                                    if (trade.transaction === "BUY") {
-                                                        if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen < mathPrice) trade.exitPrice = cOpen;
-                                                        else if (trade.exitReason === "TARGET" && cOpen > mathPrice) trade.exitPrice = cOpen;
-                                                        else trade.exitPrice = mathPrice; // Smooth hit
-                                                    } else { // SELL Trade
-                                                        if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen > mathPrice) trade.exitPrice = cOpen;
-                                                        else if (trade.exitReason === "TARGET" && cOpen < mathPrice) trade.exitPrice = cOpen;
-                                                        else trade.exitPrice = mathPrice; // Smooth hit
-                                                    }
-                                                }
-
-                                            } else {
-                                                // TIME_SQUAREOFF always exits at EXACT OPEN price. 
-                                                trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? cOpen : cClose;
-                                            }
-
-                                            foundExactExit = true;
-                                            break;
+                                if (!isValidTrigger) {
+                                    fakeTriggerRejected = true;
+                                } else {
+                                    // FrontEnd Toggle check
+                                    if (!useRealisticSlippage) {
+                                        trade.exitPrice = cOpen; 
+                                    } else {
+                                        if (trade.transaction === "BUY") {
+                                            if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen < mathPrice) trade.exitPrice = cOpen;
+                                            else if (trade.exitReason === "TARGET" && cOpen > mathPrice) trade.exitPrice = cOpen;
+                                            else trade.exitPrice = mathPrice; 
+                                        } else { 
+                                            if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen > mathPrice) trade.exitPrice = cOpen;
+                                            else if (trade.exitReason === "TARGET" && cOpen < mathPrice) trade.exitPrice = cOpen;
+                                            else trade.exitPrice = mathPrice; 
                                         }
                                     }
-                                } catch (e) { }
+                                }
                             }
-
-                            // 🚀 GATEKEEPER REJECTION LOGIC
+                            
+                            // 🚀 4. SILENT GATEKEEPER REJECTION (No console logs to avoid terminal freezing)
                             if (fakeTriggerRejected) {
-                                console.log(`🛡️ [GATEKEEPER] Fake ${trade.exitReason} trigger rejected! Real High/Low didn't breach ${trade.exitPrice}. Trade continues...`);
                                 trade.markedForExit = false;
                                 trade.exitReason = null;
-                                trade.exitPrice = null; // Reset for next evaluation
+                                trade.exitPrice = null;
                                 remainingTrades.push(trade);
-                                continue; // SKIP THIS EXIT, GO TO NEXT TRADE!
+                                continue; 
                             }
 
-                            // =========================================================================
-                            // 🚨 ILLIQUID MINUTE & DEEP OTM/ITM SMART FALLBACK 🚨
-                            // =========================================================================
+                            // 🚨 5. ILLIQUID MINUTE & SMART FALLBACK
                             if (!foundExactExit) {
                                 if (["STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason)) {
-                                    console.log(`❌ [SNIPER FAILED] No data found at ${exitTimeStr}. Treating as fake trigger. Trade continues...`);
                                     trade.markedForExit = false;
                                     trade.exitReason = null;
                                     trade.exitPrice = null;
                                     remainingTrades.push(trade);
-                                    continue;
+                                    continue; 
                                 } else {
-                                    // 🔥 THE SMART OPTIONS PRICING ESTIMATOR (For TIME_SQUAREOFF & EOD)
-                                    // Agar Dhan API Deep strikes ka data reject kar de, to hum fake ATM price nahi lenge!
-                                    // Hum Intrinsic Value + Decayed Time Value ka formula lagayenge.
                                     const currentAtmAtFallback = calculateATM(spotClosePrice, upperSymbol);
                                     const stepSize = (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) ? 100 : 50;
                                     const stepDiff = Math.round(Math.abs(fixedStrike - currentAtmAtFallback) / stepSize);
-
+                                    
                                     let intrinsicValue = 0;
                                     if (optType === "CE") intrinsicValue = Math.max(0, spotClosePrice - fixedStrike);
                                     else intrinsicValue = Math.max(0, fixedStrike - spotClosePrice);
 
-                                    // Fake ATM rolling price (e.g., 176.40)
                                     const rollingAtmPrice = trade.exitReason === "TIME_SQUAREOFF" ? trade.currentOpen : trade.currentPrice;
-
-                                    // Decay formula: ATM Price / (1.2 ^ steps) -> Accurately estimates deep option time value!
                                     const estimatedTimeValue = rollingAtmPrice / Math.pow(1.2, stepDiff);
-                                    const estimatedFinalPrice = intrinsicValue + estimatedTimeValue;
-
-                                    console.log(`🛠️ [SMART FALLBACK] API failed for ${fixedStrike}. Spot: ${spotClosePrice}, IV: ${intrinsicValue.toFixed(2)}, Est. Time Value: ${estimatedTimeValue.toFixed(2)} -> Final Price: ${estimatedFinalPrice.toFixed(2)}`);
-
-                                    if (!trade.exitPrice) trade.exitPrice = estimatedFinalPrice;
+                                    
+                                    if (!trade.exitPrice) trade.exitPrice = intrinsicValue + estimatedTimeValue;
                                 }
                             }
                         } else {
                             if (!trade.exitPrice) trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? trade.currentOpen : trade.currentPrice;
                         }
-
                         // =========================================================================
 
                         const pnl = calcTradePnL(trade.entryPrice, trade.exitPrice, trade.quantity, trade.transaction);

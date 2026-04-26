@@ -375,7 +375,7 @@ async function fetchFixedStrikeData(dateStr, reqExpiry, optType, initialStrikeTy
 }
 
 async function runAllTests() {
-    await fetchFixedStrikeData("2026-02-16", "WEEKLY", "CE", "ATM", "09:45", "10:02");
+    await fetchFixedStrikeData("2026-04-17", "WEEKLY", "PE", "ATM", "09:45", "15:15");
 }
 
 runAllTests();
