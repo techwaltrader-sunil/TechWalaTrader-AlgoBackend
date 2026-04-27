@@ -4588,27 +4588,22 @@ const runBacktestSimulator = async (req, res) => {
                                 const currentAtmAtExit = calculateATM(spotClosePrice, upperSymbol);
                                 const stepSize = (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) ? 100 : 50; 
                                 
-                                // 🔥 THE O(1) SMART MATH SNIPER UPGRADE 🔥
-                                // X-Ray Secret: Dhan API ignores "ITM/OTM" text! It only multiplies the number by stepSize!
-                                // ITM1 = +1 step, ITM-1 = -1 step. 
-                                // To hum 100 strike kyo check karein? Seedha Exact Step nikalenge!
-                                
-                                // Note: Math.abs hata diya taaki (+) aur (-) sign barkarar rahe
-                                const exactStep = Math.round((fixedStrike - currentAtmAtExit) / stepSize); 
+                               
+                                const strikeDiff = fixedStrike - currentAtmAtExit; // Note: Math.abs hata diya taaki sign barkarar rahe
+                                const exactStep = Math.round(strikeDiff / stepSize); 
 
                                 let candidates = ["ATM"];
-                                if (exactStep !== 0) {
-                                    // 🔥 REDUNDANCY UPGRADE: ITM aur OTM dono bhejenge safety ke liye
-                                    candidates.push(`ITM${exactStep}`, `OTM${exactStep}`);       
-                                    candidates.push(`ITM${exactStep + 1}`, `OTM${exactStep + 1}`);   
-                                    candidates.push(`ITM${exactStep - 1}`, `OTM${exactStep - 1}`);   
-                                    candidates.push(`ITM${exactStep + 2}`, `OTM${exactStep + 2}`);
-                                    candidates.push(`ITM${exactStep - 2}`, `OTM${exactStep - 2}`);
-                                } else {
-                                    candidates.push("ITM1", "ITM-1", "OTM1", "OTM-1", "ITM2", "ITM-2");
+                                
+                                // 🔥 THE DRIFT CATCHER UPGRADE 🔥
+                                // Dhan ka internal ATM spot se alag ho sakta hai (Futures ke karan).
+                                // Isliye hum apne anuman (exactStep) ke aage-peeche 8 steps ka bada jaal bichhayenge!
+                                // Dhan "ITM" aur "OTM" word ignore karta hai, isliye hum sirf "ITM" bhejenge taaki API request aadhi ho jayein!
+                                for (let s = exactStep - 8; s <= exactStep + 8; s++) {
+                                    if (s !== 0) candidates.push(`ITM${s}`);
                                 }
                                 
-                                // Remove any duplicates
+                                // Safety net near ATM
+                                candidates.push("ITM1", "ITM-1", "ITM2", "ITM-2");
                                 candidates = [...new Set(candidates)];
 
                                 let retryCount = 0; 
@@ -4619,7 +4614,7 @@ const runBacktestSimulator = async (req, res) => {
                                     try {
                                         const exitRes = await axios.post('https://api.dhan.co/v2/charts/rollingoption', { ...basePayload, strike: guess }, {
                                             headers: { 'access-token': broker.apiSecret, 'client-id': broker.clientId, 'Content-Type': 'application/json' },
-                                            timeout: 5000 // 🌟 Time badha kar 5 sec kar diya hai
+                                            timeout: 5000 
                                         });
                                         
                                         retryCount = 0; 
@@ -4644,16 +4639,14 @@ const runBacktestSimulator = async (req, res) => {
                                         }
                                     } catch (e) {
                                         const status = e.response ? e.response.status : 0;
-                                        // 🌟 THE SILENT KILLER FIX: Ab 429 ke sath Timeout (0) aur Server Error (500) bhi pakdega!
                                         if (status === 429 || status === 0 || status >= 500 || (e.response && e.response.data && e.response.data.errorCode === 'DH-904')) {
                                             if (retryCount < 2) { 
-                                                console.log(`🛑 Sniper API Error (Status: ${status}) for ${guess}. Retrying same strike...`);
-                                                await delay(status === 429 ? 3000 : 1500); // 429 ke liye 3s, timeout ke liye 1.5s ruko
+                                                console.log(`🛑 Sniper API Error (Status: ${status}) for ${guess}. Retrying...`);
+                                                await delay(status === 429 ? 3000 : 1500);
                                                 retryCount++;
-                                                c--; // 🌟 Wapas usi strike par jao!
+                                                c--; // Retry the exact same candidate
                                                 continue; 
                                             } else {
-                                                console.log(`⚠️ Max retries reached for ${guess}. Moving to next.`);
                                                 retryCount = 0; 
                                                 continue; 
                                             }
