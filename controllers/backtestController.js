@@ -4633,15 +4633,12 @@ const runBacktestSimulator = async (req, res) => {
                                 let rateLimitBreached = false;
 
                                 for(let guess of candidates) {
-                                    if (rateLimitBreached) break; // Dhan API gussa hai, loop tod do aur Fallback pe jao!
-
-                                    await delay(300); // 300ms ka saans
+                                    await delay(250); // 250ms ka saans API ko block hone se bachayega
                                     
                                     try {
-                                        // 🛑 DHYAN DEIN: Yahan 'withRetry' use NAHI karna hai! Direct Axios hit karenge.
                                         const exitRes = await axios.post('https://api.dhan.co/v2/charts/rollingoption', { ...basePayload, strike: guess }, {
                                             headers: { 'access-token': broker.apiSecret, 'client-id': broker.clientId, 'Content-Type': 'application/json' },
-                                            timeout: 4000 // 🛑 PREVENTS API HANGS (4 Sec Max)
+                                            timeout: 4000
                                         });
                                         
                                         const optKey = optType === "CE" ? "ce" : "pe";
@@ -4659,15 +4656,16 @@ const runBacktestSimulator = async (req, res) => {
                                                 actualExitIndex = tempIndex;
                                                 foundExactExit = true;
                                                 optionDataCache[cacheKey] = exitData; // RAM me save
-                                                break;
+                                                break; // Target mil gaya, ab loop tod do!
                                             }
                                         }
                                     } catch (e) {
                                         const status = e.response ? e.response.status : 0;
                                         if (status === 429 || (e.response && e.response.data && e.response.data.errorCode === 'DH-904')) {
-                                            console.log(`🛑 Sniper hit Rate Limit (429) for ${guess}. Aborting deep search -> Using Smart Fallback!`);
-                                            rateLimitBreached = true; 
-                                            break; // Loop tod do, time barbad nahi karna!
+                                            console.log(`🛑 Sniper hit Rate Limit (429) for ${guess}. Pausing for 3 seconds, then continuing...`);
+                                            // 🌟 THE X-RAY FIX: Ab hum loop nahi todenge (break nahi karenge)! 
+                                            await delay(3000); // 3 second aaram karenge...
+                                            continue; // ...aur agli strike check karenge!
                                         }
                                     }
                                 }
