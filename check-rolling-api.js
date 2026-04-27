@@ -269,7 +269,7 @@ const CLIENT_ID = "YOUR_CLIENT_ID";
 const ACCESS_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzc3MjYxMzc1LCJpYXQiOjE3NzcxNzQ5NzUsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTAzMjM4NzQ0In0.qkUZSXGBmcnNY7vUafdaSjKIJ7twd8UxKVfVpi1qpvujfmAeUaNcx0iht0qwSy85zaLf82ksfIRaVOpKm2H42g";
 
 // =========================================================================
-// 🚀 THE MASTER FUNCTION (Precision Sniper + Minus Hack + Entry OHLC)
+// 🚀 THE MASTER FUNCTION (Deep-Sea Diver + OHLC + Precision Sniper)
 // =========================================================================
 async function fetchFixedStrikeData(dateStr, reqExpiry, optType, initialStrikeType, entryTime, exitTime) {
     let expFlag = "WEEK"; let expCode = 1; 
@@ -309,10 +309,9 @@ async function fetchFixedStrikeData(dateStr, reqExpiry, optType, initialStrikeTy
 
         if(entryIndex === -1 || exitIndexATM === -1) return console.log("❌ Entry ya Exit time ATM chart me nahi mila.");
 
-        // 🔥 Humara Target: 25950
+        // 🔥 Humara Target Fixed Strike
         const fixedStrike = entryData.strike[entryIndex];
         console.log(`🟢 ENTRY (${entryTime}): Strike Lock = ${fixedStrike} (${initialStrikeType})`);
-        // 👇 YAHI LINE GAYAB HO GAYI THI, Ise wapas la diya gaya hai! 👇
         console.log(`   └─ O: ${entryData.open[entryIndex]} | H: ${entryData.high[entryIndex]} | L: ${entryData.low[entryIndex]} | C: ${entryData.close[entryIndex]}`);
         
         const currentAtmAtExit = entryData.strike[exitIndexATM];
@@ -324,10 +323,29 @@ async function fetchFixedStrikeData(dateStr, reqExpiry, optType, initialStrikeTy
         }
 
         console.log(`\n🔍 EXIT TIME (${exitTime}): ATM shifted to ${currentAtmAtExit}. We need ${fixedStrike}.`);
-        console.log(`🔬 Starting Sniper to find which label gives ${fixedStrike} AT exactly ${exitTime}...\n`);
+        console.log(`🔬 Starting DEEP DIVER Sniper to find which label gives ${fixedStrike} AT exactly ${exitTime}...\n`);
 
-        // 🔥 THE SNIPER WITH MINUS HACK
-        const candidates = ["ITM-1", "OTM-1", "-ITM1", "-OTM1", "-1", "ITM1", "ITM2", "ITM3", "OTM1", "OTM2", "OTM3", "ITM 1", "OTM 1"];
+        // =========================================================================
+        // 🤿 THE DEEP-SEA DIVER (Dynamic Candidates Generator)
+        // =========================================================================
+        const strikeDiff = Math.abs(fixedStrike - currentAtmAtExit);
+        const stepSize = 50; // NIFTY 50 step size is 50
+        const exactStep = Math.round(strikeDiff / stepSize);
+
+        let rawCandidates = ["ATM"];
+        if (exactStep > 0) {
+            // Agar market 10 step dur hai, to hum 8, 9, 10, 11, 12 sab check karenge
+            for(let s = Math.max(1, exactStep - 2); s <= exactStep + 2; s++) {
+                rawCandidates.push(`ITM${s}`, `OTM${s}`, `ITM-${s}`, `OTM-${s}`, `ITM ${s}`, `OTM ${s}`, `-${s}`);
+            }
+        } else {
+            rawCandidates.push("ITM1", "OTM1", "ITM-1", "OTM-1", "-1", "ITM2", "OTM2");
+        }
+        
+        const candidates = [...new Set(rawCandidates)];
+        console.log(`🤿 Generated Dynamic Deep Candidates (${exactStep} steps away):`, candidates.join(', '), '\n');
+        // =========================================================================
+
         let foundExactExit = false;
 
         for(let guess of candidates) {
@@ -375,7 +393,8 @@ async function fetchFixedStrikeData(dateStr, reqExpiry, optType, initialStrikeTy
 }
 
 async function runAllTests() {
-    await fetchFixedStrikeData("2026-04-17", "WEEKLY", "PE", "ATM", "09:45", "15:15");
+    // Yahan apni pasand ki Deep OTM / Deep ITM entry test karein
+    await fetchFixedStrikeData("2026-04-13", "WEEKLY", "PE", "ATM", "09:45", "10:07");
 }
 
 runAllTests();

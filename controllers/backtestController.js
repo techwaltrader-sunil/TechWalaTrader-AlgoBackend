@@ -4636,7 +4636,8 @@ const runBacktestSimulator = async (req, res) => {
                                     try {
                                         // 🛑 DHYAN DEIN: Yahan 'withRetry' use NAHI karna hai! Direct Axios hit karenge.
                                         const exitRes = await axios.post('https://api.dhan.co/v2/charts/rollingoption', { ...basePayload, strike: guess }, {
-                                            headers: { 'access-token': broker.apiSecret, 'client-id': broker.clientId, 'Content-Type': 'application/json' }
+                                            headers: { 'access-token': broker.apiSecret, 'client-id': broker.clientId, 'Content-Type': 'application/json' },
+                                            timeout: 4000 // 🛑 PREVENTS API HANGS (4 Sec Max)
                                         });
                                         
                                         const optKey = optType === "CE" ? "ce" : "pe";
@@ -4714,7 +4715,7 @@ const runBacktestSimulator = async (req, res) => {
                                 }
                             }
                             
-                           // 🚀 4. SILENT GATEKEEPER REJECTION (Ghost Buster Fixed)
+                          // 🚀 4. SILENT GATEKEEPER REJECTION (Ghost Buster Fixed)
                             if (fakeTriggerRejected) {
                                 if (isExitTime || isLastCandleOfDay) {
                                     // Agar market band ho raha hai, to reject mat karo! Force Square-off karo!
@@ -4728,7 +4729,7 @@ const runBacktestSimulator = async (req, res) => {
                                 }
                             }
 
-                            // 🚨 5. ILLIQUID MINUTE & SMART FALLBACK
+                            // 🚨 5. ILLIQUID MINUTE & SMART FALLBACK (THE QUANT CHEF)
                             if (!foundExactExit) {
                                 if (["STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason)) {
                                     if (isExitTime || isLastCandleOfDay) {
@@ -4743,7 +4744,7 @@ const runBacktestSimulator = async (req, res) => {
                                     }
                                 } 
                                 
-                                // 🛡️ THE FALLBACK (Ab TIME_SQUAREOFF wale trades yahan se nikalenge)
+                                // 👨‍🍳 THE QUANT CHEF ESTIMATOR (Intrinsic + Theta Decay Math)
                                 const currentAtmAtFallback = calculateATM(spotClosePrice, upperSymbol);
                                 const stepSize = (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) ? 100 : 50;
                                 const stepDiff = Math.round(Math.abs(fixedStrike - currentAtmAtFallback) / stepSize);
@@ -4752,9 +4753,37 @@ const runBacktestSimulator = async (req, res) => {
                                 if (optType === "CE") intrinsicValue = Math.max(0, spotClosePrice - fixedStrike);
                                 else intrinsicValue = Math.max(0, fixedStrike - spotClosePrice);
 
-                                const rollingAtmPrice = (trade.exitReason === "TIME_SQUAREOFF" || trade.exitReason === "EOD_SQUAREOFF") ? trade.currentOpen : trade.currentPrice;
-                                const estimatedTimeValue = rollingAtmPrice / Math.pow(1.2, stepDiff);
+                                // 📅 Calculate Days to Expiry (DTE) for Realistic Theta
+                                let dte = 0;
+                                try {
+                                    const expMatch = trade.symbol.match(/EXP (\d{2}[A-Z]{3}\d{2})/i);
+                                    if (expMatch && expMatch[1]) {
+                                        const expDay = parseInt(expMatch[1].substring(0, 2));
+                                        const monthStr = expMatch[1].substring(2, 5);
+                                        const expYear = parseInt("20" + expMatch[1].substring(5, 7));
+                                        const monthMap = {JAN:0, FEB:1, MAR:2, APR:3, MAY:4, JUN:5, JUL:6, AUG:7, SEP:8, OCT:9, NOV:10, DEC:11};
+                                        const expDateObj = new Date(expYear, monthMap[monthStr.toUpperCase()], expDay, 15, 30, 0);
+                                        
+                                        const diffTime = expDateObj.getTime() - istDate.getTime();
+                                        dte = Math.max(0, diffTime / (1000 * 60 * 60 * 24)); 
+                                    }
+                                } catch(e) { dte = 1; }
+
+                                // 🧮 Black-Scholes Proxy: ATM Premium estimation based on Spot & DTE
+                                let estimatedAtmPremium = 0;
+                                if (dte >= 1) {
+                                    // Multi-day Decay (Like Wednesday 6 DTE vs Monday 1 DTE)
+                                    estimatedAtmPremium = spotClosePrice * 0.01 * Math.sqrt(dte / 7);
+                                } else {
+                                    // 0 DTE (Expiry Day) - Rapid Intraday Decay
+                                    const minutesLeft = Math.max(0, 930 - timeInMinutes); // 15:30 is 930 mins
+                                    estimatedAtmPremium = spotClosePrice * 0.005 * Math.sqrt(minutesLeft / 375); 
+                                }
+
+                                // 📉 Apply OTM/ITM Step Decay (Divide by 1.2 per step)
+                                const estimatedTimeValue = estimatedAtmPremium / Math.pow(1.2, stepDiff);
                                 
+                                // 🍽️ Serve the Exact Mathematical Price!
                                 if (!trade.exitPrice) trade.exitPrice = intrinsicValue + estimatedTimeValue;
                             }
                         }
