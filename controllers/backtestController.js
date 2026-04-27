@@ -4686,7 +4686,16 @@ const runBacktestSimulator = async (req, res) => {
                                     if (trade.transaction === "SELL" && cLow > mathPrice) isValidTrigger = false;
                                 }
 
-                                if (!isValidTrigger) {
+                                // 🔥 THE FLATLINE DETECTOR (Dhan API Bug Fix)
+                                let isFlatline = false;
+                                if (["TIME_SQUAREOFF", "EOD_SQUAREOFF"].includes(trade.exitReason)) {
+                                    // Agar Dhan API ne dead candle bheja jiska price entry price se exactly match ho raha hai
+                                    if (cOpen === trade.entryPrice || cClose === trade.entryPrice) {
+                                        isFlatline = true; // Yeh mara hua data hai!
+                                    }
+                                }
+
+                                if (!isValidTrigger || isFlatline) {
                                     fakeTriggerRejected = true;
                                 } else {
                                     // 🔥 THE MISSING LINK FIX: Sirf SL/Target ke liye Slippage logic chalega
@@ -4708,18 +4717,17 @@ const runBacktestSimulator = async (req, res) => {
                                         }
                                         
                                     } else {
-                                        // 🛡️ Indicator, Time Squareoff, aur EXIT_ALL_SL ke liye normal Market Price!
-                                        // Yahan null aane ka sawal hi paida nahi hota!
                                         trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? cOpen : cClose;
                                     }
                                 }
                             }
                             
-                          // 🚀 4. SILENT GATEKEEPER REJECTION (Ghost Buster Fixed)
+                            // 🚀 4. SILENT GATEKEEPER REJECTION (Ghost Buster Fixed)
                             if (fakeTriggerRejected) {
                                 if (isExitTime || isLastCandleOfDay) {
                                     // Agar market band ho raha hai, to reject mat karo! Force Square-off karo!
                                     trade.exitReason = isLastCandleOfDay ? "EOD_SQUAREOFF" : "TIME_SQUAREOFF";
+                                    foundExactExit = false; // 🔥 FORCE THE QUANT CHEF TO COOK!
                                 } else {
                                     trade.markedForExit = false;
                                     trade.exitReason = null;
