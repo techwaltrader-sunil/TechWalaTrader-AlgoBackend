@@ -266,7 +266,7 @@ const axios = require('axios');
 
 // 🔥 1. APNI DETAILS YAHAN DALEIN
 const CLIENT_ID = "YOUR_CLIENT_ID"; 
-const ACCESS_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzc3MjYxMzc1LCJpYXQiOjE3NzcxNzQ5NzUsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTAzMjM4NzQ0In0.qkUZSXGBmcnNY7vUafdaSjKIJ7twd8UxKVfVpi1qpvujfmAeUaNcx0iht0qwSy85zaLf82ksfIRaVOpKm2H42g";
+const ACCESS_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzc3MzY4MzgyLCJpYXQiOjE3NzcyODE5ODIsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTAzMjM4NzQ0In0.inMaZrgea--yVMcq492EAOf_Hdlg8Wew6GaJlOV6pozwJCCciJ9Xxb89x4VrLauYOP2WIbhqYGYu0p9HGPitsQ";
 
 // =========================================================================
 // 🚀 THE MASTER FUNCTION (Deep-Sea Diver + OHLC + Precision Sniper)
@@ -394,7 +394,7 @@ async function fetchFixedStrikeData(dateStr, reqExpiry, optType, initialStrikeTy
 
 async function runAllTests() {
     // Yahan apni pasand ki Deep OTM / Deep ITM entry test karein
-    await fetchFixedStrikeData("2026-04-13", "WEEKLY", "PE", "ATM", "09:45", "10:07");
+    await fetchFixedStrikeData("2026-03-20", "WEEKLY", "CE", "ATM", "09:45", "15:11");
 }
 
 runAllTests();

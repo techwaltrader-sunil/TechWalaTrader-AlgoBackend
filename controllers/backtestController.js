@@ -4758,7 +4758,15 @@ const runBacktestSimulator = async (req, res) => {
                                 // Ab kyunki humne trade.exitPrice ko 'null' kar diya hai, Chef 100% kaam karega!
                                 if (!trade.exitPrice) {
                                     const currentAtmAtFallback = calculateATM(spotClosePrice, upperSymbol);
-                                    const stepSize = (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) ? 100 : 50;
+                                    
+                                    // 🔥 MICHELIN STAR CHEF UPGRADE (Calibrated for Indian Markets)
+                                    let stepSize = 50; let decayFactor = 1.10; let baseMultiplier = 0.0125; // Nifty Defaults
+                                    if (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) { 
+                                        stepSize = 100; decayFactor = 1.15; baseMultiplier = 0.013; 
+                                    } else if (upperSymbol.includes("MID")) { 
+                                        stepSize = 25; decayFactor = 1.08; baseMultiplier = 0.012; 
+                                    }
+
                                     const stepDiff = Math.round(Math.abs(fixedStrike - currentAtmAtFallback) / stepSize);
                                     
                                     let intrinsicValue = 0;
@@ -4781,17 +4789,17 @@ const runBacktestSimulator = async (req, res) => {
                                         }
                                     } catch(e) { dte = 1; }
 
-                                    // 🧮 Black-Scholes Proxy: ATM Premium estimation based on Spot & DTE
+                                    // 🧮 Black-Scholes Proxy: Adapted for Indian Average VIX
                                     let estimatedAtmPremium = 0;
                                     if (dte >= 1) {
-                                        estimatedAtmPremium = spotClosePrice * 0.01 * Math.sqrt(dte / 7);
+                                        estimatedAtmPremium = spotClosePrice * baseMultiplier * Math.sqrt(dte / 7);
                                     } else {
                                         const minutesLeft = Math.max(0, 930 - timeInMinutes); 
-                                        estimatedAtmPremium = spotClosePrice * 0.005 * Math.sqrt(minutesLeft / 375); 
+                                        estimatedAtmPremium = spotClosePrice * (baseMultiplier / 2) * Math.sqrt(minutesLeft / 375); 
                                     }
 
-                                    // 📉 Apply OTM/ITM Step Decay
-                                    const estimatedTimeValue = estimatedAtmPremium / Math.pow(1.2, stepDiff);
+                                    // 📉 Apply Realistic OTM/ITM Step Decay
+                                    const estimatedTimeValue = estimatedAtmPremium / Math.pow(decayFactor, stepDiff);
                                     
                                     // 🍽️ Serve the Exact Mathematical Price!
                                     trade.exitPrice = intrinsicValue + estimatedTimeValue;
