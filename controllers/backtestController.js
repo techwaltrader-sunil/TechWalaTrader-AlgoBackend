@@ -4394,7 +4394,6 @@ const runBacktestSimulator = async (req, res) => {
                 }
 
 
-
                 // 🔥 FIX 3: MOVE SL TO COST TRACKERS
                 let anyLegHitSlPast = dailyBreakdownMap[dateStr].tradesList.some(t => t.exitType === "STOPLOSS" || t.exitType === "SL_MOVED_TO_COST");
                 let anyLegHitSlThisTick = false;
@@ -4527,37 +4526,6 @@ const runBacktestSimulator = async (req, res) => {
                     }
                 }
 
-                // let remainingTrades = [];
-                // openTrades.forEach(trade => {
-                //     if (trade.markedForExit || isExitTime || isLastCandleOfDay) {
-                //         if (!trade.markedForExit) {
-                //             trade.exitReason = isLastCandleOfDay ? "EOD_SQUAREOFF" : "TIME_SQUAREOFF";
-                //             // 🔥 THE DOT-TO-DOT FIX: Square-Off time par EXACT Open price uthao!
-                //             trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? trade.currentOpen : trade.currentPrice;
-                //         }
-
-                //         const pnl = calcTradePnL(trade.entryPrice, trade.exitPrice, trade.quantity, trade.transaction);
-
-                //         const completedTrade = {
-                //             ...trade,
-                //             exitTime: `${h}:${m}:00`,
-                //             pnl: pnl,
-                //             exitType: trade.exitReason
-                //         };
-
-                //         dailyBreakdownMap[dateStr].tradesList.push(completedTrade);
-                //         dailyBreakdownMap[dateStr].pnl += pnl;
-                //         dailyBreakdownMap[dateStr].trades += 1;
-                //         if (pnl > 0) { winTrades++; if(pnl > maxProfitTrade) maxProfitTrade = pnl; } 
-                //         else { lossTrades++; if(pnl < maxLossTrade) maxLossTrade = pnl; }
-
-                //         console.log(`🎯 [${completedTrade.exitType}] Date: ${dateStr} | Symbol: ${trade.symbol} | Exit: ${trade.exitPrice.toFixed(2)} | PnL: ${pnl.toFixed(2)}`);
-                //     } else {
-                //         remainingTrades.push(trade); 
-                //     }
-                // });
-
-                // openTrades = remainingTrades; 
 
                 let remainingTrades = [];
                 for (let trade of openTrades) {
@@ -4574,10 +4542,11 @@ const runBacktestSimulator = async (req, res) => {
                         let fakeTriggerRejected = false;
 
                         if (isOptionsTrade && broker && needsMarketPrice && trade.optionConfig) {
-                            const fixedStrike = trade.optionConfig.strike;
+                            // 🌟 X-RAY FIX 1: Ensure fixedStrike is strictly a Number to prevent "===" failure!
+                            const fixedStrike = Number(trade.optionConfig.strike);
                             const optType = trade.optionConfig.type; 
                             const exitTimeStr = `${h}:${m}`;
-                            const cacheKey = `${fixedStrike}_${optType}_${dateStr}`; // Unique key for RAM
+                            const cacheKey = `${fixedStrike}_${optType}_${dateStr}`; 
                             
                             let exitData = null;
                             let actualExitIndex = -1;
@@ -4585,15 +4554,22 @@ const runBacktestSimulator = async (req, res) => {
 
                             // ⚡ 1. CHECK RAM CACHE FIRST (0 Milliseconds, No API Spam)
                             if (optionDataCache[cacheKey]) {
-                                exitData = optionDataCache[cacheKey];
-                                for(let k=0; k<exitData.timestamp.length; k++){
-                                    const optTime = new Date(exitData.timestamp[k] * 1000 + (5.5 * 3600000));
-                                    if(optTime.toISOString().split('T')[1].substring(0, 5) === exitTimeStr) { actualExitIndex = k; break; }
+                                let cachedChart = optionDataCache[cacheKey];
+                                for(let k=0; k<cachedChart.timestamp.length; k++){
+                                    const optTime = new Date(cachedChart.timestamp[k] * 1000 + (5.5 * 3600000));
+                                    if(optTime.toISOString().split('T')[1].substring(0, 5) === exitTimeStr) { 
+                                        // 🌟 X-RAY FIX 2: Check if cached Rolling Chart STILL matches our strike at this exact minute!
+                                        if (cachedChart.strike && Number(cachedChart.strike[k]) === fixedStrike) {
+                                            actualExitIndex = k; 
+                                            exitData = cachedChart;
+                                            foundExactExit = true;
+                                        }
+                                        break; 
+                                    }
                                 }
-                                if(actualExitIndex !== -1) foundExactExit = true;
                             } 
                             
-                            // 🐢 2. IF NOT IN CACHE, CALL API ONCE (500 Milliseconds)
+                            // 🐢 2. IF NOT IN CACHE, CALL API (500 Milliseconds)
                             if (!foundExactExit) {
                                 const axios = require('axios'); 
                                 let reqExpiry = trade.legConfig.expiry || "WEEKLY";
@@ -4621,7 +4597,6 @@ const runBacktestSimulator = async (req, res) => {
                                         rawCandidates.push(`ITM${s}`, `OTM${s}`, `ITM-${s}`, `OTM-${s}`, `ITM ${s}`, `OTM ${s}`, `-${s}`);
                                     }
                                 } else {
-                                    // Agar market wahi hai, tab bhi safety ke liye aage-peeche 5 step check kar lo
                                     for(let s = 1; s <= 5; s++) {
                                         rawCandidates.push(`ITM${s}`, `OTM${s}`, `ITM-${s}`, `OTM-${s}`, `-${s}`);
                                     }
@@ -4629,11 +4604,6 @@ const runBacktestSimulator = async (req, res) => {
 
                                 const candidates = [...new Set(rawCandidates)];
 
-                               // 🔥 SMART SNIPER ESCAPE (Rollback se delete ho gaya tha, wapas laya gaya!)
-                                let rateLimitBreached = false;
-
-                                // 🔥 THE RESILIENT SNIPER (Rate Limit Survival - V2)
-                                // 🌟 X-RAY RESULT: 'c--' ka jadu, ab koi bhi strike skip nahi hogi!
                                 for(let c = 0; c < candidates.length; c++) {
                                     let guess = candidates[c];
                                     await delay(250); 
@@ -4654,12 +4624,13 @@ const runBacktestSimulator = async (req, res) => {
                                                 if(optTime.toISOString().split('T')[1].substring(0, 5) === exitTimeStr) { tempIndex = k; break; }
                                             }
                                             
-                                            if(tempIndex !== -1 && tempExitData.strike && tempExitData.strike[tempIndex] === fixedStrike) {
+                                            // 🌟 X-RAY FIX 1 Applied Here: Strict Number() casting
+                                            if(tempIndex !== -1 && tempExitData.strike && Number(tempExitData.strike[tempIndex]) === fixedStrike) {
                                                 exitData = tempExitData;
                                                 actualExitIndex = tempIndex;
                                                 foundExactExit = true;
                                                 optionDataCache[cacheKey] = exitData; // RAM me save
-                                                break; // Target mil gaya, ab loop tod do!
+                                                break; 
                                             }
                                         }
                                     } catch (e) {
@@ -4667,7 +4638,7 @@ const runBacktestSimulator = async (req, res) => {
                                         if (status === 429 || (e.response && e.response.data && e.response.data.errorCode === 'DH-904')) {
                                             console.log(`🛑 Sniper hit Rate Limit (429) for ${guess}. Pausing for 3s and RETRYING the SAME strike...`);
                                             await delay(3000); 
-                                            c--; // 🌟 THE MAGIC BULLET: Index ko 1 kadam peeche karo, taaki loop wapas isi 'guess' par aaye!
+                                            c--; 
                                             continue; 
                                         }
                                     }
