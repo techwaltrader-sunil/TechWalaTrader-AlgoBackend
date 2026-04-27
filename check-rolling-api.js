@@ -268,6 +268,9 @@ const axios = require('axios');
 const CLIENT_ID = "YOUR_CLIENT_ID"; 
 const ACCESS_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzc3MzY4MzgyLCJpYXQiOjE3NzcyODE5ODIsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTAzMjM4NzQ0In0.inMaZrgea--yVMcq492EAOf_Hdlg8Wew6GaJlOV6pozwJCCciJ9Xxb89x4VrLauYOP2WIbhqYGYu0p9HGPitsQ";
 
+// 🛑 Dhan API ko hang hone se bachane ke liye chota sa timeout/delay
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 // =========================================================================
 // 🚀 THE MASTER FUNCTION (Deep-Sea Diver + OHLC + Precision Sniper)
 // =========================================================================
@@ -326,7 +329,7 @@ async function fetchFixedStrikeData(dateStr, reqExpiry, optType, initialStrikeTy
         console.log(`🔬 Starting DEEP DIVER Sniper to find which label gives ${fixedStrike} AT exactly ${exitTime}...\n`);
 
         // =========================================================================
-        // 🤿 THE DEEP-SEA DIVER (Dynamic Candidates Generator)
+        // 🤿 THE DEEP-SEA DIVER (Dynamic Candidates Generator) - 10 STEPS UPGRADE
         // =========================================================================
         const strikeDiff = Math.abs(fixedStrike - currentAtmAtExit);
         const stepSize = 50; // NIFTY 50 step size is 50
@@ -334,12 +337,15 @@ async function fetchFixedStrikeData(dateStr, reqExpiry, optType, initialStrikeTy
 
         let rawCandidates = ["ATM"];
         if (exactStep > 0) {
-            // Agar market 10 step dur hai, to hum 8, 9, 10, 11, 12 sab check karenge
-            for(let s = Math.max(1, exactStep - 2); s <= exactStep + 2; s++) {
+            // 🔥 NAYA FIX: Ab hum +/- 10 steps (bahut deep) tak check karenge!
+            for(let s = Math.max(1, exactStep - 10); s <= exactStep + 10; s++) {
                 rawCandidates.push(`ITM${s}`, `OTM${s}`, `ITM-${s}`, `OTM-${s}`, `ITM ${s}`, `OTM ${s}`, `-${s}`);
             }
         } else {
-            rawCandidates.push("ITM1", "OTM1", "ITM-1", "OTM-1", "-1", "ITM2", "OTM2");
+            // Agar market wahi hai, tab bhi safety ke liye aage-peeche 5 step check kar lo
+            for(let s = 1; s <= 5; s++) {
+                rawCandidates.push(`ITM${s}`, `OTM${s}`, `ITM-${s}`, `OTM-${s}`, `-${s}`);
+            }
         }
         
         const candidates = [...new Set(rawCandidates)];
@@ -349,15 +355,25 @@ async function fetchFixedStrikeData(dateStr, reqExpiry, optType, initialStrikeTy
         let foundExactExit = false;
 
         for(let guess of candidates) {
+            await delay(200); // 🛑 ANTI-BAN SHIELD: 200ms ka saans lene do API ko
+
             const exitPayload = { ...basePayload, strike: guess };
             let exitRes;
             try {
                 exitRes = await axios.post('https://api.dhan.co/v2/charts/rollingoption', exitPayload, {
-                    headers: { 'access-token': ACCESS_TOKEN, 'client-id': CLIENT_ID, 'Content-Type': 'application/json' }
+                    headers: { 'access-token': ACCESS_TOKEN, 'client-id': CLIENT_ID, 'Content-Type': 'application/json' },
+                    timeout: 4000
                 });
-            } catch(e) { continue; } 
+            } catch(e) { 
+                const status = e.response ? e.response.status : 0;
+                if(status === 429 || (e.response && e.response.data && e.response.data.errorCode === 'DH-904')){
+                    console.log(` 🛑 RATE LIMIT HIT for [ ${guess} ]. Test will slow down...`);
+                    await delay(3000); // Agar gussa hua to 3 sec ruk jao
+                }
+                continue; 
+            } 
 
-            let exitData = exitRes.data.data ? exitRes.data.data[optKey] : null;
+            let exitData = exitRes.data && exitRes.data.data ? exitRes.data.data[optKey] : null;
             if(!exitData || !exitData.timestamp) continue;
 
             let actualExitIndex = -1;
@@ -367,7 +383,8 @@ async function fetchFixedStrikeData(dateStr, reqExpiry, optType, initialStrikeTy
             }
 
             if(actualExitIndex === -1) {
-                console.log(`   ❌ [ ${guess} ] tested ➡️ Time ${exitTime} missing in this chart.`);
+                // Console clutter kam karne ke liye isko hata sakte hain, par testing ke liye theek hai
+                // console.log(`   ❌ [ ${guess} ] tested ➡️ Time ${exitTime} missing in this chart.`);
                 continue;
             }
 
@@ -394,7 +411,7 @@ async function fetchFixedStrikeData(dateStr, reqExpiry, optType, initialStrikeTy
 
 async function runAllTests() {
     // Yahan apni pasand ki Deep OTM / Deep ITM entry test karein
-    await fetchFixedStrikeData("2026-03-20", "WEEKLY", "CE", "ATM", "09:45", "15:11");
+    await fetchFixedStrikeData("2026-03-23", "WEEKLY", "CE", "ATM", "09:45", "15:15");
 }
 
 runAllTests();

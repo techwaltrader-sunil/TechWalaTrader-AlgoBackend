@@ -4616,11 +4616,15 @@ const runBacktestSimulator = async (req, res) => {
 
                                 let rawCandidates = ["ATM"];
                                 if (exactStep > 0) {
-                                    for(let s = Math.max(1, exactStep - 2); s <= exactStep + 2; s++) {
+                                    // 🔥 THE DEEP DIVER UPGRADE: Ab +/- 10 steps tak deep scan karega!
+                                    for(let s = Math.max(1, exactStep - 10); s <= exactStep + 10; s++) {
                                         rawCandidates.push(`ITM${s}`, `OTM${s}`, `ITM-${s}`, `OTM-${s}`, `ITM ${s}`, `OTM ${s}`, `-${s}`);
                                     }
                                 } else {
-                                    rawCandidates.push("ITM1", "OTM1", "ITM-1", "OTM-1", "-1");
+                                    // Agar market wahi hai, tab bhi safety ke liye aage-peeche 5 step check kar lo
+                                    for(let s = 1; s <= 5; s++) {
+                                        rawCandidates.push(`ITM${s}`, `OTM${s}`, `ITM-${s}`, `OTM-${s}`, `-${s}`);
+                                    }
                                 }
 
                                 const candidates = [...new Set(rawCandidates)];
