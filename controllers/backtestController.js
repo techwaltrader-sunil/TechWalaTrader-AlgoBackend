@@ -4604,6 +4604,9 @@ const runBacktestSimulator = async (req, res) => {
 
                                 const candidates = [...new Set(rawCandidates)];
 
+                                // 🔥 THE LOOP BREAKER (Infinite Loop Fix)
+                                let retryCount = 0; // 🌟 Naya Variable: Retry ko track karne ke liye
+
                                 for(let c = 0; c < candidates.length; c++) {
                                     let guess = candidates[c];
                                     await delay(250); 
@@ -4613,6 +4616,8 @@ const runBacktestSimulator = async (req, res) => {
                                             headers: { 'access-token': broker.apiSecret, 'client-id': broker.clientId, 'Content-Type': 'application/json' },
                                             timeout: 4000
                                         });
+                                        
+                                        retryCount = 0; // ✅ Success milte hi retry count zero kar do
                                         
                                         const optKey = optType === "CE" ? "ce" : "pe";
                                         let tempExitData = exitRes.data && exitRes.data.data ? exitRes.data.data[optKey] : null;
@@ -4636,11 +4641,19 @@ const runBacktestSimulator = async (req, res) => {
                                     } catch (e) {
                                         const status = e.response ? e.response.status : 0;
                                         if (status === 429 || (e.response && e.response.data && e.response.data.errorCode === 'DH-904')) {
-                                            console.log(`🛑 Sniper hit Rate Limit (429) for ${guess}. Pausing for 3s and RETRYING the SAME strike...`);
-                                            await delay(3000); 
-                                            c--; 
-                                            continue; 
+                                            if (retryCount < 2) { // 🌟 MAX 2 RETRIES PER STRIKE
+                                                console.log(`🛑 Sniper hit Rate Limit (429) for ${guess}. Pausing 3s (Retry ${retryCount + 1}/2)...`);
+                                                await delay(3000); 
+                                                retryCount++;
+                                                c--; // Wapas usi strike par jao
+                                                continue; 
+                                            } else {
+                                                console.log(`⚠️ Max retries reached for ${guess}. Skipping to next strike...`);
+                                                retryCount = 0; // Agli strike ke liye reset
+                                                continue; // Infinite loop toota! Agli strike par jao.
+                                            }
                                         }
+                                        retryCount = 0; // Agar koi aur error aaye, to reset karke aage badho
                                     }
                                 }
                             }
