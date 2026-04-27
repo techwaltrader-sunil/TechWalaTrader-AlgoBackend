@@ -4569,7 +4569,7 @@ const runBacktestSimulator = async (req, res) => {
                                 }
                             } 
                             
-                            // 🐢 2. IF NOT IN CACHE, CALL API (500 Milliseconds)
+                            // 🐢 2. IF NOT IN CACHE, CALL API (O(1) Anchor Method)
                             if (!foundExactExit) {
                                 const axios = require('axios'); 
                                 let reqExpiry = trade.legConfig.expiry || "WEEKLY";
@@ -4585,73 +4585,99 @@ const runBacktestSimulator = async (req, res) => {
                                     fromDate: dateStr, toDate: dateStr
                                 };
 
-                                const currentAtmAtExit = calculateATM(spotClosePrice, upperSymbol);
                                 const stepSize = (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) ? 100 : 50; 
                                 
-                               
-                                const strikeDiff = fixedStrike - currentAtmAtExit; // Note: Math.abs hata diya taaki sign barkarar rahe
-                                const exactStep = Math.round(strikeDiff / stepSize); 
-
-                                let candidates = ["ATM"];
+                                // 🔥 THE O(1) ANCHOR UPGRADE 🔥
+                                // Pura loop chalane ki jagah, pehle Dhan se pucho ki uske hisaab se ATM kya hai.
+                                let dhanActualAtm = null;
                                 
-                                // 🔥 THE DRIFT CATCHER UPGRADE 🔥
-                                // Dhan ka internal ATM spot se alag ho sakta hai (Futures ke karan).
-                                // Isliye hum apne anuman (exactStep) ke aage-peeche 8 steps ka bada jaal bichhayenge!
-                                // Dhan "ITM" aur "OTM" word ignore karta hai, isliye hum sirf "ITM" bhejenge taaki API request aadhi ho jayein!
-                                for (let s = exactStep - 8; s <= exactStep + 8; s++) {
-                                    if (s !== 0) candidates.push(`ITM${s}`);
-                                }
-                                
-                                // Safety net near ATM
-                                candidates.push("ITM1", "ITM-1", "ITM2", "ITM-2");
-                                candidates = [...new Set(candidates)];
-
-                                let retryCount = 0; 
-                                for(let c = 0; c < candidates.length; c++) {
-                                    let guess = candidates[c];
-                                    await delay(250); 
+                                try {
+                                    await delay(250);
+                                    const atmRes = await axios.post('https://api.dhan.co/v2/charts/rollingoption', { ...basePayload, strike: "ATM" }, {
+                                        headers: { 'access-token': broker.apiSecret, 'client-id': broker.clientId, 'Content-Type': 'application/json' },
+                                        timeout: 5000 
+                                    });
                                     
-                                    try {
-                                        const exitRes = await axios.post('https://api.dhan.co/v2/charts/rollingoption', { ...basePayload, strike: guess }, {
-                                            headers: { 'access-token': broker.apiSecret, 'client-id': broker.clientId, 'Content-Type': 'application/json' },
-                                            timeout: 5000 
-                                        });
-                                        
-                                        retryCount = 0; 
-                                        
-                                        const optKey = optType === "CE" ? "ce" : "pe";
-                                        let tempExitData = exitRes.data && exitRes.data.data ? exitRes.data.data[optKey] : null;
+                                    const optKey = optType === "CE" ? "ce" : "pe";
+                                    let atmExitData = atmRes.data && atmRes.data.data ? atmRes.data.data[optKey] : null;
 
-                                        if (tempExitData && tempExitData.timestamp) {
-                                            let tempIndex = -1;
-                                            for(let k=0; k<tempExitData.timestamp.length; k++){
-                                                const optTime = new Date(tempExitData.timestamp[k] * 1000 + (5.5 * 3600000));
-                                                if(optTime.toISOString().split('T')[1].substring(0, 5) === exitTimeStr) { tempIndex = k; break; }
+                                    if (atmExitData && atmExitData.timestamp) {
+                                        for(let k=0; k<atmExitData.timestamp.length; k++){
+                                            const optTime = new Date(atmExitData.timestamp[k] * 1000 + (5.5 * 3600000));
+                                            if(optTime.toISOString().split('T')[1].substring(0, 5) === exitTimeStr) { 
+                                                dhanActualAtm = Number(atmExitData.strike[k]);
+                                                if (dhanActualAtm === fixedStrike) {
+                                                    exitData = atmExitData;
+                                                    actualExitIndex = k;
+                                                    foundExactExit = true;
+                                                    optionDataCache[cacheKey] = exitData;
+                                                }
+                                                break; 
                                             }
+                                        }
+                                    }
+                                } catch (e) {
+                                    console.log(`⚠️ Anchor ATM fetch failed. Proceeding with Spot calculation.`);
+                                }
+
+                                if (!foundExactExit) {
+                                    // Agar Dhan ne ATM de diya to perfect, warna purana Spot calculation use karenge
+                                    const referenceAtm = dhanActualAtm ? dhanActualAtm : calculateATM(spotClosePrice, upperSymbol);
+                                    
+                                    const strikeDiff = fixedStrike - referenceAtm; 
+                                    const exactStep = Math.round(strikeDiff / stepSize); 
+
+                                    // Dhan strictly reads integer steps from labels. Ab 17 requests nahi, sirf 3!
+                                    let candidates = [
+                                        `ITM${exactStep}`,     // 🎯 The Bullseye! (e.g. ITM7)
+                                        `ITM${exactStep + 1}`, // Safety Net +1
+                                        `ITM${exactStep - 1}`  // Safety Net -1
+                                    ];
+
+                                    let retryCount = 0; 
+                                    for(let c = 0; c < candidates.length; c++) {
+                                        let guess = candidates[c];
+                                        await delay(300); 
+                                        
+                                        try {
+                                            const exitRes = await axios.post('https://api.dhan.co/v2/charts/rollingoption', { ...basePayload, strike: guess }, {
+                                                headers: { 'access-token': broker.apiSecret, 'client-id': broker.clientId, 'Content-Type': 'application/json' },
+                                                timeout: 5000 
+                                            });
                                             
-                                            if(tempIndex !== -1 && tempExitData.strike && Number(tempExitData.strike[tempIndex]) === fixedStrike) {
-                                                exitData = tempExitData;
-                                                actualExitIndex = tempIndex;
-                                                foundExactExit = true;
-                                                optionDataCache[cacheKey] = exitData; 
-                                                break; // Target mil gaya, loop tod do!
+                                            retryCount = 0; 
+                                            
+                                            const optKey = optType === "CE" ? "ce" : "pe";
+                                            let tempExitData = exitRes.data && exitRes.data.data ? exitRes.data.data[optKey] : null;
+
+                                            if (tempExitData && tempExitData.timestamp) {
+                                                let tempIndex = -1;
+                                                for(let k=0; k<tempExitData.timestamp.length; k++){
+                                                    const optTime = new Date(tempExitData.timestamp[k] * 1000 + (5.5 * 3600000));
+                                                    if(optTime.toISOString().split('T')[1].substring(0, 5) === exitTimeStr) { tempIndex = k; break; }
+                                                }
+                                                
+                                                if(tempIndex !== -1 && tempExitData.strike && Number(tempExitData.strike[tempIndex]) === fixedStrike) {
+                                                    exitData = tempExitData;
+                                                    actualExitIndex = tempIndex;
+                                                    foundExactExit = true;
+                                                    optionDataCache[cacheKey] = exitData; 
+                                                    break; 
+                                                }
                                             }
-                                        }
-                                    } catch (e) {
-                                        const status = e.response ? e.response.status : 0;
-                                        if (status === 429 || status === 0 || status >= 500 || (e.response && e.response.data && e.response.data.errorCode === 'DH-904')) {
-                                            if (retryCount < 2) { 
-                                                console.log(`🛑 Sniper API Error (Status: ${status}) for ${guess}. Retrying...`);
-                                                await delay(status === 429 ? 3000 : 1500);
-                                                retryCount++;
-                                                c--; // Retry the exact same candidate
-                                                continue; 
-                                            } else {
-                                                retryCount = 0; 
-                                                continue; 
+                                        } catch (e) {
+                                            const status = e.response ? e.response.status : 0;
+                                            if (status === 429 || status === 0 || status >= 500 || (e.response && e.response.data && e.response.data.errorCode === 'DH-904')) {
+                                                if (retryCount < 1) { // Sirf 1 baar retry
+                                                    console.log(`🛑 Sniper API Error (Status: ${status}) for ${guess}. Retrying once...`);
+                                                    await delay(3000);
+                                                    retryCount++;
+                                                    c--; // Wapas try karo
+                                                    continue; 
+                                                }
                                             }
+                                            retryCount = 0; 
                                         }
-                                        retryCount = 0; 
                                     }
                                 }
                             }
