@@ -4598,16 +4598,19 @@ const runBacktestSimulator = async (req, res) => {
 
                                 let candidates = ["ATM"];
                                 if (exactStep !== 0) {
-                                    candidates.push(`ITM${exactStep}`);       // 🎯 Direct Bullseye! (e.g., ITM7)
-                                    candidates.push(`ITM${exactStep + 1}`);   // Safety net +1
-                                    candidates.push(`ITM${exactStep - 1}`);   // Safety net -1
-                                    candidates.push(`ITM${exactStep + 2}`);
-                                    candidates.push(`ITM${exactStep - 2}`);
+                                    // 🔥 REDUNDANCY UPGRADE: ITM aur OTM dono bhejenge safety ke liye
+                                    candidates.push(`ITM${exactStep}`, `OTM${exactStep}`);       
+                                    candidates.push(`ITM${exactStep + 1}`, `OTM${exactStep + 1}`);   
+                                    candidates.push(`ITM${exactStep - 1}`, `OTM${exactStep - 1}`);   
+                                    candidates.push(`ITM${exactStep + 2}`, `OTM${exactStep + 2}`);
+                                    candidates.push(`ITM${exactStep - 2}`, `OTM${exactStep - 2}`);
                                 } else {
-                                    candidates.push("ITM1", "ITM-1", "ITM2", "ITM-2");
+                                    candidates.push("ITM1", "ITM-1", "OTM1", "OTM-1", "ITM2", "ITM-2");
                                 }
+                                
+                                // Remove any duplicates
+                                candidates = [...new Set(candidates)];
 
-                                // Ab engine 119 ke bajaye sirf 5-6 API call karega! No Rate Limits!
                                 let retryCount = 0; 
                                 for(let c = 0; c < candidates.length; c++) {
                                     let guess = candidates[c];
@@ -4616,7 +4619,7 @@ const runBacktestSimulator = async (req, res) => {
                                     try {
                                         const exitRes = await axios.post('https://api.dhan.co/v2/charts/rollingoption', { ...basePayload, strike: guess }, {
                                             headers: { 'access-token': broker.apiSecret, 'client-id': broker.clientId, 'Content-Type': 'application/json' },
-                                            timeout: 4000
+                                            timeout: 5000 // 🌟 Time badha kar 5 sec kar diya hai
                                         });
                                         
                                         retryCount = 0; 
@@ -4641,14 +4644,16 @@ const runBacktestSimulator = async (req, res) => {
                                         }
                                     } catch (e) {
                                         const status = e.response ? e.response.status : 0;
-                                        if (status === 429 || (e.response && e.response.data && e.response.data.errorCode === 'DH-904')) {
+                                        // 🌟 THE SILENT KILLER FIX: Ab 429 ke sath Timeout (0) aur Server Error (500) bhi pakdega!
+                                        if (status === 429 || status === 0 || status >= 500 || (e.response && e.response.data && e.response.data.errorCode === 'DH-904')) {
                                             if (retryCount < 2) { 
-                                                console.log(`🛑 Sniper hit Rate Limit (429) for ${guess}. Pausing 3s...`);
-                                                await delay(3000); 
+                                                console.log(`🛑 Sniper API Error (Status: ${status}) for ${guess}. Retrying same strike...`);
+                                                await delay(status === 429 ? 3000 : 1500); // 429 ke liye 3s, timeout ke liye 1.5s ruko
                                                 retryCount++;
-                                                c--; // Retry the same exact target
+                                                c--; // 🌟 Wapas usi strike par jao!
                                                 continue; 
                                             } else {
+                                                console.log(`⚠️ Max retries reached for ${guess}. Moving to next.`);
                                                 retryCount = 0; 
                                                 continue; 
                                             }
