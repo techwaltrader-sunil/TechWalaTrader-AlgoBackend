@@ -4586,27 +4586,29 @@ const runBacktestSimulator = async (req, res) => {
                                 };
 
                                 const currentAtmAtExit = calculateATM(spotClosePrice, upperSymbol);
-                                const strikeDiff = Math.abs(fixedStrike - currentAtmAtExit);
                                 const stepSize = (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) ? 100 : 50; 
-                                const exactStep = Math.round(strikeDiff / stepSize);
+                                
+                                // 🔥 THE O(1) SMART MATH SNIPER UPGRADE 🔥
+                                // X-Ray Secret: Dhan API ignores "ITM/OTM" text! It only multiplies the number by stepSize!
+                                // ITM1 = +1 step, ITM-1 = -1 step. 
+                                // To hum 100 strike kyo check karein? Seedha Exact Step nikalenge!
+                                
+                                // Note: Math.abs hata diya taaki (+) aur (-) sign barkarar rahe
+                                const exactStep = Math.round((fixedStrike - currentAtmAtExit) / stepSize); 
 
-                                let rawCandidates = ["ATM"];
-                                if (exactStep > 0) {
-                                    // 🔥 THE DEEP DIVER UPGRADE: Ab +/- 10 steps tak deep scan karega!
-                                    for(let s = Math.max(1, exactStep - 10); s <= exactStep + 10; s++) {
-                                        rawCandidates.push(`ITM${s}`, `OTM${s}`, `ITM-${s}`, `OTM-${s}`, `ITM ${s}`, `OTM ${s}`, `-${s}`);
-                                    }
+                                let candidates = ["ATM"];
+                                if (exactStep !== 0) {
+                                    candidates.push(`ITM${exactStep}`);       // 🎯 Direct Bullseye! (e.g., ITM7)
+                                    candidates.push(`ITM${exactStep + 1}`);   // Safety net +1
+                                    candidates.push(`ITM${exactStep - 1}`);   // Safety net -1
+                                    candidates.push(`ITM${exactStep + 2}`);
+                                    candidates.push(`ITM${exactStep - 2}`);
                                 } else {
-                                    for(let s = 1; s <= 5; s++) {
-                                        rawCandidates.push(`ITM${s}`, `OTM${s}`, `ITM-${s}`, `OTM-${s}`, `-${s}`);
-                                    }
+                                    candidates.push("ITM1", "ITM-1", "ITM2", "ITM-2");
                                 }
 
-                                const candidates = [...new Set(rawCandidates)];
-
-                                // 🔥 THE LOOP BREAKER (Infinite Loop Fix)
-                                let retryCount = 0; // 🌟 Naya Variable: Retry ko track karne ke liye
-
+                                // Ab engine 119 ke bajaye sirf 5-6 API call karega! No Rate Limits!
+                                let retryCount = 0; 
                                 for(let c = 0; c < candidates.length; c++) {
                                     let guess = candidates[c];
                                     await delay(250); 
@@ -4617,7 +4619,7 @@ const runBacktestSimulator = async (req, res) => {
                                             timeout: 4000
                                         });
                                         
-                                        retryCount = 0; // ✅ Success milte hi retry count zero kar do
+                                        retryCount = 0; 
                                         
                                         const optKey = optType === "CE" ? "ce" : "pe";
                                         let tempExitData = exitRes.data && exitRes.data.data ? exitRes.data.data[optKey] : null;
@@ -4629,31 +4631,29 @@ const runBacktestSimulator = async (req, res) => {
                                                 if(optTime.toISOString().split('T')[1].substring(0, 5) === exitTimeStr) { tempIndex = k; break; }
                                             }
                                             
-                                            // 🌟 X-RAY FIX 1 Applied Here: Strict Number() casting
                                             if(tempIndex !== -1 && tempExitData.strike && Number(tempExitData.strike[tempIndex]) === fixedStrike) {
                                                 exitData = tempExitData;
                                                 actualExitIndex = tempIndex;
                                                 foundExactExit = true;
-                                                optionDataCache[cacheKey] = exitData; // RAM me save
-                                                break; 
+                                                optionDataCache[cacheKey] = exitData; 
+                                                break; // Target mil gaya, loop tod do!
                                             }
                                         }
                                     } catch (e) {
                                         const status = e.response ? e.response.status : 0;
                                         if (status === 429 || (e.response && e.response.data && e.response.data.errorCode === 'DH-904')) {
-                                            if (retryCount < 2) { // 🌟 MAX 2 RETRIES PER STRIKE
-                                                console.log(`🛑 Sniper hit Rate Limit (429) for ${guess}. Pausing 3s (Retry ${retryCount + 1}/2)...`);
+                                            if (retryCount < 2) { 
+                                                console.log(`🛑 Sniper hit Rate Limit (429) for ${guess}. Pausing 3s...`);
                                                 await delay(3000); 
                                                 retryCount++;
-                                                c--; // Wapas usi strike par jao
+                                                c--; // Retry the same exact target
                                                 continue; 
                                             } else {
-                                                console.log(`⚠️ Max retries reached for ${guess}. Skipping to next strike...`);
-                                                retryCount = 0; // Agli strike ke liye reset
-                                                continue; // Infinite loop toota! Agli strike par jao.
+                                                retryCount = 0; 
+                                                continue; 
                                             }
                                         }
-                                        retryCount = 0; // Agar koi aur error aaye, to reset karke aage badho
+                                        retryCount = 0; 
                                     }
                                 }
                             }
