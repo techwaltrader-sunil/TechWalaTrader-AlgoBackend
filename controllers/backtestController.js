@@ -4632,8 +4632,11 @@ const runBacktestSimulator = async (req, res) => {
                                // 🔥 SMART SNIPER ESCAPE (Rollback se delete ho gaya tha, wapas laya gaya!)
                                 let rateLimitBreached = false;
 
-                                for(let guess of candidates) {
-                                    await delay(250); // 250ms ka saans API ko block hone se bachayega
+                                // 🔥 THE RESILIENT SNIPER (Rate Limit Survival - V2)
+                                // 🌟 X-RAY RESULT: 'c--' ka jadu, ab koi bhi strike skip nahi hogi!
+                                for(let c = 0; c < candidates.length; c++) {
+                                    let guess = candidates[c];
+                                    await delay(250); 
                                     
                                     try {
                                         const exitRes = await axios.post('https://api.dhan.co/v2/charts/rollingoption', { ...basePayload, strike: guess }, {
@@ -4662,10 +4665,10 @@ const runBacktestSimulator = async (req, res) => {
                                     } catch (e) {
                                         const status = e.response ? e.response.status : 0;
                                         if (status === 429 || (e.response && e.response.data && e.response.data.errorCode === 'DH-904')) {
-                                            console.log(`🛑 Sniper hit Rate Limit (429) for ${guess}. Pausing for 3 seconds, then continuing...`);
-                                            // 🌟 THE X-RAY FIX: Ab hum loop nahi todenge (break nahi karenge)! 
-                                            await delay(3000); // 3 second aaram karenge...
-                                            continue; // ...aur agli strike check karenge!
+                                            console.log(`🛑 Sniper hit Rate Limit (429) for ${guess}. Pausing for 3s and RETRYING the SAME strike...`);
+                                            await delay(3000); 
+                                            c--; // 🌟 THE MAGIC BULLET: Index ko 1 kadam peeche karo, taaki loop wapas isi 'guess' par aaye!
+                                            continue; 
                                         }
                                     }
                                 }
