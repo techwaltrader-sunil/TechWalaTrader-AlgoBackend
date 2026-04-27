@@ -4727,6 +4727,7 @@ const runBacktestSimulator = async (req, res) => {
                                 if (isExitTime || isLastCandleOfDay) {
                                     // Agar market band ho raha hai, to reject mat karo! Force Square-off karo!
                                     trade.exitReason = isLastCandleOfDay ? "EOD_SQUAREOFF" : "TIME_SQUAREOFF";
+                                    trade.exitPrice = null; // 🌟 THE ZOMBIE KILLER: Purana fake price delete karo!
                                     foundExactExit = false; // 🔥 FORCE THE QUANT CHEF TO COOK!
                                 } else {
                                     trade.markedForExit = false;
@@ -4743,6 +4744,7 @@ const runBacktestSimulator = async (req, res) => {
                                     if (isExitTime || isLastCandleOfDay) {
                                         // Market closing time pe Data na mile, to usko Force Square-off me convert kar do
                                         trade.exitReason = isLastCandleOfDay ? "EOD_SQUAREOFF" : "TIME_SQUAREOFF";
+                                        trade.exitPrice = null; // 🌟 THE ZOMBIE KILLER: Yahan bhi purana price delete karo!
                                     } else {
                                         trade.markedForExit = false;
                                         trade.exitReason = null;
@@ -4753,46 +4755,47 @@ const runBacktestSimulator = async (req, res) => {
                                 } 
                                 
                                 // 👨‍🍳 THE QUANT CHEF ESTIMATOR (Intrinsic + Theta Decay Math)
-                                const currentAtmAtFallback = calculateATM(spotClosePrice, upperSymbol);
-                                const stepSize = (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) ? 100 : 50;
-                                const stepDiff = Math.round(Math.abs(fixedStrike - currentAtmAtFallback) / stepSize);
-                                
-                                let intrinsicValue = 0;
-                                if (optType === "CE") intrinsicValue = Math.max(0, spotClosePrice - fixedStrike);
-                                else intrinsicValue = Math.max(0, fixedStrike - spotClosePrice);
+                                // Ab kyunki humne trade.exitPrice ko 'null' kar diya hai, Chef 100% kaam karega!
+                                if (!trade.exitPrice) {
+                                    const currentAtmAtFallback = calculateATM(spotClosePrice, upperSymbol);
+                                    const stepSize = (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) ? 100 : 50;
+                                    const stepDiff = Math.round(Math.abs(fixedStrike - currentAtmAtFallback) / stepSize);
+                                    
+                                    let intrinsicValue = 0;
+                                    if (optType === "CE") intrinsicValue = Math.max(0, spotClosePrice - fixedStrike);
+                                    else intrinsicValue = Math.max(0, fixedStrike - spotClosePrice);
 
-                                // 📅 Calculate Days to Expiry (DTE) for Realistic Theta
-                                let dte = 0;
-                                try {
-                                    const expMatch = trade.symbol.match(/EXP (\d{2}[A-Z]{3}\d{2})/i);
-                                    if (expMatch && expMatch[1]) {
-                                        const expDay = parseInt(expMatch[1].substring(0, 2));
-                                        const monthStr = expMatch[1].substring(2, 5);
-                                        const expYear = parseInt("20" + expMatch[1].substring(5, 7));
-                                        const monthMap = {JAN:0, FEB:1, MAR:2, APR:3, MAY:4, JUN:5, JUL:6, AUG:7, SEP:8, OCT:9, NOV:10, DEC:11};
-                                        const expDateObj = new Date(expYear, monthMap[monthStr.toUpperCase()], expDay, 15, 30, 0);
-                                        
-                                        const diffTime = expDateObj.getTime() - istDate.getTime();
-                                        dte = Math.max(0, diffTime / (1000 * 60 * 60 * 24)); 
+                                    // 📅 Calculate Days to Expiry (DTE) for Realistic Theta
+                                    let dte = 0;
+                                    try {
+                                        const expMatch = trade.symbol.match(/EXP (\d{2}[A-Z]{3}\d{2})/i);
+                                        if (expMatch && expMatch[1]) {
+                                            const expDay = parseInt(expMatch[1].substring(0, 2));
+                                            const monthStr = expMatch[1].substring(2, 5);
+                                            const expYear = parseInt("20" + expMatch[1].substring(5, 7));
+                                            const monthMap = {JAN:0, FEB:1, MAR:2, APR:3, MAY:4, JUN:5, JUL:6, AUG:7, SEP:8, OCT:9, NOV:10, DEC:11};
+                                            const expDateObj = new Date(expYear, monthMap[monthStr.toUpperCase()], expDay, 15, 30, 0);
+                                            
+                                            const diffTime = expDateObj.getTime() - istDate.getTime();
+                                            dte = Math.max(0, diffTime / (1000 * 60 * 60 * 24)); 
+                                        }
+                                    } catch(e) { dte = 1; }
+
+                                    // 🧮 Black-Scholes Proxy: ATM Premium estimation based on Spot & DTE
+                                    let estimatedAtmPremium = 0;
+                                    if (dte >= 1) {
+                                        estimatedAtmPremium = spotClosePrice * 0.01 * Math.sqrt(dte / 7);
+                                    } else {
+                                        const minutesLeft = Math.max(0, 930 - timeInMinutes); 
+                                        estimatedAtmPremium = spotClosePrice * 0.005 * Math.sqrt(minutesLeft / 375); 
                                     }
-                                } catch(e) { dte = 1; }
 
-                                // 🧮 Black-Scholes Proxy: ATM Premium estimation based on Spot & DTE
-                                let estimatedAtmPremium = 0;
-                                if (dte >= 1) {
-                                    // Multi-day Decay (Like Wednesday 6 DTE vs Monday 1 DTE)
-                                    estimatedAtmPremium = spotClosePrice * 0.01 * Math.sqrt(dte / 7);
-                                } else {
-                                    // 0 DTE (Expiry Day) - Rapid Intraday Decay
-                                    const minutesLeft = Math.max(0, 930 - timeInMinutes); // 15:30 is 930 mins
-                                    estimatedAtmPremium = spotClosePrice * 0.005 * Math.sqrt(minutesLeft / 375); 
+                                    // 📉 Apply OTM/ITM Step Decay
+                                    const estimatedTimeValue = estimatedAtmPremium / Math.pow(1.2, stepDiff);
+                                    
+                                    // 🍽️ Serve the Exact Mathematical Price!
+                                    trade.exitPrice = intrinsicValue + estimatedTimeValue;
                                 }
-
-                                // 📉 Apply OTM/ITM Step Decay (Divide by 1.2 per step)
-                                const estimatedTimeValue = estimatedAtmPremium / Math.pow(1.2, stepDiff);
-                                
-                                // 🍽️ Serve the Exact Mathematical Price!
-                                if (!trade.exitPrice) trade.exitPrice = intrinsicValue + estimatedTimeValue;
                             }
                         }
                         // =========================================================================
