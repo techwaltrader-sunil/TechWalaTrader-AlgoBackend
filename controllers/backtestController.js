@@ -56,6 +56,9 @@ const formatIndName = (ind) => {
 };
 
 const runBacktestSimulator = async (req, res) => {
+    // 🔥 THE FIX: Node.js ka default 2-minute timeout band karo!
+    req.setTimeout(0);
+    
     // 🔥 1. SETUP SSE HEADERS (Streaming Mode ON)
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
