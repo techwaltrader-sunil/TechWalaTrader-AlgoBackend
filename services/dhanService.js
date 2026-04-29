@@ -1165,7 +1165,14 @@ const fetchDhanHistoricalData = async (clientId, accessToken, securityId, exchan
                 'Accept': 'application/json'
             };
 
-            const response = await axios.post(url, payload, { headers });
+            const response = await axios.post(url, payload, { 
+                headers: headers,
+                timeout: 8000, // 8 second ka time limit
+                maxRedirects: 0, // 🔥 THE SHIELD: Dhan ko gol-gol ghumane se roko!
+                validateStatus: function (status) {
+                    return status >= 200 && status < 300; 
+                }
+            });
             
             const actualData = (response.data && response.data.data && response.data.data.open) ? response.data.data : response.data;
 
@@ -1233,7 +1240,12 @@ const fetchExpiredOptionData = async (clientId, apiSecret, spotSecurityId, strik
                     'Accept': 'application/json',
                     'Content-Type': 'application/json'
                 },
-                data: payload
+                data: payload,
+                timeout: 8000, // 8 second ka time limit
+                maxRedirects: 0, // 🔥 THE SHIELD: Ping-pong loop band!
+                validateStatus: function (status) {
+                    return status >= 200 && status < 300; 
+                }
             });
 
             const optionKey = optionType === "CE" ? "ce" : "pe";
