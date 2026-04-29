@@ -73,7 +73,11 @@ const runBacktestSimulator = async (req, res) => {
         const useRealisticSlippage = slippage !== 'false';
 
         const strategy = await Strategy.collection.findOne({ _id: new mongoose.Types.ObjectId(strategyId) });
-        if (!strategy) return res.status(404).json({ error: "Strategy not found" });
+        if (!strategy) {
+            res.write(`data: ${JSON.stringify({ type: 'ERROR', message: 'Strategy not found' })}\n\n`);
+            res.end();
+            return;
+        }
 
         console.log(`\n🚀 Running MULTI-LEG Backtest for: ${strategy.name} | Period: ${period || '1M'}`);
 
@@ -134,7 +138,11 @@ const runBacktestSimulator = async (req, res) => {
         let broker = null;
         if (shouldFetchFromDhan || isOptionsTrade) {
             broker = await Broker.findOne({ engineOn: true });
-            if (!broker) return res.status(400).json({ success: false, message: 'No active broker found for API keys' });
+            if (!broker) {
+                res.write(`data: ${JSON.stringify({ type: 'ERROR', message: 'No active broker found for API keys' })}\n\n`);
+                res.end();
+                return;
+            }
         }
 
         if (shouldFetchFromDhan) {
@@ -165,7 +173,11 @@ const runBacktestSimulator = async (req, res) => {
             }
 
             cachedData = await HistoricalData.find({ symbol: { $regex: new RegExp(cleanSymbolForMap, "i") }, timeframe, timestamp: { $gte: startDate, $lte: endDate } }).sort({ timestamp: 1 }).lean();
-            if (cachedData.length === 0) return res.status(404).json({ success: false, errorType: "NO_DATA", message: "Spot Data not available for this period." });
+            if (cachedData.length === 0) {
+                res.write(`data: ${JSON.stringify({ type: 'ERROR', message: 'Spot Data not available for this period. Dhan API failed to fetch historical data.' })}\n\n`);
+                res.end();
+                return;
+            }
         }
 
         const findConditions = (obj) => {
@@ -341,6 +353,9 @@ const runBacktestSimulator = async (req, res) => {
             if (dateStr !== currentDayTracker) {
                 currentDayTracker = dateStr;
                 isTradingHaltedForDay = false;
+
+                // 🔥 THE RAM SAVER: Har naye din pichle din ka kachra saaf karo!
+                optionDataCache = {};
 
                 // 🔥 2. SEND LIVE PROGRESS TO UI (Day-by-Day)
                 const expectedTotalDays = Math.max(1, (endDate - startDate) / (1000 * 60 * 60 * 24));
