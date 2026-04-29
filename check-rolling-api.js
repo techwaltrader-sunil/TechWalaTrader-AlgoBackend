@@ -411,7 +411,7 @@ async function fetchFixedStrikeData(dateStr, reqExpiry, optType, initialStrikeTy
 
 async function runAllTests() {
     // Yahan apni pasand ki Deep OTM / Deep ITM entry test karein
-    await fetchFixedStrikeData("2026-03-11", "WEEKLY", "CE", "ATM", "09:45", "15:15");
+    await fetchFixedStrikeData("2026-01-23", "WEEKLY", "PE", "ATM", "09:45", "11:49");
 }
 
 runAllTests();
