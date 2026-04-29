@@ -58,12 +58,27 @@ const formatIndName = (ind) => {
 const runBacktestSimulator = async (req, res) => {
     // 🔥 THE FIX: Node.js ka default 2-minute timeout band karo!
     req.setTimeout(0);
-    
+
     // 🔥 1. SETUP SSE HEADERS (Streaming Mode ON)
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders(); // Connection turant open karne ke liye
+
+
+    // ==========================================
+    // 💓 THE FIX: RENDER ANTI-SLEEP HEARTBEAT
+    // ==========================================
+    // Render ko har 25 second me ek 'Ping' bhejte raho taki wo connection na kaate
+    const heartbeat = setInterval(() => {
+        res.write(`: keep-alive-ping\n\n`); 
+    }, 25000);
+
+    // Agar user ne bich me tab band kar diya, to interval clear kar do
+    req.on('close', () => {
+        clearInterval(heartbeat);
+    });
+    // ==========================================
 
     // Client ko batayenge ki engine start ho gaya hai
     res.write(`data: ${JSON.stringify({ type: 'START', message: 'Engine warming up...' })}\n\n`);
@@ -160,6 +175,9 @@ const runBacktestSimulator = async (req, res) => {
             }
 
             for (let range of chunkedRanges) {
+                // 🔥 Frontend ko batao ki kya download ho raha hai
+                res.write(`data: ${JSON.stringify({ type: 'PROGRESS', date: `Fetching Spot Data: ${range.start.toISOString().split('T')[0]}`, percent: 0 })}\n\n`);
+                
                 const dhanRes = await fetchDhanHistoricalData(broker.clientId, broker.apiSecret, spotSecurityId, exchangeSegment, "INDEX", range.start.toISOString().split('T')[0], range.end.toISOString().split('T')[0], timeframe);
                 const timeArray = dhanRes.data ? (dhanRes.data.start_Time || dhanRes.data.timestamp) : null;
 
@@ -1192,6 +1210,7 @@ const runBacktestSimulator = async (req, res) => {
         // return res.status(200).json({ success: true, data: backtestResult });
 
         // 🔥 3. SEND FINAL DATA & CLOSE STREAM
+        clearInterval(heartbeat); // 💓 Heartbeat band karo
         res.write(`data: ${JSON.stringify({ type: 'COMPLETE', data: backtestResult })}\n\n`);
         res.end(); // Stream safely closed!
 
@@ -1201,6 +1220,7 @@ const runBacktestSimulator = async (req, res) => {
         // res.status(500).json({ success: false, error: "Internal Server Error" });
 
         // 🔥 4. SMART ERROR PROTOCOL: Server crash na kare, client ko error bhej kar stream band kare
+        clearInterval(heartbeat); // 💓 Heartbeat band karo
         let errorMsg = "Internal Server Error";
         if (error.response && error.response.status === 429) errorMsg = "Broker API Rate Limit Exceeded";
         else if (error.message) errorMsg = error.message;
