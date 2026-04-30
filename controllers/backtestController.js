@@ -2462,7 +2462,6 @@
 
 // module.exports = { runBacktestSimulator };
 
-
 const mongoose = require('mongoose');
 const crypto = require('crypto');
 const Strategy = require('../models/Strategy');
@@ -2567,12 +2566,11 @@ const runBacktestSimulator = async (req, res) => {
         let timeframe = rawInterval ? String(rawInterval).replace(' min', '').trim() : "5";
 
         // =========================================================
-        // 🔐 THE FINGERPRINT FIX (Added All Time & Rules Settings)
+        // 🔐 THE FINGERPRINT FIX 
         // =========================================================
         const advanceFeaturesSettings = strategy.data?.advanceSettings || strategy.advanceSettings || strategy.data?.advanceFeatures || strategy.advanceFeatures || {};
         const riskSettings = strategy.data?.riskManagement || strategy.riskManagement || {};
         
-        // Ensure we catch the exact time from any possible frontend property
         const sTime = strategy.startTime || strategy.entryTime || strategy.config?.startTime || strategy.config?.entryTime || strategy.data?.config?.startTime || strategy.data?.config?.entryTime || strategy.entrySettings?.startTime || strategy.data?.entrySettings?.startTime;
         const sqTime = strategy.config?.squareOff || strategy.data?.config?.squareOff || strategy.config?.squareOffTime || strategy.data?.config?.squareOffTime || "03:15 PM";
         const txnType = strategy.config?.transactionType || strategy.data?.config?.transactionType || 'Both Side';
@@ -2595,7 +2593,6 @@ const runBacktestSimulator = async (req, res) => {
         if (Array.isArray(possibleExits) && possibleExits.length > 0) exitConds = possibleExits[0];
         else if (possibleExits && typeof possibleExits === 'object' && !Array.isArray(possibleExits)) exitConds = possibleExits;
 
-        // The hash now strictly monitors Time changes!
         const strategyConfigString = JSON.stringify({
             legs: strategy.legs || strategy.data?.legs,
             entryConds: entryConds,
@@ -2604,10 +2601,10 @@ const runBacktestSimulator = async (req, res) => {
             advanceFeatures: advanceFeaturesSettings,
             riskManagement: riskSettings,
             slippage: useRealisticSlippage,
-            startTime: sTime,        // 🔥 NEW!
-            squareOffTime: sqTime,   // 🔥 NEW!
-            transactionType: txnType,// 🔥 NEW!
-            isTimeBased: isTimeBased // 🔥 NEW!
+            startTime: sTime,
+            squareOffTime: sqTime,
+            transactionType: txnType,
+            isTimeBased: isTimeBased 
         });
         const configHash = crypto.createHash('md5').update(strategyConfigString).digest('hex');
 
@@ -2736,7 +2733,9 @@ const runBacktestSimulator = async (req, res) => {
             });
         }
 
-        // --- ENGINE VARIABLES ---
+        // =========================================================
+        // --- ENGINE VARIABLES & THE GLOBAL MAX PROFIT FIX ---
+        // =========================================================
         let currentEquity = 0, peakEquity = 0, maxDrawdown = 0;
         let winDays = 0, lossDays = 0, winTrades = 0, lossTrades = 0;
         let currentWinStreak = 0, currentLossStreak = 0, maxWinStreak = 0, maxLossStreak = 0;
@@ -2748,6 +2747,10 @@ const runBacktestSimulator = async (req, res) => {
         let optionDataCache = {}; 
         let openTrades = [];
         const strategyLegs = strategy.legs || strategy.data?.legs || [];
+
+        // 🔥 FIX: Global Max Profit and Loss ab loop se bahar aur top scope me hain
+        const globalMaxProfit = Number(riskSettings.maxProfit) || 0;
+        const globalMaxLoss = Number(riskSettings.maxLoss) || 0;
 
         let exitMin = 915; 
         if (sqTime) {
