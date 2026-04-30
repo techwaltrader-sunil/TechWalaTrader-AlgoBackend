@@ -2463,27 +2463,21 @@
 // module.exports = { runBacktestSimulator };
 
 
-
 const mongoose = require('mongoose');
 const crypto = require('crypto');
 const Strategy = require('../models/Strategy');
 const HistoricalData = require('../models/HistoricalData');
 const Broker = require('../models/Broker');
-const BacktestCache = require('../models/BacktestCache'); // 🔥 DAY-BY-DAY CACHE
+const BacktestCache = require('../models/BacktestCache'); 
 
 const { calculateIndicator, extractParams, evaluateCondition } = require('../services/indicatorService');
 const { getOptionSecurityId, sleep } = require('../services/instrumentService');
 const { fetchDhanHistoricalData, fetchExpiredOptionData } = require('../services/dhanService');
 
-// 🔥 IMPORTING ALL SHARED LOGIC MODULES
 const { evaluateTrailingSL } = require('../engine/features/riskManagement/trailingLogic');
 const { evaluateMtmLogic } = require('../engine/features/riskManagement/mtmSquareOff');
 const { evaluateExitAllLogic } = require('../engine/features/advanceFeatures/exitAllOnSlTgt');
 
-
-// =========================================================================
-// 🔥 DELAY & ANTI-THROTTLING ARMOR
-// =========================================================================
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const withRetry = async (apiCallFn, maxRetries = 3, delayMs = 1500) => {
@@ -2510,10 +2504,7 @@ const withRetry = async (apiCallFn, maxRetries = 3, delayMs = 1500) => {
 };
 
 const runBacktestSimulator = async (req, res) => {
-    // 🔥 Node.js default timeout bypass
     req.setTimeout(0);
-
-    // 🔥 1. SETUP SSE HEADERS (Streaming Mode ON)
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -2576,24 +2567,52 @@ const runBacktestSimulator = async (req, res) => {
         let timeframe = rawInterval ? String(rawInterval).replace(' min', '').trim() : "5";
 
         // =========================================================
-        // 🔐 THE FINGERPRINT (Generate Strategy Hash)
+        // 🔐 THE FINGERPRINT FIX (Added All Time & Rules Settings)
         // =========================================================
         const advanceFeaturesSettings = strategy.data?.advanceSettings || strategy.advanceSettings || strategy.data?.advanceFeatures || strategy.advanceFeatures || {};
         const riskSettings = strategy.data?.riskManagement || strategy.riskManagement || {};
         
+        // Ensure we catch the exact time from any possible frontend property
+        const sTime = strategy.startTime || strategy.entryTime || strategy.config?.startTime || strategy.config?.entryTime || strategy.data?.config?.startTime || strategy.data?.config?.entryTime || strategy.entrySettings?.startTime || strategy.data?.entrySettings?.startTime;
+        const sqTime = strategy.config?.squareOff || strategy.data?.config?.squareOff || strategy.config?.squareOffTime || strategy.data?.config?.squareOffTime || "03:15 PM";
+        const txnType = strategy.config?.transactionType || strategy.data?.config?.transactionType || 'Both Side';
+        const isTimeBased = (strategy.config?.strategyType === 'Time Based' || strategy.data?.config?.strategyType === 'Time Based' || strategy.type === 'Time Based');
+
+        const findConditions = (obj) => {
+            if (!obj || typeof obj !== 'object') return null;
+            if (obj.longRules && Array.isArray(obj.longRules)) return obj;
+            if (Array.isArray(obj)) {
+                for (let item of obj) { const found = findConditions(item); if (found) return found; }
+            } else {
+                for (let key in obj) { const found = findConditions(obj[key]); if (found) return found; }
+            }
+            return null;
+        };
+
+        let entryConds = findConditions(strategy);
+        let exitConds = {};
+        const possibleExits = strategy.exitConditions || strategy.data?.exitConditions || strategy.data?.entrySettings?.exitConditions || [];
+        if (Array.isArray(possibleExits) && possibleExits.length > 0) exitConds = possibleExits[0];
+        else if (possibleExits && typeof possibleExits === 'object' && !Array.isArray(possibleExits)) exitConds = possibleExits;
+
+        // The hash now strictly monitors Time changes!
         const strategyConfigString = JSON.stringify({
             legs: strategy.legs || strategy.data?.legs,
-            entryConds: strategy.longRules || strategy.data?.longRules, // Assuming indicator logic
-            exitConds: strategy.exitConditions || strategy.data?.exitConditions,
+            entryConds: entryConds,
+            exitConds: exitConds,
             timeframe: timeframe,
             advanceFeatures: advanceFeaturesSettings,
             riskManagement: riskSettings,
-            slippage: useRealisticSlippage // Agar user ne toggle change kiya to naya cache banega
+            slippage: useRealisticSlippage,
+            startTime: sTime,        // 🔥 NEW!
+            squareOffTime: sqTime,   // 🔥 NEW!
+            transactionType: txnType,// 🔥 NEW!
+            isTimeBased: isTimeBased // 🔥 NEW!
         });
         const configHash = crypto.createHash('md5').update(strategyConfigString).digest('hex');
 
         // =========================================================
-        // 🧠 BULK MEMORY FETCH (0.1s Database Call)
+        // 🧠 BULK MEMORY FETCH 
         // =========================================================
         const savedDaysCache = await BacktestCache.find({ 
             strategyId: strategy._id, 
@@ -2604,16 +2623,15 @@ const runBacktestSimulator = async (req, res) => {
             }
         }).lean();
 
-        // Convert Array to Fast O(1) Dictionary
         const bulkCacheMap = {};
-        savedDaysCache.forEach(doc => {
-            bulkCacheMap[doc.date] = doc;
-        });
+        savedDaysCache.forEach(doc => { bulkCacheMap[doc.date] = doc; });
 
         const cachedDaysCount = Object.keys(bulkCacheMap).length;
         if (cachedDaysCount > 0) {
             console.log(`📦 Loaded ${cachedDaysCount} pre-calculated days from DB Memory Map!`);
             res.write(`data: ${JSON.stringify({ type: 'PROGRESS', date: `Fast-forwarding ${cachedDaysCount} saved days...`, percent: 10 })}\n\n`);
+        } else {
+            console.log(`🧹 No Cache Found for this ConfigHash. Running FRESH backtest!`);
         }
 
         // =========================================================
@@ -2631,7 +2649,6 @@ const runBacktestSimulator = async (req, res) => {
             const dbEndDate = cachedData[cachedData.length - 1].timestamp;
             if (dbStartDate > new Date(startDate.getTime() + 86400000) || dbEndDate < new Date(endDate.getTime() - 86400000)) {
                 shouldFetchFromDhan = true;
-                // Delete old incomplete data to prevent gaps
                 await HistoricalData.deleteMany({ symbol: { $regex: new RegExp(cleanSymbolForMap, "i") }, timeframe, timestamp: { $gte: startDate, $lte: endDate } });
             }
         }
@@ -2673,7 +2690,7 @@ const runBacktestSimulator = async (req, res) => {
                     if (bulkOps.length > 0) await HistoricalData.bulkWrite(bulkOps, { ordered: false }).catch(e => console.log("Duplicates ignored"));
                 }
                 
-                await delay(1000); // 🐜 Safe sleep
+                await delay(1000); 
             }
 
             cachedData = await HistoricalData.find({ symbol: { $regex: new RegExp(cleanSymbolForMap, "i") }, timeframe, timestamp: { $gte: startDate, $lte: endDate } }).sort({ timestamp: 1 }).lean();
@@ -2684,18 +2701,6 @@ const runBacktestSimulator = async (req, res) => {
         }
 
         // --- INDICATOR CALCULATION SETUP ---
-        const findConditions = (obj) => {
-            if (!obj || typeof obj !== 'object') return null;
-            if (obj.longRules && Array.isArray(obj.longRules)) return obj;
-            if (Array.isArray(obj)) {
-                for (let item of obj) { const found = findConditions(item); if (found) return found; }
-            } else {
-                for (let key in obj) { const found = findConditions(obj[key]); if (found) return found; }
-            }
-            return null;
-        };
-
-        let entryConds = findConditions(strategy);
         const calcLongInd1 = []; const calcLongInd2 = [];
         if (entryConds && entryConds.longRules && entryConds.longRules.length > 0) {
             entryConds.longRules.forEach((rule, idx) => {
@@ -2710,11 +2715,6 @@ const runBacktestSimulator = async (req, res) => {
                 calcShortInd2[idx] = calculateIndicator({ ...rule.ind2, params: extractParams(rule.ind2, null) }, cachedData);
             });
         }
-
-        let exitConds = {};
-        const possibleExits = strategy.exitConditions || strategy.data?.exitConditions || strategy.data?.entrySettings?.exitConditions || [];
-        if (Array.isArray(possibleExits) && possibleExits.length > 0) exitConds = possibleExits[0];
-        else if (possibleExits && typeof possibleExits === 'object' && !Array.isArray(possibleExits)) exitConds = possibleExits;
 
         const rawExitLongRules = exitConds.longRules || [];
         const rawExitShortRules = exitConds.shortRules || [];
@@ -2749,10 +2749,6 @@ const runBacktestSimulator = async (req, res) => {
         let openTrades = [];
         const strategyLegs = strategy.legs || strategy.data?.legs || [];
 
-        const globalMaxProfit = Number(riskSettings.maxProfit) || 0;
-        const globalMaxLoss = Number(riskSettings.maxLoss) || 0;
-
-        const sqTime = strategy.config?.squareOff || strategy.data?.config?.squareOff || strategy.config?.squareOffTime || "03:15 PM";
         let exitMin = 915; 
         if (sqTime) {
             const [eh, emStr] = sqTime.split(':');
@@ -2760,13 +2756,14 @@ const runBacktestSimulator = async (req, res) => {
                 const em = emStr.split(' ')[0];
                 let h = parseInt(eh);
                 if (sqTime.toUpperCase().includes('PM') && h !== 12) h += 12;
+                if (sqTime.toUpperCase().includes('AM') && h === 12) h -= 12;
                 exitMin = h * 60 + parseInt(em);
             }
         }
 
         let isTradingHaltedForDay = false;
         let currentDayTracker = "";
-        let newDaysToCache = []; // Naye calculate hue din jo end me DB me jayenge
+        let newDaysToCache = []; 
 
         const calculateATM = (spotPrice, symbolStr) => {
             if (symbolStr.includes("BANK")) return Math.round(spotPrice / 100) * 100;
@@ -2814,7 +2811,7 @@ const runBacktestSimulator = async (req, res) => {
 
 
         // =========================================================
-        // ⏱️ THE MAIN 94,000 CANDLE LOOP
+        // ⏱️ THE MAIN CANDLE LOOP
         // =========================================================
         for (let i = 0; i < cachedData.length; i++) {
             if (i % 500 === 0) await new Promise(resolve => setImmediate(resolve));
@@ -2830,7 +2827,7 @@ const runBacktestSimulator = async (req, res) => {
             if (dateStr !== currentDayTracker) {
                 currentDayTracker = dateStr;
                 isTradingHaltedForDay = false;
-                optionDataCache = {}; // Flush RAM
+                optionDataCache = {}; 
 
                 if (!dailyBreakdownMap[dateStr]) dailyBreakdownMap[dateStr] = { pnl: 0, trades: 0, tradesList: [], hasTradedTimeBased: false };
 
@@ -2842,7 +2839,6 @@ const runBacktestSimulator = async (req, res) => {
                     dailyBreakdownMap[dateStr].tradesList = dayCache.trades;
                     dailyBreakdownMap[dateStr].hasTradedTimeBased = dayCache.hasTradedTimeBased;
 
-                    // Fast-Forward i to the last candle of this day
                     while (i + 1 < cachedData.length) {
                         const nextIst = new Date(new Date(cachedData[i + 1].timestamp).getTime() + (5.5 * 60 * 60 * 1000));
                         if (nextIst.toISOString().split('T')[0] === dateStr) {
@@ -2857,9 +2853,8 @@ const runBacktestSimulator = async (req, res) => {
                     let livePercent = Math.min(95, Math.round((daysPassed / expectedTotalDays) * 100));
                     res.write(`data: ${JSON.stringify({ type: 'PROGRESS', date: `${dateStr} (Loaded from Memory)`, percent: livePercent })}\n\n`);
                     
-                    continue; // Is din ko dobara calculate mat karo!
+                    continue; 
                 } else {
-                    // Agar naya din hai, to use Cache List me daalo taki end me DB me save ho
                     if (!newDaysToCache.includes(dateStr)) newDaysToCache.push(dateStr);
                     
                     const expectedTotalDays = Math.max(1, (endDate - startDate) / (1000 * 60 * 60 * 24));
@@ -2868,8 +2863,6 @@ const runBacktestSimulator = async (req, res) => {
                     res.write(`data: ${JSON.stringify({ type: 'PROGRESS', date: `Calculating: ${dateStr}`, percent: livePercent })}\n\n`);
                 }
             }
-
-            // ... [YAHAN AAPKA WAHI PURANA ENTRY/EXIT LOGIC HAI JO BILKUL PERFECT THA] ...
             
             let longSignal = false;
             if (entryConds && entryConds.longRules && entryConds.longRules.length > 0) {
@@ -2907,24 +2900,18 @@ const runBacktestSimulator = async (req, res) => {
                 shortSignal = overallResult;
             }
 
-            const isTimeBased = (strategy.config?.strategyType === 'Time Based' || strategy.data?.config?.strategyType === 'Time Based' || strategy.type === 'Time Based');
+            if (isTimeBased && sTime) {
+                const [sh, smStr] = sTime.split(':');
+                let startMin = parseInt(sh) * 60 + parseInt(smStr.split(' ')[0]);
+                if (sTime.toUpperCase().includes('PM') && parseInt(sh) !== 12) startMin += 720;
+                if (sTime.toUpperCase().includes('AM') && parseInt(sh) === 12) startMin -= 720;
 
-            if (isTimeBased) {
-                const sTime = strategy.startTime || strategy.config?.startTime || strategy.data?.config?.startTime || strategy.entrySettings?.startTime || strategy.data?.entrySettings?.startTime;
-
-                if (sTime) {
-                    const [sh, sm] = sTime.split(':');
-                    let startMin = parseInt(sh) * 60 + parseInt(sm.split(' ')[0]);
-                    if (sTime.toUpperCase().includes('PM') && parseInt(sh) !== 12) startMin += 720;
-
-                    if (timeInMinutes >= startMin && !dailyBreakdownMap[dateStr].hasTradedTimeBased) {
-                        longSignal = true;
-                        dailyBreakdownMap[dateStr].hasTradedTimeBased = true;
-                    }
+                if (timeInMinutes >= startMin && !dailyBreakdownMap[dateStr].hasTradedTimeBased) {
+                    longSignal = true;
+                    dailyBreakdownMap[dateStr].hasTradedTimeBased = true;
                 }
             }
 
-            const txnType = strategy.config?.transactionType || strategy.data?.config?.transactionType || 'Both Side';
             const finalLongSignal = (txnType === 'Both Side' || txnType === 'Only Long' || isTimeBased) ? longSignal : false;
             const finalShortSignal = (txnType === 'Both Side' || txnType === 'Only Short') ? shortSignal : false;
 
@@ -3167,9 +3154,6 @@ const runBacktestSimulator = async (req, res) => {
                     }
                 });
 
-
-
-
                 if (triggerReasonForExitAll && !hitGlobalMaxProfit && !hitGlobalMaxLoss) {
                     const exitAllCheck = evaluateExitAllLogic(advanceFeaturesSettings, triggerReasonForExitAll);
                     if (exitAllCheck.shouldExitAll) {
@@ -3183,7 +3167,6 @@ const runBacktestSimulator = async (req, res) => {
                     }
                 }
 
-
                 let remainingTrades = [];
                 for (let trade of openTrades) {
                     if (trade.markedForExit || isExitTime || isLastCandleOfDay) {
@@ -3192,7 +3175,7 @@ const runBacktestSimulator = async (req, res) => {
                         }
 
                         // =========================================================================
-                        // 🔴 THE SNIPER GATEKEEPER (WITH SUPER-FAST RAM CACHE) 🔴
+                        // 🔴 THE SNIPER GATEKEEPER 
                         // =========================================================================
                         const needsMarketPrice = ["TIME_SQUAREOFF", "EOD_SQUAREOFF", "INDICATOR_EXIT", "MAX_PROFIT", "MAX_LOSS", "EXIT_ALL_TGT", "EXIT_ALL_SL", "STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason);
                         
@@ -3370,7 +3353,6 @@ const runBacktestSimulator = async (req, res) => {
                                     fakeTriggerRejected = true;
                                 } else {
                                     if (["STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason)) {
-                                        
                                         if (!useRealisticSlippage) {
                                             trade.exitPrice = cOpen; 
                                         } else {
@@ -3384,7 +3366,6 @@ const runBacktestSimulator = async (req, res) => {
                                                 else trade.exitPrice = mathPrice; 
                                             }
                                         }
-                                        
                                     } else {
                                         trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? cOpen : cClose;
                                     }
@@ -3666,7 +3647,7 @@ const runBacktestSimulator = async (req, res) => {
         res.end(); 
 
         // =========================================================
-        // 💾 SILENT BACKGROUND SAVE (Naye Dino Ko Database Me Daalo)
+        // 💾 SILENT BACKGROUND SAVE 
         // =========================================================
         if (newDaysToCache.length > 0) {
             console.log(`💾 Silent Background Save: Saving ${newDaysToCache.length} newly calculated days to MongoDB...`);
@@ -3686,7 +3667,6 @@ const runBacktestSimulator = async (req, res) => {
             }));
 
             try {
-                // Async background execution (response already sent to user)
                 BacktestCache.bulkWrite(bulkOps, { ordered: false })
                     .then(res => console.log(`✅ Saved ${res.upsertedCount + res.modifiedCount} days to Cache Godown.`))
                     .catch(e => console.error("⚠️ Background Cache Save Error:", e.message));
