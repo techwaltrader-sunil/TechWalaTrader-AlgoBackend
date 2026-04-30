@@ -2634,8 +2634,11 @@ const runBacktestSimulator = async (req, res) => {
         // =========================================================
         // 📡 DATA DOWNLOADING (The Ant Strategy)
         // =========================================================
+        // 🔥 REGEX HATA DIYA! Exact match se speed 100x fast ho jayegi!
         let cachedData = await HistoricalData.find({
-            symbol: { $regex: new RegExp(cleanSymbolForMap, "i") }, timeframe, timestamp: { $gte: startDate, $lte: endDate }
+            symbol: upperSymbol, 
+            timeframe: timeframe, 
+            timestamp: { $gte: startDate, $lte: endDate }
         }).sort({ timestamp: 1 }).lean();
 
         let shouldFetchFromDhan = false;
