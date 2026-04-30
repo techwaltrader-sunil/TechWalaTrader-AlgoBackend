@@ -3599,12 +3599,32 @@ const runBacktestSimulator = async (req, res) => {
         // ==========================================
         let totalMarketDays = Object.keys(dailyBreakdownMap).length;
 
+        // 🔥 THE FIX: Reset counters so we can count BOTH cached and fresh trades perfectly
+        winTrades = 0; 
+        lossTrades = 0; 
+        maxProfitTrade = 0; 
+        maxLossTrade = 0;
+
         for (const [date, data] of Object.entries(dailyBreakdownMap)) {
             currentEquity += data.pnl;
             if (currentEquity > peakEquity) peakEquity = currentEquity;
             const drawdown = currentEquity - peakEquity;
             if (drawdown < maxDrawdown) maxDrawdown = drawdown;
 
+            // 🔥 NEW LOGIC: Har din ke andar ghuskar trades ko gino
+            if (data.tradesList && data.tradesList.length > 0) {
+                data.tradesList.forEach(trade => {
+                    if (trade.pnl > 0) {
+                        winTrades++;
+                        if (trade.pnl > maxProfitTrade) maxProfitTrade = trade.pnl;
+                    } else if (trade.pnl < 0) {
+                        lossTrades++;
+                        if (trade.pnl < maxLossTrade) maxLossTrade = trade.pnl;
+                    }
+                });
+            }
+
+            // Day-level metrics (Win Day / Loss Day)
             if (data.pnl > 0) {
                 winDays++; currentWinStreak++; currentLossStreak = 0;
                 if (currentWinStreak > maxWinStreak) maxWinStreak = currentWinStreak;
