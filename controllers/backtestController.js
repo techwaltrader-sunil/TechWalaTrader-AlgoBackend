@@ -3922,7 +3922,7 @@ const runBacktestSimulator = async (req, res) => {
             let currentStart = new Date(startDate);
             while (currentStart <= endDate) {
                 let currentEnd = new Date(currentStart);
-                currentEnd.setDate(currentStart.getDate() + 9); // 10-day chunks for SPEED
+                currentEnd.setDate(currentStart.getDate() + 9);
                 if (currentEnd > endDate) currentEnd = new Date(endDate);
                 chunkedRanges.push({ start: new Date(currentStart), end: new Date(currentEnd) });
                 currentStart.setDate(currentStart.getDate() + 10);
@@ -3945,7 +3945,7 @@ const runBacktestSimulator = async (req, res) => {
                     if (bulkOps.length > 0) await HistoricalData.bulkWrite(bulkOps, { ordered: false }).catch(e => console.log("Duplicates ignored"));
                 }
                 
-                await delay(400); // Super-fast delay
+                await delay(400); 
             }
 
             cachedData = await HistoricalData.find({ symbol: upperSymbol, timeframe, timestamp: { $gte: startDate, $lte: endDate } }).sort({ timestamp: 1 }).lean();
@@ -4035,22 +4035,24 @@ const runBacktestSimulator = async (req, res) => {
             return (entryP - exitP) * qty;
         };
 
+        // 🔥 PERFECT EXPIRY LOGIC (As per User Rule: Nifty = Thursday, Rest = Monthly)
         const getNearestExpiryString = (tradeDateStr, symbolStr, reqExpiry = "WEEKLY") => {
             const d = new Date(tradeDateStr);
             const upSym = symbolStr.toUpperCase();
             let expiryDate = new Date(d);
-            const targetDay = 2; // SEBI Tuesday
-            let forceMonthly = false;
 
-            if (upSym.includes("BANK") || upSym.includes("FIN") || upSym.includes("MID")) forceMonthly = true;
+            const isNifty = upSym.includes("NIFTY") && !upSym.includes("BANK") && !upSym.includes("FIN") && !upSym.includes("MID");
 
-            const upperReqExpiry = reqExpiry.toUpperCase();
-            const isMonthlyRequest = forceMonthly || upperReqExpiry === "MONTHLY";
-
-            if (!isMonthlyRequest) {
+            if (isNifty && reqExpiry.toUpperCase() !== "MONTHLY") {
+                // NSE Nifty -> Thursday (4)
+                let targetDay = 4;
                 while (expiryDate.getDay() !== targetDay) expiryDate.setDate(expiryDate.getDate() + 1);
-                if (upperReqExpiry === "NEXT WEEKLY" || upperReqExpiry === "NEXT WEEK") expiryDate.setDate(expiryDate.getDate() + 7);
+                if (reqExpiry.toUpperCase() === "NEXT WEEKLY" || reqExpiry.toUpperCase() === "NEXT WEEK") {
+                    expiryDate.setDate(expiryDate.getDate() + 7);
+                }
             } else {
+                // Others (BankNifty, FinNifty, etc.) OR Monthly Nifty -> Monthly Expiry (Last Thursday)
+                let targetDay = 4; // Last Thursday of the month
                 const lastDayOfMonth = new Date(expiryDate.getFullYear(), expiryDate.getMonth() + 1, 0);
                 expiryDate = new Date(lastDayOfMonth);
                 while (expiryDate.getDay() !== targetDay) expiryDate.setDate(expiryDate.getDate() - 1);
@@ -4091,7 +4093,7 @@ const runBacktestSimulator = async (req, res) => {
 
                 if (!dailyBreakdownMap[dateStr]) dailyBreakdownMap[dateStr] = { pnl: 0, trades: 0, tradesList: [], hasTradedTimeBased: false };
 
-                // 🐸 THE LEAPFROG (Jump Over Cached Days)
+                // 🐸 THE LEAPFROG (Stable Version)
                 if (bulkCacheMap[dateStr]) {
                     const dayCache = bulkCacheMap[dateStr];
                     dailyBreakdownMap[dateStr].pnl = dayCache.dailyPnL;
@@ -4430,11 +4432,7 @@ const runBacktestSimulator = async (req, res) => {
                             trade.exitReason = isLastCandleOfDay ? "EOD_SQUAREOFF" : "TIME_SQUAREOFF";
                         }
 
-                        // =========================================================================
-                        // 🔴 THE SNIPER GATEKEEPER 
-                        // =========================================================================
                         const needsMarketPrice = ["TIME_SQUAREOFF", "EOD_SQUAREOFF", "INDICATOR_EXIT", "MAX_PROFIT", "MAX_LOSS", "EXIT_ALL_TGT", "EXIT_ALL_SL", "STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason);
-                        
                         let fakeTriggerRejected = false;
 
                         if (isOptionsTrade && broker && needsMarketPrice && trade.optionConfig) {
@@ -4490,7 +4488,6 @@ const runBacktestSimulator = async (req, res) => {
                                 };
 
                                 const stepSize = (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) ? 100 : 50; 
-                                
                                 let dhanActualAtm = null;
                                 
                                 try {
@@ -4733,7 +4730,7 @@ const runBacktestSimulator = async (req, res) => {
             }
 
             // =========================================================
-            // 🔥 2. MULTI-LEG ENTRY LOGIC (With Option Cache FIX)
+            // 🔥 2. MULTI-LEG ENTRY LOGIC (Direct Dhan API for pure accuracy)
             // =========================================================
             if (openTrades.length === 0 && isMarketOpen && !isTradingHaltedForDay && (finalLongSignal || finalShortSignal)) {
 
@@ -4762,101 +4759,58 @@ const runBacktestSimulator = async (req, res) => {
                     const reqExpiry = legData.expiry || "WEEKLY";
 
                     const expiryLabel = getNearestExpiryString(dateStr, upperSymbol, reqExpiry);
-                    
-                    // Option Symbol Generation for DB
-                    const optionConfig = getOptionSecurityId(upperSymbol, spotClosePrice, strikeCriteria, strikeType, activeOptionType, reqExpiry);
-                    let tradeSymbol = optionConfig ? optionConfig.tradingSymbol : `${upperSymbol} ${targetStrike} ${activeOptionType} (${expiryLabel})`;
-                    const dbOptionSymbol = optionConfig ? optionConfig.tradingSymbol : `${upperSymbol}_${targetStrike}_${activeOptionType}_${dateStr}`;
+                    let tradeSymbol = `${upperSymbol} ${targetStrike} ${activeOptionType} (${expiryLabel})`;
 
                     if (isOptionsTrade && broker) {
                         let apiSuccess = false;
 
-                        // 🔍 1. TRY LOCAL DB FIRST (Saves Dhan API Limits)
-                        const cachedOptData = await HistoricalData.find({ 
-                            symbol: dbOptionSymbol, 
-                            timeframe: "1" 
-                        }).sort({ timestamp: 1 }).lean();
+                        const targetExpStr = expiryLabel.split('EXP ')[1]; 
+                        const expectedDay = targetExpStr ? targetExpStr.substring(0, 2) : ""; 
+                        const expectedMonth = targetExpStr ? targetExpStr.substring(2, 5) : ""; 
+                        const expectedDhanDateStr = `${expectedDay} ${expectedMonth}`; 
 
-                        if (cachedOptData.length > 0) {
-                            premiumChartData = {
-                                start_Time: cachedOptData.map(c => new Date(c.timestamp).getTime() / 1000),
-                                open: cachedOptData.map(c => c.open),
-                                high: cachedOptData.map(c => c.high),
-                                low: cachedOptData.map(c => c.low),
-                                close: cachedOptData.map(c => c.close)
-                            };
+                        const optionConfig = getOptionSecurityId(upperSymbol, spotClosePrice, strikeCriteria, strikeType, activeOptionType, reqExpiry);
 
-                            const exactMatchIndex = premiumChartData.start_Time.findIndex(t => {
-                                const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
-                                return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
-                            });
-
-                            if (isTimeBased) {
-                                finalEntryPrice = exactMatchIndex !== -1 ? premiumChartData.open[exactMatchIndex] : premiumChartData.open[0];
-                            } else {
-                                finalEntryPrice = exactMatchIndex !== -1 ? premiumChartData.close[exactMatchIndex] : premiumChartData.close[0];
-                            }
-                            apiSuccess = true;
-                        } 
-                        else {
-                            // 📡 2. IF NOT IN DB, FETCH FROM DHAN
-                            const targetExpStr = expiryLabel.split('EXP ')[1]; 
-                            const expectedDay = targetExpStr ? targetExpStr.substring(0, 2) : ""; 
-                            const expectedMonth = targetExpStr ? targetExpStr.substring(2, 5) : ""; 
-                            const expectedDhanDateStr = `${expectedDay} ${expectedMonth}`; 
-
-                            if (optionConfig && optionConfig.strike && optionConfig.tradingSymbol.includes(expectedDhanDateStr)) {
-                                targetStrike = optionConfig.strike;
-                                try {
-                                    const optRes = await withRetry(() => fetchDhanHistoricalData(broker.clientId, broker.apiSecret, optionConfig.id, "NSE_FNO", "OPTIDX", dateStr, dateStr, "1"));
-                                    if (optRes.success && optRes.data && optRes.data.close) {
-                                        const exactMatchIndex = optRes.data.start_Time.findIndex(t => {
-                                            const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
-                                            return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
-                                        });
-                                        finalEntryPrice = exactMatchIndex !== -1 ? (isTimeBased ? optRes.data.open[exactMatchIndex] : optRes.data.close[exactMatchIndex]) : (isTimeBased ? optRes.data.open[0] : optRes.data.close[0]);
-                                        premiumChartData = optRes.data;
-                                        apiSuccess = true;
-                                    }
-                                } catch (e) { }
-                            }
-
-                            if (!apiSuccess) {
-                                try {
-                                    const formattedStrikeForRolling = strikeType.replace(/\s+/g, '').toUpperCase();
-                                    const expRes = await withRetry(() => fetchExpiredOptionData(broker.clientId, broker.apiSecret, spotSecurityId, formattedStrikeForRolling, activeOptionType, dateStr, dateStr, reqExpiry));
-                                    if (expRes.success && expRes.data && expRes.data.close) {
-                                        const exactMatchIndex = expRes.data.start_Time.findIndex(t => {
-                                            const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
-                                            return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
-                                        });
-                                        finalEntryPrice = exactMatchIndex !== -1 ? (isTimeBased ? expRes.data.open[exactMatchIndex] : expRes.data.close[exactMatchIndex]) : (isTimeBased ? expRes.data.open[0] : expRes.data.close[0]);
-                                        premiumChartData = expRes.data;
-                                        apiSuccess = true;
-                                    }
-                                } catch (e) { }
-                            }
-
-                            // 💾 3. SAVE TO DB IMMEDIATELY (For Next Leg / Next Backtest)
-                            if (apiSuccess && premiumChartData && premiumChartData.start_Time) {
-                                console.log(`💾 Saving new Option Premium to MongoDB: ${tradeSymbol}`);
-                                const { open, high, low, close, start_Time } = premiumChartData;
-                                const bulkOps = [];
-                                for (let j = 0; j < start_Time.length; j++) {
-                                    let ms = start_Time[j];
-                                    if (ms < 10000000000) ms = ms * 1000; 
-                                    bulkOps.push({ 
-                                        updateOne: {
-                                            filter: { symbol: dbOptionSymbol, timeframe: "1", timestamp: new Date(ms) },
-                                            update: { $set: { open: open[j], high: high[j], low: low[j], close: close[j] } },
-                                            upsert: true
-                                        }
+                        if (optionConfig && optionConfig.strike && optionConfig.tradingSymbol.includes(expectedDhanDateStr)) {
+                            targetStrike = optionConfig.strike;
+                            try {
+                                await sleep(500);
+                                const optRes = await withRetry(() => fetchDhanHistoricalData(broker.clientId, broker.apiSecret, optionConfig.id, "NSE_FNO", "OPTIDX", dateStr, dateStr, "1"));
+                                if (optRes.success && optRes.data && optRes.data.close) {
+                                    const exactMatchIndex = optRes.data.start_Time.findIndex(t => {
+                                        const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
+                                        return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
                                     });
+                                    if (isTimeBased) {
+                                        finalEntryPrice = exactMatchIndex !== -1 ? optRes.data.open[exactMatchIndex] : optRes.data.open[0];
+                                    } else {
+                                        finalEntryPrice = exactMatchIndex !== -1 ? optRes.data.close[exactMatchIndex] : optRes.data.close[0];
+                                    }
+                                    premiumChartData = optRes.data;
+                                    apiSuccess = true;
                                 }
-                                if (bulkOps.length > 0) {
-                                    await HistoricalData.bulkWrite(bulkOps, { ordered: false }).catch(e => {});
+                            } catch (e) { }
+                        }
+
+                        if (!apiSuccess) {
+                            try {
+                                await sleep(500);
+                                const formattedStrikeForRolling = strikeType.replace(/\s+/g, '').toUpperCase();
+                                const expRes = await withRetry(() => fetchExpiredOptionData(broker.clientId, broker.apiSecret, spotSecurityId, formattedStrikeForRolling, activeOptionType, dateStr, dateStr, reqExpiry));
+                                if (expRes.success && expRes.data && expRes.data.close) {
+                                    const exactMatchIndex = expRes.data.start_Time.findIndex(t => {
+                                        const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
+                                        return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
+                                    });
+                                    if (isTimeBased) {
+                                        finalEntryPrice = exactMatchIndex !== -1 ? expRes.data.open[exactMatchIndex] : expRes.data.open[0];
+                                    } else {
+                                        finalEntryPrice = exactMatchIndex !== -1 ? expRes.data.close[exactMatchIndex] : expRes.data.close[0];
+                                    }
+                                    premiumChartData = expRes.data;
+                                    apiSuccess = true;
                                 }
-                            }
+                            } catch (e) { }
                         }
 
                         if (!apiSuccess || finalEntryPrice === 0) {
@@ -4885,11 +4839,6 @@ const runBacktestSimulator = async (req, res) => {
                             markedForExit: false
                         });
                         console.log(`✅ [TRADE OPEN] Leg ${legIndex + 1} | Time: ${h}:${m} | Spot: ${spotClosePrice} | Premium: ${finalEntryPrice} | Type: ${activeOptionType}`);
-                    }
-
-                    // 🔥 CRITICAL SHIELD: Adding 500ms delay between Multi-Legs to prevent Dhan Rate Limits
-                    if (strategyLegs.length > 1 && legIndex < strategyLegs.length - 1) {
-                        await delay(500); 
                     }
                 }
             }
@@ -4958,7 +4907,6 @@ const runBacktestSimulator = async (req, res) => {
             daywiseBreakdown: daywiseBreakdown 
         };
 
-        // 🔥 3. SEND FINAL DATA TO UI 
         clearInterval(heartbeat); 
         const finalResultForUI = {
             ...backtestResult,
