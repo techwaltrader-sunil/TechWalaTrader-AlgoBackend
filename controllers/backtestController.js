@@ -5690,8 +5690,7 @@ const runBacktestSimulator = async (req, res) => {
                         // =========================================================================
                         // 🔴 THE SNIPER GATEKEEPER 
                         // =========================================================================
-                        const needsMarketPrice = ["TIME_SQUAREOFF", "EOD_SQUAREOFF", "INDICATOR_EXIT", "MAX_PROFIT", "MAX_LOSS", "EXIT_ALL_TGT", "EXIT_ALL_SL", "STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason);
-                        
+                        const needsMarketPrice = ["TIME_SQUAREOFF", "EOD_SQUAREOFF", "INDICATOR_EXIT", "EXIT_ALL_TGT", "EXIT_ALL_SL", "STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason);
                         let fakeTriggerRejected = false;
 
                         if (isOptionsTrade && broker && needsMarketPrice && trade.optionConfig) {
