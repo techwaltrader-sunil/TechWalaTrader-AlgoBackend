@@ -5654,8 +5654,11 @@ const runBacktestSimulator = async (req, res) => {
                         if (tslResult.isModified) trade.trailingSL = tslResult.newTrailingSL;
                         if (trade.trailingSL) {
                             if ((trade.transaction === "BUY" && trade.currentLow <= trade.trailingSL) || (trade.transaction === "SELL" && trade.currentHigh >= trade.trailingSL)) {
-                                trade.markedForExit = true; trade.exitReason = "TRAILING_SL"; trade.exitPrice = trade.trailingSL;
-                                triggerReasonForExitAll = "TRAILING_SL";
+                                trade.markedForExit = true; 
+                                // 🔥 FIX: चेक करो कि प्रॉफिट लॉक हुआ है या नॉर्मल ट्रेलिंग है!
+                                trade.exitReason = trade.isProfitLocked ? "LOCK_FIX_PROFIT" : "TRAILING_SL"; 
+                                trade.exitPrice = trade.trailingSL;
+                                triggerReasonForExitAll = trade.exitReason;
                             }
                         }
                     }
@@ -5690,7 +5693,7 @@ const runBacktestSimulator = async (req, res) => {
                         // =========================================================================
                         // 🔴 THE SNIPER GATEKEEPER 
                         // =========================================================================
-                        const needsMarketPrice = ["TIME_SQUAREOFF", "EOD_SQUAREOFF", "INDICATOR_EXIT", "EXIT_ALL_TGT", "EXIT_ALL_SL", "STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason);
+                        const needsMarketPrice = ["TIME_SQUAREOFF", "EOD_SQUAREOFF", "INDICATOR_EXIT", "EXIT_ALL_TGT", "EXIT_ALL_SL", "STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST", "LOCK_FIX_PROFIT"].includes(trade.exitReason);
                         let fakeTriggerRejected = false;
 
                         if (isOptionsTrade && broker && needsMarketPrice && trade.optionConfig) {
