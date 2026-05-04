@@ -6831,7 +6831,7 @@ const runBacktestSimulator = async (req, res) => {
                 let isSlMovedToCostGlobal = false;
                 
                 // Pata karo ki kya user ne Independent Trailing ON rakhi hai (Frontend se aayega)
-                const isIndependent = strategy?.advanceFeatures?.independentTrailing === true;
+               const isIndependent = strategy?.advanceSettings?.independentTrailing === true || strategy?.data?.advanceSettings?.independentTrailing === true;
 
                 if (isIndependent) {
                     // Aggressive Mode: Sirf pakka Loss (STOPLOSS) ya pakka Target (TARGET) aane par hi dusra leg Cost par jayega. Trailing me azaad rahega!
