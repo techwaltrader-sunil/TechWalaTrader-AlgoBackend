@@ -5649,14 +5649,14 @@ const runBacktestSimulator = async (req, res) => {
                         }
                     }
 
-                    if (!trade.markedForExit) {
+                   if (!trade.markedForExit) {
                         const tslResult = evaluateTrailingSL(trade, trade.openPnL, riskSettings, trade.quantity);
                         if (tslResult.isModified) trade.trailingSL = tslResult.newTrailingSL;
                         if (trade.trailingSL) {
                             if ((trade.transaction === "BUY" && trade.currentLow <= trade.trailingSL) || (trade.transaction === "SELL" && trade.currentHigh >= trade.trailingSL)) {
                                 trade.markedForExit = true; 
-                                // 🔥 FIX: चेक करो कि प्रॉफिट लॉक हुआ है या नॉर्मल ट्रेलिंग है!
-                                trade.exitReason = trade.isProfitLocked ? "LOCK_FIX_PROFIT" : "TRAILING_SL"; 
+                                // 🔥 FIX: Engine jo exact name de raha hai wahi UI ko pass karo
+                                trade.exitReason = tslResult.exitReason || "TRAILING_SL"; 
                                 trade.exitPrice = trade.trailingSL;
                                 triggerReasonForExitAll = trade.exitReason;
                             }
@@ -5693,7 +5693,7 @@ const runBacktestSimulator = async (req, res) => {
                         // =========================================================================
                         // 🔴 THE SNIPER GATEKEEPER 
                         // =========================================================================
-                        const needsMarketPrice = ["TIME_SQUAREOFF", "EOD_SQUAREOFF", "INDICATOR_EXIT", "EXIT_ALL_TGT", "EXIT_ALL_SL", "STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST", "LOCK_FIX_PROFIT"].includes(trade.exitReason);
+                        const needsMarketPrice = ["TIME_SQUAREOFF", "EOD_SQUAREOFF", "INDICATOR_EXIT", "EXIT_ALL_TGT", "EXIT_ALL_SL", "STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST", "LOCK_FIX_PROFIT", "LOCK_AND_TRAIL"].includes(trade.exitReason);
                         let fakeTriggerRejected = false;
 
                         if (isOptionsTrade && broker && needsMarketPrice && trade.optionConfig) {
@@ -5842,70 +5842,56 @@ const runBacktestSimulator = async (req, res) => {
                             }
 
                             if (foundExactExit && exitData) {
-                                const mathPrice = trade.exitPrice; 
-                                const cOpen = exitData.open[actualExitIndex];
-                                const cHigh = exitData.high[actualExitIndex];
-                                const cLow = exitData.low[actualExitIndex];
-                                const cClose = exitData.close[actualExitIndex];
+                                    const mathPrice = trade.exitPrice; 
+                                    const cOpen = exitData.open[actualExitIndex];
+                                    const cHigh = exitData.high[actualExitIndex];
+                                    const cLow = exitData.low[actualExitIndex];
+                                    const cClose = exitData.close[actualExitIndex];
 
-                                let isValidTrigger = true;
-                                if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason)) {
-                                    if (trade.transaction === "BUY" && cLow > mathPrice) isValidTrigger = false; 
-                                    if (trade.transaction === "SELL" && cHigh < mathPrice) isValidTrigger = false; 
-                                } else if (trade.exitReason === "TARGET") {
-                                    if (trade.transaction === "BUY" && cHigh < mathPrice) isValidTrigger = false;
-                                    if (trade.transaction === "SELL" && cLow > mathPrice) isValidTrigger = false;
-                                }
-
-                                let isFlatline = false;
-                                if (["TIME_SQUAREOFF", "EOD_SQUAREOFF"].includes(trade.exitReason)) {
-                                    if (cOpen === trade.entryPrice || cClose === trade.entryPrice) {
-                                        isFlatline = true; 
+                                    let isValidTrigger = true;
+                                    if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST", "LOCK_FIX_PROFIT", "LOCK_AND_TRAIL"].includes(trade.exitReason)) {
+                                        if (trade.transaction === "BUY" && cLow > mathPrice) isValidTrigger = false; 
+                                        if (trade.transaction === "SELL" && cHigh < mathPrice) isValidTrigger = false; 
+                                    } else if (trade.exitReason === "TARGET") {
+                                        if (trade.transaction === "BUY" && cHigh < mathPrice) isValidTrigger = false;
+                                        if (trade.transaction === "SELL" && cLow > mathPrice) isValidTrigger = false;
                                     }
-                                }
 
-                                if (!isValidTrigger || isFlatline) {
-                                    fakeTriggerRejected = true;
-                                } else {
-                                    if (["STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason)) {
-                                        if (!useRealisticSlippage) {
-                                            trade.exitPrice = cOpen; 
-                                        } else {
-                                            if (trade.transaction === "BUY") {
-                                                if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen < mathPrice) trade.exitPrice = cOpen;
-                                                else if (trade.exitReason === "TARGET" && cOpen > mathPrice) trade.exitPrice = cOpen;
-                                                else trade.exitPrice = mathPrice; 
-                                            } else { 
-                                                if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason) && cOpen > mathPrice) trade.exitPrice = cOpen;
-                                                else if (trade.exitReason === "TARGET" && cOpen < mathPrice) trade.exitPrice = cOpen;
-                                                else trade.exitPrice = mathPrice; 
-                                            }
+                                    let isFlatline = false;
+                                    if (["TIME_SQUAREOFF", "EOD_SQUAREOFF"].includes(trade.exitReason)) {
+                                        if (cOpen === trade.entryPrice || cClose === trade.entryPrice) {
+                                            isFlatline = true; 
                                         }
+                                    }
+
+                                    if (!isValidTrigger || isFlatline) {
+                                        fakeTriggerRejected = true;
                                     } else {
-                                        trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? cOpen : cClose;
+                                        if (["STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST", "LOCK_FIX_PROFIT", "LOCK_AND_TRAIL"].includes(trade.exitReason)) {
+                                            if (!useRealisticSlippage) {
+                                                trade.exitPrice = cOpen; 
+                                            } else {
+                                                if (trade.transaction === "BUY") {
+                                                    if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST", "LOCK_FIX_PROFIT", "LOCK_AND_TRAIL"].includes(trade.exitReason) && cOpen < mathPrice) trade.exitPrice = cOpen;
+                                                    else if (trade.exitReason === "TARGET" && cOpen > mathPrice) trade.exitPrice = cOpen;
+                                                    else trade.exitPrice = mathPrice; 
+                                                } else { 
+                                                    if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST", "LOCK_FIX_PROFIT", "LOCK_AND_TRAIL"].includes(trade.exitReason) && cOpen > mathPrice) trade.exitPrice = cOpen;
+                                                    else if (trade.exitReason === "TARGET" && cOpen < mathPrice) trade.exitPrice = cOpen;
+                                                    else trade.exitPrice = mathPrice; 
+                                                }
+                                            }
+                                        } else {
+                                            trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? cOpen : cClose;
+                                        }
                                     }
                                 }
-                            }
-                            
-                            if (fakeTriggerRejected) {
-                                if (isExitTime || isLastCandleOfDay) {
-                                    trade.exitReason = isLastCandleOfDay ? "EOD_SQUAREOFF" : "TIME_SQUAREOFF";
-                                    trade.exitPrice = null; 
-                                    foundExactExit = false; 
-                                } else {
-                                    trade.markedForExit = false;
-                                    trade.exitReason = null;
-                                    trade.exitPrice = null;
-                                    remainingTrades.push(trade);
-                                    continue; 
-                                }
-                            }
-
-                            if (!foundExactExit) {
-                                if (["STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason)) {
+                                
+                                if (fakeTriggerRejected) {
                                     if (isExitTime || isLastCandleOfDay) {
                                         trade.exitReason = isLastCandleOfDay ? "EOD_SQUAREOFF" : "TIME_SQUAREOFF";
                                         trade.exitPrice = null; 
+                                        foundExactExit = false; 
                                     } else {
                                         trade.markedForExit = false;
                                         trade.exitReason = null;
@@ -5913,7 +5899,21 @@ const runBacktestSimulator = async (req, res) => {
                                         remainingTrades.push(trade);
                                         continue; 
                                     }
-                                } 
+                                }
+
+                                if (!foundExactExit) {
+                                    if (["STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST", "LOCK_FIX_PROFIT", "LOCK_AND_TRAIL"].includes(trade.exitReason)) {
+                                        if (isExitTime || isLastCandleOfDay) {
+                                            trade.exitReason = isLastCandleOfDay ? "EOD_SQUAREOFF" : "TIME_SQUAREOFF";
+                                            trade.exitPrice = null; 
+                                        } else {
+                                            trade.markedForExit = false;
+                                            trade.exitReason = null;
+                                            trade.exitPrice = null;
+                                            remainingTrades.push(trade);
+                                            continue; 
+                                        }
+                                    }
                                 
                                 if (!trade.exitPrice) {
                                     const currentAtmAtFallback = calculateATM(spotClosePrice, upperSymbol);
