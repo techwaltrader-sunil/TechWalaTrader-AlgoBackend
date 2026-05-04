@@ -6826,7 +6826,25 @@ const runBacktestSimulator = async (req, res) => {
                 let anyLegHitSlPast = dailyBreakdownMap[dateStr].tradesList.some(t => t.exitType === "STOPLOSS" || t.exitType === "SL_MOVED_TO_COST");
                 let anyLegHitSlThisTick = false;
 
-                let isSlMovedToCostGlobal = dailyBreakdownMap[dateStr].tradesList.some(t => t.exitType === "STOPLOSS" || t.exitType === "SL_MOVED_TO_COST");
+                // let isSlMovedToCostGlobal = dailyBreakdownMap[dateStr].tradesList.some(t => t.exitType === "STOPLOSS" || t.exitType === "SL_MOVED_TO_COST");
+                // 🔥 V-SHAPE RECOVERY UPGRADE: Check if user wants independent trailing
+                let isSlMovedToCostGlobal = false;
+                
+                // Pata karo ki kya user ne Independent Trailing ON rakhi hai (Frontend se aayega)
+                const isIndependent = strategy?.advanceFeatures?.independentTrailing === true;
+
+                if (isIndependent) {
+                    // Aggressive Mode: Sirf pakka Loss (STOPLOSS) ya pakka Target (TARGET) aane par hi dusra leg Cost par jayega. Trailing me azaad rahega!
+                    isSlMovedToCostGlobal = dailyBreakdownMap[dateStr].tradesList.some(t => 
+                        ["STOPLOSS", "TARGET"].includes(t.exitType)
+                    );
+                } else {
+                    // Conservative Mode (Default): Kisi bhi wajah se leg kata (Trailing, Lock etc.), to dusra leg Cost par chala jayega.
+                    isSlMovedToCostGlobal = dailyBreakdownMap[dateStr].tradesList.some(t => 
+                        ["STOPLOSS", "SL_MOVED_TO_COST", "TRAILING_SL", "TARGET", "LOCK_FIX_PROFIT", "LOCK_AND_TRAIL"].includes(t.exitType)
+                    );
+                }
+
 
                 openTrades.forEach((trade, idx) => {
                     if (trade.markedForExit) return;
