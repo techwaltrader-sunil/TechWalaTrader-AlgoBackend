@@ -5652,11 +5652,20 @@ const runBacktestSimulator = async (req, res) => {
                    if (!trade.markedForExit) {
                         const tslResult = evaluateTrailingSL(trade, trade.openPnL, riskSettings, trade.quantity);
                         if (tslResult.isModified) trade.trailingSL = tslResult.newTrailingSL;
+                        
                         if (trade.trailingSL) {
                             if ((trade.transaction === "BUY" && trade.currentLow <= trade.trailingSL) || (trade.transaction === "SELL" && trade.currentHigh >= trade.trailingSL)) {
                                 trade.markedForExit = true; 
-                                // 🔥 FIX: Engine jo exact name de raha hai wahi UI ko pass karo
-                                trade.exitReason = tslResult.exitReason || "TRAILING_SL"; 
+                                
+                                // 🔥 THE FIX: State bhoolne ki problem khatam! Direct Strategy settings se naam uthao.
+                                if (riskSettings.profitTrailing === 'Lock Fix Profit') {
+                                    trade.exitReason = "LOCK_FIX_PROFIT";
+                                } else if (riskSettings.profitTrailing === 'Lock and Trail') {
+                                    trade.exitReason = "LOCK_AND_TRAIL";
+                                } else {
+                                    trade.exitReason = "TRAILING_SL";
+                                }
+                                
                                 trade.exitPrice = trade.trailingSL;
                                 triggerReasonForExitAll = trade.exitReason;
                             }
