@@ -7345,34 +7345,54 @@ const runBacktestSimulator = async (req, res) => {
                                     if (reqExpiry.toUpperCase() === "MONTHLY") { expFlag = "MONTH"; } 
                                     else if (reqExpiry.toUpperCase() === "NEXT WEEKLY" || reqExpiry.toUpperCase() === "NEXT WEEK") { expCode = 2; }
                                     
-                                    const payload = {
+                                    const fixedStrike = Number(trade.optionConfig.strike);
+                                    const stepSize = (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) ? 100 : 50; 
+                                    const referenceAtm = calculateATM(spotClosePrice, upperSymbol);
+                                    
+                                    // Calculate ITM/OTM steps based on current Spot ATM
+                                    const strikeDiff = fixedStrike - referenceAtm; 
+                                    const exactStep = Math.round(strikeDiff / stepSize); 
+                                    
+                                    // Dhan ke format me strike guesses (e.g., ITM1, ITM0) banayenge
+                                    let candidates = [ `ITM${exactStep}`, `ITM${exactStep + 1}`, `ITM${exactStep - 1}` ];
+                                    
+                                    const basePayload = {
                                         exchangeSegment: "NSE_FNO", interval: "1", securityId: Number(spotSecurityId), instrument: "OPTIDX",
                                         expiryFlag: expFlag, expiryCode: expCode, 
                                         drvOptionType: trade.optionConfig.type === "CE" ? "CALL" : "PUT", 
                                         requiredData: ["open", "close", "strike"],
-                                        fromDate: dateStr, toDate: dateStr,
-                                        strike: String(trade.optionConfig.strike) // Asli strike yahan LOCK kar diya!
+                                        fromDate: dateStr, toDate: dateStr
                                     };
-                                    
-                                    const res = await axios.post('https://api.dhan.co/v2/charts/rollingoption', payload, { 
-                                        headers: { 'access-token': broker.apiSecret, 'client-id': broker.clientId, 'Content-Type': 'application/json' },
-                                        timeout: 5000 
-                                    });
-                                    
-                                    const optKey = trade.optionConfig.type === "CE" ? "ce" : "pe";
-                                    if (res.data && res.data.data && res.data.data[optKey]) {
-                                        const chart = res.data.data[optKey];
-                                        const exitTimeStr = `${h}:${m}`;
-                                        for(let k=0; k<chart.timestamp.length; k++){
-                                            const optTime = new Date(chart.timestamp[k] * 1000 + (5.5 * 3600000));
-                                            if(optTime.toISOString().split('T')[1].substring(0, 5) === exitTimeStr) { 
-                                                // Asli strike cross-check verify karo
-                                                if (Number(chart.strike[k]) === Number(trade.optionConfig.strike)) {
-                                                    exitP = chart.open[k]; // Asli strike (197.10) ka price mil gaya!
+
+                                    let exactPriceFound = false;
+
+                                    for(let c = 0; c < candidates.length; c++) {
+                                        if (exactPriceFound) break;
+                                        let guess = candidates[c];
+                                        
+                                        const res = await axios.post('https://api.dhan.co/v2/charts/rollingoption', { ...basePayload, strike: guess }, { 
+                                            headers: { 'access-token': broker.apiSecret, 'client-id': broker.clientId, 'Content-Type': 'application/json' },
+                                            timeout: 5000 
+                                        });
+                                        
+                                        const optKey = trade.optionConfig.type === "CE" ? "ce" : "pe";
+                                        if (res.data && res.data.data && res.data.data[optKey]) {
+                                            const chart = res.data.data[optKey];
+                                            const exitTimeStr = `${h}:${m}`;
+                                            
+                                            for(let k = 0; k < chart.timestamp.length; k++){
+                                                const optTime = new Date(chart.timestamp[k] * 1000 + (5.5 * 3600000));
+                                                if(optTime.toISOString().split('T')[1].substring(0, 5) === exitTimeStr) { 
+                                                    // Verify karo ki Dhan ne sach me exact 23850 hi bheja hai
+                                                    if (Number(chart.strike[k]) === fixedStrike) {
+                                                        exitP = chart.open[k]; // Bingo! 197.10 mil gaya!
+                                                        exactPriceFound = true;
+                                                    }
+                                                    break; 
                                                 }
-                                                break; 
                                             }
                                         }
+                                        await new Promise(r => setTimeout(r, 200)); // Thoda sleep API block se bachne ke liye
                                     }
                                 } catch (e) {
                                     console.log(`⚠️ Exact exit fetch failed for ${trade.symbol}, using fallback.`);
