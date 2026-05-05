@@ -7302,10 +7302,84 @@ const runBacktestSimulator = async (req, res) => {
                         }
                     }
 
+                    // // Agar SL/Target 100% confirm ho gaya hai, tabhi baki bache hue legs ko (Exit All) maaro
+                    // if (actualTriggerReason) {
+                    //     openTrades.forEach(trade => {
+                    //         const exitP = trade.currentOpen; // Exit all market order hota hai, isliye candle ke Open price par katega
+                    //         const pnl = calcTradePnL(trade.entryPrice, exitP, trade.quantity, trade.transaction);
+                            
+                    //         const forcedTrade = {
+                    //             ...trade,
+                    //             exitTime: currentMinute,
+                    //             exitPrice: exitP,
+                    //             pnl: pnl,
+                    //             exitType: `EXIT_ALL_TRIGGERED_BY_${actualTriggerReason}`
+                    //         };
+                            
+                    //         dailyBreakdownMap[dateStr].tradesList.push(forcedTrade);
+                    //         dailyBreakdownMap[dateStr].pnl += pnl;
+                    //         dailyBreakdownMap[dateStr].trades += 1;
+                            
+                    //         if (pnl > 0) { winTrades++; if (pnl > maxProfitTrade) maxProfitTrade = pnl; }
+                    //         else { lossTrades++; if (pnl < maxLossTrade) maxLossTrade = pnl; }
+                    //     });
+                        
+                    //     openTrades = []; // Saare legs khatam, dukaan band!
+                    // }
+
+
                     // Agar SL/Target 100% confirm ho gaya hai, tabhi baki bache hue legs ko (Exit All) maaro
                     if (actualTriggerReason) {
-                        openTrades.forEach(trade => {
-                            const exitP = trade.currentOpen; // Exit all market order hota hai, isliye candle ke Open price par katega
+                        for (let trade of openTrades) {
+                            let exitP = trade.currentOpen; // Default math/fallback
+                            
+                            // =========================================================================
+                            // 🔥 THE FIX: EXACT STRIKE PREMIUM FETCH FOR VICTIM LEGS
+                            // Rolling chart ki jagah asli strike (e.g. 23850) ka exact premium fetch karo
+                            // =========================================================================
+                            if (isOptionsTrade && broker && trade.optionConfig) {
+                                try {
+                                    const axios = require('axios');
+                                    let expFlag = "WEEK"; let expCode = 1; 
+                                    let reqExpiry = trade.legConfig.expiry || "WEEKLY";
+                                    if (reqExpiry.toUpperCase() === "MONTHLY") { expFlag = "MONTH"; } 
+                                    else if (reqExpiry.toUpperCase() === "NEXT WEEKLY" || reqExpiry.toUpperCase() === "NEXT WEEK") { expCode = 2; }
+                                    
+                                    const payload = {
+                                        exchangeSegment: "NSE_FNO", interval: "1", securityId: Number(spotSecurityId), instrument: "OPTIDX",
+                                        expiryFlag: expFlag, expiryCode: expCode, 
+                                        drvOptionType: trade.optionConfig.type === "CE" ? "CALL" : "PUT", 
+                                        requiredData: ["open", "close", "strike"],
+                                        fromDate: dateStr, toDate: dateStr,
+                                        strike: String(trade.optionConfig.strike) // Asli strike yahan LOCK kar diya!
+                                    };
+                                    
+                                    const res = await axios.post('https://api.dhan.co/v2/charts/rollingoption', payload, { 
+                                        headers: { 'access-token': broker.apiSecret, 'client-id': broker.clientId, 'Content-Type': 'application/json' },
+                                        timeout: 5000 
+                                    });
+                                    
+                                    const optKey = trade.optionConfig.type === "CE" ? "ce" : "pe";
+                                    if (res.data && res.data.data && res.data.data[optKey]) {
+                                        const chart = res.data.data[optKey];
+                                        const exitTimeStr = `${h}:${m}`;
+                                        for(let k=0; k<chart.timestamp.length; k++){
+                                            const optTime = new Date(chart.timestamp[k] * 1000 + (5.5 * 3600000));
+                                            if(optTime.toISOString().split('T')[1].substring(0, 5) === exitTimeStr) { 
+                                                // Asli strike cross-check verify karo
+                                                if (Number(chart.strike[k]) === Number(trade.optionConfig.strike)) {
+                                                    exitP = chart.open[k]; // Asli strike (197.10) ka price mil gaya!
+                                                }
+                                                break; 
+                                            }
+                                        }
+                                    }
+                                } catch (e) {
+                                    console.log(`⚠️ Exact exit fetch failed for ${trade.symbol}, using fallback.`);
+                                }
+                            }
+                            // =========================================================================
+
                             const pnl = calcTradePnL(trade.entryPrice, exitP, trade.quantity, trade.transaction);
                             
                             const forcedTrade = {
@@ -7322,7 +7396,7 @@ const runBacktestSimulator = async (req, res) => {
                             
                             if (pnl > 0) { winTrades++; if (pnl > maxProfitTrade) maxProfitTrade = pnl; }
                             else { lossTrades++; if (pnl < maxLossTrade) maxLossTrade = pnl; }
-                        });
+                        }
                         
                         openTrades = []; // Saare legs khatam, dukaan band!
                     }
