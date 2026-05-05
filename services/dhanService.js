@@ -1273,9 +1273,49 @@ const fetchExpiredOptionData = async (clientId, apiSecret, spotSecurityId, strik
     });
 };
 
+// ==========================================
+// 🗑️ 5. CANCEL DHAN ORDER (FOR NAKED ORDER PROTECTION)
+// ==========================================
+const cancelDhanOrder = async (clientId, accessToken, orderId) => {
+    return enqueueApiCall(async () => { 
+        try {
+            // Dhan API ka Delete Endpoint: https://api.dhan.co/orders/{orderId}
+            const url = `${DHAN_API_URL}/${orderId}`; 
+            
+            const response = await axios.delete(url, {
+                headers: {
+                    'access-token': accessToken,
+                    'client-id': clientId,
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                timeout: 5000 // 5 seconds timeout
+            });
+
+            console.log(`✅ [DHAN API] Naked Order Cancelled Successfully: ${orderId}`);
+            return { success: true, data: response.data };
+
+        } catch (error) {
+            const status = error.response?.status;
+            const errData = error.response?.data;
+            const errorMsg = errData?.internalErrorMessage || errData?.errorMessage || error.message || "Unknown error occurred";
+            
+            // Agar order pehle hi execute ya cancel ho chuka hai, toh usko error mat maano
+            if (errorMsg.toLowerCase().includes('already') || errorMsg.toLowerCase().includes('not open')) {
+                console.log(`ℹ️ [DHAN API] Order ${orderId} is already executed/cancelled.`);
+                return { success: true, message: "Already processed" }; // Treat as success for our logic
+            }
+
+            console.error(`❌ [DHAN API] Order Cancellation Failed for ${orderId}:`, errData || errorMsg);
+            return { success: false, error: errorMsg };
+        }
+    });
+};
+
 module.exports = {
     placeDhanOrder,
     fetchLiveLTP,
     fetchDhanHistoricalData,
-    fetchExpiredOptionData 
+    fetchExpiredOptionData,
+    cancelDhanOrder
 };
