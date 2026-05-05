@@ -6251,6 +6251,9 @@ const { evaluateTrailingSL } = require('../engine/features/riskManagement/traili
 const { evaluateMtmLogic } = require('../engine/features/riskManagement/mtmSquareOff');
 const { evaluateExitAllLogic } = require('../engine/features/advanceFeatures/exitAllOnSlTgt');
 
+
+const { isTradingHoliday } = require('../engine/utils/holidaysCalendar');
+
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const withRetry = async (apiCallFn, maxRetries = 3, delayMs = 1500) => {
@@ -6581,6 +6584,16 @@ const runBacktestSimulator = async (req, res) => {
                     while (expiryDate.getDay() !== targetDay) expiryDate.setDate(expiryDate.getDate() - 1);
                 }
             }
+
+            // =========================================================
+            // 🔥 THE MASTER FIX: HOLIDAY EXPIRY SHIFTING
+            // Agar nikaali gayi expiry date (e.g., 14 Apr) chhuti ya weekend hai,
+            // toh ek din pehle (pichhle working day) par shift kar do!
+            // =========================================================
+            while (isTradingHoliday(expiryDate)) {
+                expiryDate.setDate(expiryDate.getDate() - 1);
+            }
+            // =========================================================
 
             const formattedDate = `${String(expiryDate.getDate()).padStart(2, '0')}${expiryDate.toLocaleString('en-US', { month: 'short' }).toUpperCase()}${String(expiryDate.getFullYear()).slice(-2)}`;
             const today = new Date(); today.setHours(0, 0, 0, 0);
