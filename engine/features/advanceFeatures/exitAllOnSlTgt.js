@@ -190,16 +190,25 @@ const handleExitAllOnSlTgt = async (strategy, triggeredDeployment, broker, trigg
  * ========================================================
  * 🔵 BACKTESTING ENGINE (Stateless Math Logic)
  * ========================================================
- * Ye check karega ki agar kisi ek leg ka reason SL/TP hai, to kya sabko nikalna hai?
  */
 const evaluateExitAllLogic = (advanceData, hitReason) => {
-    const isExitAllEnabled = advanceData?.exitAllOnSlTgt === true || advanceData?.exitAllOnSlTgt === 'ON';
+    // 🔥 FIX: Frontend se aane wale exact naam (exitAllOnSLTgt) ko match kar diya!
+    const isExitAllEnabled = advanceData?.exitAllOnSLTgt === true || advanceData?.exitAllOnSlTgt === true || advanceData?.exitAllOnSLTgt === 'ON';
     
     // Agar feature band hai, ya koi exit reason hi nahi hai, to false return karo
     if (!isExitAllEnabled || !hitReason) return { shouldExitAll: false };
 
-    // Agar current leg ka exit inme se kisi wajah se hua hai:
-    if (['STOPLOSS', 'TARGET', 'TRAILING_SL', 'LOCK_FIX_PROFIT', 'LOCK_AND_TRAIL'].includes(hitReason)) {
+    // 🔥 THE FIX: Saare trailing aur profit lock events ko bhi pehchanega
+    const validTriggers = [
+        'STOPLOSS', 
+        'TARGET', 
+        'TRAILING_SL', 
+        'SL_MOVED_TO_COST', 
+        'LOCK_FIX_PROFIT', 
+        'LOCK_AND_TRAIL'
+    ];
+
+    if (validTriggers.includes(hitReason)) {
         return {
             shouldExitAll: true,
             exitReason: `EXIT_ALL_TRIGGERED_BY_${hitReason}`
@@ -208,7 +217,6 @@ const evaluateExitAllLogic = (advanceData, hitReason) => {
 
     return { shouldExitAll: false };
 };
-
 // 🔥 Exporting both
 module.exports = {
     handleExitAllOnSlTgt,
