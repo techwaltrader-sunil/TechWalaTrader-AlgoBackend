@@ -6826,7 +6826,7 @@ const runBacktestSimulator = async (req, res) => {
                 let anyLegHitSlPast = dailyBreakdownMap[dateStr].tradesList.some(t => t.exitType === "STOPLOSS" || t.exitType === "SL_MOVED_TO_COST");
                 let anyLegHitSlThisTick = false;
 
-                // let isSlMovedToCostGlobal = dailyBreakdownMap[dateStr].tradesList.some(t => t.exitType === "STOPLOSS" || t.exitType === "SL_MOVED_TO_COST");
+             
                 // 🔥 V-SHAPE RECOVERY UPGRADE: Check if user wants independent trailing
                 let isSlMovedToCostGlobal = false;
                 
@@ -6980,7 +6980,7 @@ const runBacktestSimulator = async (req, res) => {
                         // =========================================================================
                         // 🔴 THE SNIPER GATEKEEPER 
                         // =========================================================================
-                        const needsMarketPrice = ["TIME_SQUAREOFF", "EOD_SQUAREOFF", "INDICATOR_EXIT", "EXIT_ALL_TGT", "EXIT_ALL_SL", "STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST", "LOCK_FIX_PROFIT", "LOCK_AND_TRAIL"].includes(trade.exitReason);
+                       const needsMarketPrice = ["TIME_SQUAREOFF", "EOD_SQUAREOFF", "INDICATOR_EXIT", "STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST", "LOCK_FIX_PROFIT", "LOCK_AND_TRAIL"].includes(trade.exitReason) || String(trade.exitReason).startsWith("EXIT_ALL");
                         let fakeTriggerRejected = false;
 
                         if (isOptionsTrade && broker && needsMarketPrice && trade.optionConfig) {
@@ -7169,7 +7169,7 @@ const runBacktestSimulator = async (req, res) => {
                                                 }
                                             }
                                         } else {
-                                            trade.exitPrice = trade.exitReason === "TIME_SQUAREOFF" ? cOpen : cClose;
+                                            trade.exitPrice = (trade.exitReason === "TIME_SQUAREOFF" || String(trade.exitReason).startsWith("EXIT_ALL")) ? cOpen : cClose;
                                         }
                                     }
                                 }

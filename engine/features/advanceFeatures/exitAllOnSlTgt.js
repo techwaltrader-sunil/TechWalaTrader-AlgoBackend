@@ -199,7 +199,7 @@ const evaluateExitAllLogic = (advanceData, hitReason) => {
     if (!isExitAllEnabled || !hitReason) return { shouldExitAll: false };
 
     // Agar current leg ka exit inme se kisi wajah se hua hai:
-    if (['STOPLOSS', 'TARGET', 'TRAILING_SL'].includes(hitReason)) {
+    if (['STOPLOSS', 'TARGET', 'TRAILING_SL', 'LOCK_FIX_PROFIT', 'LOCK_AND_TRAIL'].includes(hitReason)) {
         return {
             shouldExitAll: true,
             exitReason: `EXIT_ALL_TRIGGERED_BY_${hitReason}`
