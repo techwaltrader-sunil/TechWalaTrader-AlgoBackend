@@ -6957,18 +6957,18 @@ const runBacktestSimulator = async (req, res) => {
                     }
                 });
 
-                if (triggerReasonForExitAll && !hitGlobalMaxProfit && !hitGlobalMaxLoss) {
-                    const exitAllCheck = evaluateExitAllLogic(advanceFeaturesSettings, triggerReasonForExitAll);
-                    if (exitAllCheck.shouldExitAll) {
-                        openTrades.forEach(trade => {
-                            if (!trade.markedForExit) {
-                                trade.markedForExit = true;
-                                trade.exitReason = exitAllCheck.exitReason;
-                                trade.exitPrice = trade.currentPrice;
-                            }
-                        });
-                    }
-                }
+                // if (triggerReasonForExitAll && !hitGlobalMaxProfit && !hitGlobalMaxLoss) {
+                //     const exitAllCheck = evaluateExitAllLogic(advanceFeaturesSettings, triggerReasonForExitAll);
+                //     if (exitAllCheck.shouldExitAll) {
+                //         openTrades.forEach(trade => {
+                //             if (!trade.markedForExit) {
+                //                 trade.markedForExit = true;
+                //                 trade.exitReason = exitAllCheck.exitReason;
+                //                 trade.exitPrice = trade.currentPrice;
+                //             }
+                //         });
+                //     }
+                // }
 
                 let remainingTrades = [];
                 for (let trade of openTrades) {
@@ -7269,6 +7269,52 @@ const runBacktestSimulator = async (req, res) => {
                 }
 
                 openTrades = remainingTrades;
+
+                // 🔥 NEW BULLETPROOF EXIT ALL LOGIC (Post-Gatekeeper)
+                // Ye tabhi trigger hoga jab Sniper Gatekeeper kisi leg ko sach me kaat dega
+                const advanceData = advanceFeaturesSettings;
+                const isExitAllEnabled = advanceData?.exitAllOnSLTgt === true || advanceData?.exitAllOnSlTgt === true || advanceData?.exitAllOnSLTgt === 'ON';
+                
+                if (isExitAllEnabled && openTrades.length > 0 && !hitGlobalMaxProfit && !hitGlobalMaxLoss) {
+                    const confirmedTriggers = ["STOPLOSS", "TARGET", "TRAILING_SL", "LOCK_FIX_PROFIT", "LOCK_AND_TRAIL"];
+                    let actualTriggerReason = null;
+                    
+                    // Check karo ki kya isi minute me Sniper Gatekeeper ne sach me koi SL/Target confirm kiya hai?
+                    const currentMinute = `${h}:${m}:00`;
+                    for (let i = dailyBreakdownMap[dateStr].tradesList.length - 1; i >= 0; i--) {
+                        const t = dailyBreakdownMap[dateStr].tradesList[i];
+                        if (t.exitTime === currentMinute && confirmedTriggers.includes(t.exitType)) {
+                            actualTriggerReason = t.exitType;
+                            break;
+                        }
+                    }
+
+                    // Agar SL/Target 100% confirm ho gaya hai, tabhi baki bache hue legs ko (Exit All) maaro
+                    if (actualTriggerReason) {
+                        openTrades.forEach(trade => {
+                            const exitP = trade.currentOpen; // Exit all market order hota hai, isliye candle ke Open price par katega
+                            const pnl = calcTradePnL(trade.entryPrice, exitP, trade.quantity, trade.transaction);
+                            
+                            const forcedTrade = {
+                                ...trade,
+                                exitTime: currentMinute,
+                                exitPrice: exitP,
+                                pnl: pnl,
+                                exitType: `EXIT_ALL_TRIGGERED_BY_${actualTriggerReason}`
+                            };
+                            
+                            dailyBreakdownMap[dateStr].tradesList.push(forcedTrade);
+                            dailyBreakdownMap[dateStr].pnl += pnl;
+                            dailyBreakdownMap[dateStr].trades += 1;
+                            
+                            if (pnl > 0) { winTrades++; if (pnl > maxProfitTrade) maxProfitTrade = pnl; }
+                            else { lossTrades++; if (pnl < maxLossTrade) maxLossTrade = pnl; }
+                        });
+                        
+                        openTrades = []; // Saare legs khatam, dukaan band!
+                    }
+                }
+            
             }
             else if (!isTradingHaltedForDay) {
                 const mtmResult = evaluateMtmLogic(dailyBreakdownMap[dateStr].pnl, 0, riskSettings);
