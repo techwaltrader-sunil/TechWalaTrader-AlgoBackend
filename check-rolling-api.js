@@ -265,8 +265,8 @@
 const axios = require('axios');
 
 // 🔥 1. APNI DETAILS YAHAN DALEIN
-const CLIENT_ID = "YOUR_CLIENT_ID"; 
-const ACCESS_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzc3MzY4MzgyLCJpYXQiOjE3NzcyODE5ODIsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTAzMjM4NzQ0In0.inMaZrgea--yVMcq492EAOf_Hdlg8Wew6GaJlOV6pozwJCCciJ9Xxb89x4VrLauYOP2WIbhqYGYu0p9HGPitsQ";
+const CLIENT_ID = "1103238744"; 
+const ACCESS_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzc4MjM1MjEwLCJpYXQiOjE3NzgxNDg4MTAsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTAzMjM4NzQ0In0.HHh4XDquUXcxSWRLQgZJX5nf_ywtHeyx6n1R8xb1JW8E9vUqb6v3SZj4QgCxxuUOqJvTRhaQ8BUoH8IowMe2zw";
 
 // 🛑 Dhan API ko hang hone se bachane ke liye chota sa timeout/delay
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -411,7 +411,8 @@ async function fetchFixedStrikeData(dateStr, reqExpiry, optType, initialStrikeTy
 
 async function runAllTests() {
     // Yahan apni pasand ki Deep OTM / Deep ITM entry test karein
-    await fetchFixedStrikeData("2026-01-23", "WEEKLY", "PE", "ATM", "09:45", "11:49");
+    await fetchFixedStrikeData("2026-04-29", "WEEKLY", "CE", "ATM", "09:45", "10:10");
+    await fetchFixedStrikeData("2026-04-29", "WEEKLY", "CE", "ATM", "09:45", "10:11");
 }
 
 runAllTests();
