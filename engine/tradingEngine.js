@@ -1523,7 +1523,13 @@ cron.schedule('*/30 * * * * *', async () => {
                                     // 🔥 THE FIX: Yahan 'LEG_EXIT' label add kar diya! 
                                     await handleMoveSlToCost(strategy, deployment, broker, 'LEG_EXIT');
                                 }
-                                if (strategy.data?.advanceSettings?.exitAllOnSlTgt) {
+                                
+                                // 🔥 THE BULLETPROOF EXIT ALL LOGIC
+                                const advSettings = strategy.data?.advanceSettings || {};
+                                const isExitAllOn = advSettings.exitAllOnSLTgt === true || advSettings.exitAllOnSlTgt === true || advSettings.exitAllOnSLTgt === 'ON';
+                                
+                                // Agar Exit All ON hai aur kuch legs abhi bhi bache hain (!allCompleted)
+                                if (!allCompleted && isExitAllOn) {
                                     await handleExitAllOnSlTgt(strategy, deployment, broker, exitReason);
                                 }
 

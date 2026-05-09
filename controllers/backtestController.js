@@ -6254,31 +6254,7 @@ const runBacktestSimulator = async (req, res) => {
                         }
                     }
 
-                    // // Agar SL/Target 100% confirm ho gaya hai, tabhi baki bache hue legs ko (Exit All) maaro
-                    // if (actualTriggerReason) {
-                    //     openTrades.forEach(trade => {
-                    //         const exitP = trade.currentOpen; // Exit all market order hota hai, isliye candle ke Open price par katega
-                    //         const pnl = calcTradePnL(trade.entryPrice, exitP, trade.quantity, trade.transaction);
-                            
-                    //         const forcedTrade = {
-                    //             ...trade,
-                    //             exitTime: currentMinute,
-                    //             exitPrice: exitP,
-                    //             pnl: pnl,
-                    //             exitType: `EXIT_ALL_TRIGGERED_BY_${actualTriggerReason}`
-                    //         };
-                            
-                    //         dailyBreakdownMap[dateStr].tradesList.push(forcedTrade);
-                    //         dailyBreakdownMap[dateStr].pnl += pnl;
-                    //         dailyBreakdownMap[dateStr].trades += 1;
-                            
-                    //         if (pnl > 0) { winTrades++; if (pnl > maxProfitTrade) maxProfitTrade = pnl; }
-                    //         else { lossTrades++; if (pnl < maxLossTrade) maxLossTrade = pnl; }
-                    //     });
-                        
-                    //     openTrades = []; // Saare legs khatam, dukaan band!
-                    // }
-
+                
 
                     // Agar SL/Target 100% confirm ho gaya hai, tabhi baki bache hue legs ko (Exit All) maaro
                     if (actualTriggerReason) {
