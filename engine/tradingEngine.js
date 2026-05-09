@@ -1051,6 +1051,7 @@ const { handleMoveSlToCost } = require('./features/advanceFeatures/moveSlToCost.
 const { handlePrePunchSl } = require('./features/advanceFeatures/prePunchSl.js');
 const { handleExitAllOnSlTgt } = require('./features/advanceFeatures/exitAllOnSlTgt.js');
 const { processWaitAndTrade } = require('./features/advanceFeatures/waitAndTrade.js');
+const { checkPremiumDifference } = require('./features/advanceFeatures/premiumDifference.js');
 
 // Global execution locks
 const executionLocks = new Set();
@@ -1134,6 +1135,63 @@ cron.schedule('*/30 * * * * *', async () => {
                     for (const brokerId of deployment.brokers) {
                         const broker = await Broker.findById(brokerId);
                         if (broker && broker.engineOn) {
+
+                            // ==============================================================
+                            // ⚖️ GATEKEEPER: PREMIUM DIFFERENCE CHECK
+                            // ==============================================================
+                            const advSettings = strategy.data?.advanceSettings || {};
+                            let passPremiumDiff = true;
+
+                            // Agar feature ON hai aur strategy mein kam se kam 2 legs hain
+                            if (advSettings.premiumDifference && strategy.data.legs.length >= 2) {
+                                let currentSpotPrice = await fetchLivePrice(baseSymbol);
+                                
+                                if (currentSpotPrice) {
+                                    let tempLtps = [];
+                                    
+                                    // Pehle 2 legs ka dummy fetch karke price nikalte hain
+                                    for (let i = 0; i < 2; i++) {
+                                        const tempLeg = strategy.data.legs[i];
+                                        let tempAction = (tempLeg.action || "BUY").toUpperCase();
+                                        let tempOptType = tempLeg.optionType === "Call" ? "CE" : "PE";
+                                        
+                                        if (currentSignalType === "LONG") tempOptType = (tempAction === "BUY") ? "CE" : "PE";
+                                        else if (currentSignalType === "SHORT") tempOptType = (tempAction === "BUY") ? "PE" : "CE";
+
+                                        let tempInstrument;
+                                        if (["CP", "CP >=", "CP <=", "Delta"].includes(tempLeg.strikeCriteria || "ATM pt")) {
+                                            tempInstrument = await findStrikeByLivePremium(baseSymbol, currentSpotPrice, tempOptType, tempLeg.expiry || "WEEKLY", tempLeg.strikeCriteria || "ATM pt", tempLeg.strikeType || "ATM", broker);
+                                        } else {
+                                            tempInstrument = getOptionSecurityId(baseSymbol, currentSpotPrice, tempLeg.strikeCriteria || "ATM pt", tempLeg.strikeType || "ATM", tempOptType, tempLeg.expiry || "WEEKLY");
+                                        }
+
+                                        if (tempInstrument) {
+                                            // Asli LTP mangao ya fallback use karo
+                                            const ltp = tempInstrument.ltp || await fetchLiveLTP(broker.clientId, broker.apiSecret, tempInstrument.exchange, tempInstrument.id) || currentSpotPrice;
+                                            tempLtps.push(ltp);
+                                        }
+                                    }
+
+                                    // Dono legs ke price mil gaye, ab difference check karo
+                                    if (tempLtps.length === 2) {
+                                        // UI se aane wali exact value (safest fallback ke sath)
+                                        const maxDiff = Number(advSettings.premiumDifferenceValue || advSettings.premiumDifferenceConfig?.movement || advSettings.premiumDifferenceConfig?.value || 100);
+                                        
+                                        const diffStatus = checkPremiumDifference(true, maxDiff, tempLtps);
+                                        if (!diffStatus.isAllowed) {
+                                            console.log(`⚖️ [PREMIUM DIFF BLOCK] Time: ${currentTime} | ${diffStatus.reason}`);
+                                            passPremiumDiff = false;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Agar difference limit se bahar hai, toh Entry abort kardo is tick ke liye
+                            if (!passPremiumDiff) {
+                                executionLocks.delete(entryLockKey); // 🔥 LOCK UNLOCK KARNA ZAROORI HAI taki agle 30 sec me fir check ho
+                                continue; // Agle broker ya next tick par jao
+                            }
+                            // ==============================================================
                             
                             for (const leg of strategy.data.legs) {
                                 let tradeAction = (leg.action || "BUY").toUpperCase(); 
