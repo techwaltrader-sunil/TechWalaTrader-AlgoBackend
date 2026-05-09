@@ -6970,18 +6970,6 @@ const runBacktestSimulator = async (req, res) => {
                     }
                 });
 
-                // if (triggerReasonForExitAll && !hitGlobalMaxProfit && !hitGlobalMaxLoss) {
-                //     const exitAllCheck = evaluateExitAllLogic(advanceFeaturesSettings, triggerReasonForExitAll);
-                //     if (exitAllCheck.shouldExitAll) {
-                //         openTrades.forEach(trade => {
-                //             if (!trade.markedForExit) {
-                //                 trade.markedForExit = true;
-                //                 trade.exitReason = exitAllCheck.exitReason;
-                //                 trade.exitPrice = trade.currentPrice;
-                //             }
-                //         });
-                //     }
-                // }
 
                 let remainingTrades = [];
                 for (let trade of openTrades) {
