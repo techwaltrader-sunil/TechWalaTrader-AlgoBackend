@@ -6400,6 +6400,9 @@ const runBacktestSimulator = async (req, res) => {
                             dailyBreakdownMap[dateStr].isWaitingForTrade = true;
                             dailyBreakdownMap[dateStr].waitRefPrice = spotClosePrice; // Backtest speed ke liye Spot Price use hoga
                             dailyBreakdownMap[dateStr].waitSignalType = finalLongSignal ? "LONG" : "SHORT";
+
+                            // 🔥 NAYA CONSOLE LOG: 9:45 baje ka exact Spot Price dekhne ke liye
+                            console.log(`\n⏳ [WAIT STARTED] Date: ${dateStr} | Time: ${h}:${m} | Ref Spot Price: ₹${spotClosePrice} | Logic: ${waitConfig.type} ${waitConfig.movement}`);
                         }
                     } else {
                         shouldAttemptEntry = true;
@@ -6414,6 +6417,9 @@ const runBacktestSimulator = async (req, res) => {
                         shouldAttemptEntry = true;
                         activeSignalType = dailyBreakdownMap[dateStr].waitSignalType;
                         dailyBreakdownMap[dateStr].isWaitingForTrade = false; // Agle trade ke liye reset kardo
+
+                        // 🔥 NAYA CONSOLE LOG: Jab 20 point ka target hit ho jaye
+                        console.log(`🎯 [TARGET HIT] Date: ${dateStr} | Time: ${h}:${m} | Trigger Spot: ₹${spotClosePrice} | (Ref was: ₹${dailyBreakdownMap[dateStr].waitRefPrice})`);
                     }
                 }
             }
