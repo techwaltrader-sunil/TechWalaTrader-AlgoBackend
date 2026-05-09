@@ -7970,7 +7970,7 @@ const runBacktestSimulator = async (req, res) => {
                 const advSettings = advanceFeaturesSettings || {};
                 
                 if (advSettings.premiumDifference && tempLtps.length >= 2) {
-                    const maxDiff = Number(advSettings.premiumDifferenceValue || advSettings.premiumDifferenceConfig?.movement || advSettings.premiumDifferenceConfig?.value || 100);
+                    const maxDiff = Number(advSettings.premiumDifferenceConfig?.premium || 100);
                     const actualDiff = Math.abs(tempLtps[0] - tempLtps[1]);
                     
                     if (actualDiff > maxDiff) {
