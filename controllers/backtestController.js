@@ -6335,7 +6335,7 @@ const runBacktestSimulator = async (req, res) => {
                                 exitTime: currentMinute,
                                 exitPrice: exitP,
                                 pnl: pnl,
-                                exitType: `EXIT_ALL_TRIGGERED_BY_${actualTriggerReason}`
+                                exitType: actualTriggerReason,
                             };
                             
                             dailyBreakdownMap[dateStr].tradesList.push(forcedTrade);
