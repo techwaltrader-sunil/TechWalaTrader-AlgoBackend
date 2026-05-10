@@ -6661,6 +6661,7 @@ const { evaluateExitAllLogic } = require('../engine/features/advanceFeatures/exi
 const { processWaitAndTrade } = require('../engine/features/advanceFeatures/waitAndTrade');
 
 const { calculateTrailedSL } = require('../engine/features/advanceFeatures/trailSL');
+const { evaluateReEntryLogic } = require('../engine/features/advanceFeatures/reEntryLogic'); // 🔥 NAYA IMPORT
 
 
 const { isTradingHoliday } = require('../engine/utils/holidaysCalendar');
@@ -6937,6 +6938,7 @@ const runBacktestSimulator = async (req, res) => {
 
         let optionDataCache = {}; 
         let openTrades = [];
+        let pendingReEntries = []; // 🔥 NAYA HOSPITAL
         const strategyLegs = strategy.legs || strategy.data?.legs || [];
 
         // 🔥 FIX 1: Math.abs ensures NO negative sign bugs from UI!
@@ -7695,6 +7697,25 @@ const runBacktestSimulator = async (req, res) => {
                             exitType: trade.exitReason
                         };
 
+                        // =========================================================
+                        // 🚑 SEND DEAD LEGS TO HOSPITAL (RE-ENTRY)
+                        // =========================================================
+                        if (advanceFeaturesSettings.reEntryExecute) {
+                            const reConfig = advanceFeaturesSettings.reEntryExecuteConfig || {};
+                            if (["STOPLOSS", "LEG_TRAIL_SL", "SL_MOVED_TO_COST"].includes(trade.exitReason)) {
+                                const currentCycle = trade.reEntryCycle || 0;
+                                if (currentCycle < Number(reConfig.cycles || 0)) {
+                                    pendingReEntries.push({
+                                        ...trade, // Keep entire history (premium chart, etc.)
+                                        reEntryCycle: currentCycle + 1,
+                                        reEntryConfig: reConfig,
+                                        originalEntryPrice: trade.entryPrice // Safe keep original cost
+                                    });
+                                    console.log(`🚑 [HOSPITAL] Leg ${trade.symbol} sent to recovery | Cycle: ${currentCycle + 1}/${reConfig.cycles}`);
+                                }
+                            }
+                        }
+
                         dailyBreakdownMap[dateStr].tradesList.push(completedTrade);
                         dailyBreakdownMap[dateStr].pnl += pnl;
                         dailyBreakdownMap[dateStr].trades += 1;
@@ -7831,6 +7852,46 @@ const runBacktestSimulator = async (req, res) => {
                     isTradingHaltedForDay = true;
                     console.log(mtmResult.logMessage);
                 }
+            }
+
+
+            // =========================================================
+            // 🏥 1.5 HOSPITAL CHECK (RE-ENTRY LOGIC)
+            // =========================================================
+            if (advanceFeaturesSettings.reEntryExecute && pendingReEntries.length > 0 && !isTradingHaltedForDay && isMarketOpen) {
+                let stillPending = [];
+                let revivedTrades = [];
+
+                for (let pTrade of pendingReEntries) {
+                    const reviveStatus = evaluateReEntryLogic(pTrade, istDate, spotClosePrice);
+
+                    if (reviveStatus.shouldRevive) {
+                        console.log(`⚡ [RE-ENTRY] Reviving leg: ${pTrade.symbol} at ₹${reviveStatus.revivePrice.toFixed(2)} | Cycle: ${pTrade.reEntryCycle}`);
+                        
+                        revivedTrades.push({
+                            id: pTrade.id,
+                            legConfig: pTrade.legConfig,
+                            symbol: pTrade.symbol,
+                            transaction: pTrade.transaction,
+                            quantity: pTrade.quantity,
+                            entryTime: `${h}:${m}:00`,
+                            entryPrice: reviveStatus.revivePrice,
+                            exitTime: null, exitPrice: null, pnl: null, exitType: null,
+                            optionConfig: pTrade.optionConfig,
+                            premiumChart: pTrade.premiumChart,
+                            signalType: pTrade.signalType,
+                            lastKnownPremium: reviveStatus.revivePrice,
+                            markedForExit: false,
+                            currentTrailedSL: null,
+                            reEntryCycle: pTrade.reEntryCycle // Ensure cycle count moves forward
+                        });
+                    } else {
+                        stillPending.push(pTrade); // Agar revive nahi hua, toh hospital me hi rehne do
+                    }
+                }
+                
+                pendingReEntries = stillPending;
+                if (revivedTrades.length > 0) openTrades.push(...revivedTrades);
             }
 
             // =========================================================
