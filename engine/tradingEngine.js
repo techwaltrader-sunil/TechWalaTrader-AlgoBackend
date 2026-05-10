@@ -1175,7 +1175,7 @@ cron.schedule('*/30 * * * * *', async () => {
                                     // Dono legs ke price mil gaye, ab difference check karo
                                     if (tempLtps.length === 2) {
                                         // UI se aane wali exact value (safest fallback ke sath)
-                                        const maxDiff = Number(advSettings.premiumDifferenceValue || advSettings.premiumDifferenceConfig?.movement || advSettings.premiumDifferenceConfig?.value || 100);
+                                        const maxDiff = Number(advSettings.premiumDifferenceConfig?.premium || 100);
                                         
                                         const diffStatus = checkPremiumDifference(true, maxDiff, tempLtps);
                                         if (!diffStatus.isAllowed) {

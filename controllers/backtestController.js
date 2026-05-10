@@ -6660,6 +6660,8 @@ const { evaluateExitAllLogic } = require('../engine/features/advanceFeatures/exi
 
 const { processWaitAndTrade } = require('../engine/features/advanceFeatures/waitAndTrade');
 
+const { calculateTrailedSL } = require('../engine/features/advanceFeatures/trailSL');
+
 
 const { isTradingHoliday } = require('../engine/utils/holidaysCalendar');
 
@@ -7015,6 +7017,7 @@ const runBacktestSimulator = async (req, res) => {
         // =========================================================
         // ⏱️ THE MAIN CANDLE LOOP
         // =========================================================
+        console.log(`\n🔍 [DEBUG] Strategy: ${strategy.name} | Legs Count: ${strategyLegs.length} | Entry Time: ${sTime} | Symbol: ${upperSymbol}\n`);
         for (let i = 0; i < cachedData.length; i++) {
             if (i % 500 === 0) await new Promise(resolve => setImmediate(resolve));
 
@@ -7302,6 +7305,30 @@ const runBacktestSimulator = async (req, res) => {
                         tpPrice = tpType === "Points" ? trade.entryPrice - tpValue : trade.entryPrice * (1 - tpValue / 100);
                     }
 
+                    // ==============================================================
+                    // 🎯 ADVANCE FEATURE: TRAIL SL (Sniper Guard)
+                    // ==============================================================
+                    let isLegTrailed = false;
+                    if (advanceFeaturesSettings.trailSL && !isSlMovedToCost) {
+                        const trailConfig = advanceFeaturesSettings.trailSLConfig || {};
+                        const initialSL = slPrice;
+                        
+                        const newTrailedSL = calculateTrailedSL(
+                            trade.transaction,
+                            trade.entryPrice,
+                            initialSL,
+                            trade.currentPrice, // Current LTP of the leg
+                            trailConfig,
+                            trade.currentTrailedSL
+                        );
+
+                        trade.currentTrailedSL = newTrailedSL;
+                        slPrice = newTrailedSL; // 🔥 Override main SL price!
+                        
+                        if (newTrailedSL !== initialSL) isLegTrailed = true;
+                    }
+                    // ==============================================================
+
                     let spotTriggeredSl = false;
                     let spotTriggeredTp = false;
 
@@ -7333,12 +7360,14 @@ const runBacktestSimulator = async (req, res) => {
                         }
                     }
 
-                    if ((!isSlMovedToCost && slValue > 0) || isSlMovedToCost) {
+                    // 🔥 THE FIX: Added isLegTrailed condition
+                    if ((!isSlMovedToCost && slValue > 0) || isSlMovedToCost || isLegTrailed) {
                         if (spotTriggeredSl || (trade.transaction === "BUY" && trade.currentLow <= slPrice) || (trade.transaction === "SELL" && trade.currentHigh >= slPrice)) {
                             trade.markedForExit = true;
-                            trade.exitReason = isSlMovedToCost ? "SL_MOVED_TO_COST" : "STOPLOSS";
+                            // 🔥 Naya naam taki logs aur UI me saaf pata chale ki Trail SL hit hua hai
+                            trade.exitReason = isSlMovedToCost ? "SL_MOVED_TO_COST" : (isLegTrailed ? "LEG_TRAIL_SL" : "STOPLOSS");
                             trade.exitPrice = slPrice;
-                            triggerReasonForExitAll = "STOPLOSS";
+                            triggerReasonForExitAll = trade.exitReason;
                         }
                     }
 
@@ -7390,7 +7419,7 @@ const runBacktestSimulator = async (req, res) => {
                         // =========================================================================
                         // 🔴 THE SNIPER GATEKEEPER 
                         // =========================================================================
-                       const needsMarketPrice = ["TIME_SQUAREOFF", "EOD_SQUAREOFF", "INDICATOR_EXIT", "STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST", "LOCK_FIX_PROFIT", "LOCK_AND_TRAIL"].includes(trade.exitReason) || String(trade.exitReason).startsWith("EXIT_ALL");
+                       const needsMarketPrice = ["TIME_SQUAREOFF", "EOD_SQUAREOFF", "INDICATOR_EXIT", "STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST", "LOCK_FIX_PROFIT", "LOCK_AND_TRAIL", "LEG_TRAIL_SL"].includes(trade.exitReason) || String(trade.exitReason).startsWith("EXIT_ALL");
                         let fakeTriggerRejected = false;
 
                         if (isOptionsTrade && broker && needsMarketPrice && trade.optionConfig) {
@@ -7546,7 +7575,7 @@ const runBacktestSimulator = async (req, res) => {
                                     const cClose = exitData.close[actualExitIndex];
 
                                     let isValidTrigger = true;
-                                    if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST", "LOCK_FIX_PROFIT", "LOCK_AND_TRAIL"].includes(trade.exitReason)) {
+                                    if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST", "LOCK_FIX_PROFIT", "LOCK_AND_TRAIL", "LOCK_AND_TRAIL"].includes(trade.exitReason)) {
                                         if (trade.transaction === "BUY" && cLow > mathPrice) isValidTrigger = false; 
                                         if (trade.transaction === "SELL" && cHigh < mathPrice) isValidTrigger = false; 
                                     } else if (trade.exitReason === "TARGET") {
@@ -7564,16 +7593,16 @@ const runBacktestSimulator = async (req, res) => {
                                     if (!isValidTrigger || isFlatline) {
                                         fakeTriggerRejected = true;
                                     } else {
-                                        if (["STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST", "LOCK_FIX_PROFIT", "LOCK_AND_TRAIL"].includes(trade.exitReason)) {
+                                        if (["STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST", "LOCK_FIX_PROFIT", "LOCK_AND_TRAIL", "LEG_TRAIL_SL"].includes(trade.exitReason)) {
                                             if (!useRealisticSlippage) {
                                                 trade.exitPrice = cOpen; 
                                             } else {
                                                 if (trade.transaction === "BUY") {
-                                                    if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST", "LOCK_FIX_PROFIT", "LOCK_AND_TRAIL"].includes(trade.exitReason) && cOpen < mathPrice) trade.exitPrice = cOpen;
+                                                    if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST", "LOCK_FIX_PROFIT", "LOCK_AND_TRAIL", "LEG_TRAIL_SL"].includes(trade.exitReason) && cOpen < mathPrice) trade.exitPrice = cOpen;
                                                     else if (trade.exitReason === "TARGET" && cOpen > mathPrice) trade.exitPrice = cOpen;
                                                     else trade.exitPrice = mathPrice; 
                                                 } else { 
-                                                    if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST", "LOCK_FIX_PROFIT", "LOCK_AND_TRAIL"].includes(trade.exitReason) && cOpen > mathPrice) trade.exitPrice = cOpen;
+                                                    if (["STOPLOSS", "TRAILING_SL", "SL_MOVED_TO_COST", "LOCK_FIX_PROFIT", "LOCK_AND_TRAIL", "LOCK_AND_TRAIL", "LEG_TRAIL_SL"].includes(trade.exitReason) && cOpen > mathPrice) trade.exitPrice = cOpen;
                                                     else if (trade.exitReason === "TARGET" && cOpen < mathPrice) trade.exitPrice = cOpen;
                                                     else trade.exitPrice = mathPrice; 
                                                 }
@@ -7686,7 +7715,7 @@ const runBacktestSimulator = async (req, res) => {
                 const isExitAllEnabled = advanceData?.exitAllOnSLTgt === true || advanceData?.exitAllOnSlTgt === true || advanceData?.exitAllOnSLTgt === 'ON';
                 
                 if (isExitAllEnabled && openTrades.length > 0 && !hitGlobalMaxProfit && !hitGlobalMaxLoss) {
-                    const confirmedTriggers = ["STOPLOSS", "TARGET", "TRAILING_SL", "LOCK_FIX_PROFIT", "LOCK_AND_TRAIL"];
+                    const confirmedTriggers = ["STOPLOSS", "TARGET", "TRAILING_SL", "LOCK_FIX_PROFIT", "LOCK_AND_TRAIL", "LEG_TRAIL_SL"];
                     let actualTriggerReason = null;
                     
                     // Check karo ki kya isi minute me Sniper Gatekeeper ne sach me koi SL/Target confirm kiya hai?
@@ -7957,7 +7986,8 @@ const runBacktestSimulator = async (req, res) => {
                             premiumChart: premiumChartData,
                             signalType: finalLongSignal ? "LONG" : "SHORT",
                             lastKnownPremium: finalEntryPrice,
-                            markedForExit: false
+                            markedForExit: false,
+                            currentTrailedSL: null  // 🔥 NAYA CODE: Memory for Trail SL
                         });
                         tempLtps.push(finalEntryPrice);
                     }
