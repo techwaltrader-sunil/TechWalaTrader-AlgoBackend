@@ -1052,6 +1052,7 @@ const { handlePrePunchSl } = require('./features/advanceFeatures/prePunchSl.js')
 const { handleExitAllOnSlTgt } = require('./features/advanceFeatures/exitAllOnSlTgt.js');
 const { processWaitAndTrade } = require('./features/advanceFeatures/waitAndTrade.js');
 const { checkPremiumDifference } = require('./features/advanceFeatures/premiumDifference.js');
+const { calculateTrailedSL } = require('./features/advanceFeatures/trailSL.js');
 
 // Global execution locks
 const executionLocks = new Set();
@@ -1267,7 +1268,8 @@ cron.schedule('*/30 * * * * *', async () => {
                                         quantity: tradeQty,
                                         entryPrice: entryPrice,
                                         paperSlPrice: paperSl,
-                                        status: 'ACTIVE'
+                                        status: 'ACTIVE',
+                                        currentTrailedSL: null // 🔥 SNIPER MEMORY
                                     });
 
                                     await deployment.save();
@@ -1330,7 +1332,8 @@ cron.schedule('*/30 * * * * *', async () => {
                                             quantity: tradeQty,
                                             entryPrice: entryPrice,
                                             paperSlPrice: liveSlPrice > 0 ? liveSlPrice : 0, // SL record karna
-                                            status: 'ACTIVE'
+                                            status: 'ACTIVE',
+                                            currentTrailedSL: null // 🔥 SNIPER MEMORY
                                         });
 
                                         await deployment.save();
@@ -1523,21 +1526,49 @@ cron.schedule('*/30 * * * * *', async () => {
                                     
                                 let pnlInPercentage = (pnlInPoints / currentLeg.entryPrice) * 100;
 
-                                // 🚨 CHECK STOPLOSS (SL)
+                                let pnlInPoints = currentLeg.action === 'BUY' 
+                                    ? (liveLtp - currentLeg.entryPrice) 
+                                    : (currentLeg.entryPrice - liveLtp);
+                                    
+                                let pnlInPercentage = (pnlInPoints / currentLeg.entryPrice) * 100;
+
+                                // ==============================================================
+                                // 🎯 ADVANCE FEATURE: TRAIL SL (Live Sniper Guard)
+                                // ==============================================================
+                                let initialSlPrice = 0;
                                 if (slVal > 0) {
-                                    if (slType.includes("%") && pnlInPercentage <= -slVal) {
-                                        isSlHit = true; exitReason = `StopLoss Hit (${slVal}%)`;
-                                    } else if (!slType.includes("%") && pnlInPoints <= -slVal) {
-                                        isSlHit = true; exitReason = `StopLoss Hit (${slVal} pts)`;
+                                    const slAmt = slType.includes("%") ? (currentLeg.entryPrice * slVal / 100) : slVal;
+                                    initialSlPrice = currentLeg.action === 'BUY' ? currentLeg.entryPrice - slAmt : currentLeg.entryPrice + slAmt;
+                                }
+
+                                const advSettings = strategy.data?.advanceSettings || {};
+                                if (advSettings.trailSL && initialSlPrice > 0) {
+                                    const newTrailedSL = calculateTrailedSL(
+                                        currentLeg.action,
+                                        currentLeg.entryPrice,
+                                        initialSlPrice,
+                                        liveLtp,
+                                        advSettings.trailSLConfig || {},
+                                        currentLeg.currentTrailedSL || null
+                                    );
+
+                                    if (newTrailedSL !== currentLeg.currentTrailedSL && newTrailedSL !== initialSlPrice) {
+                                        currentLeg.currentTrailedSL = newTrailedSL;
+                                        await deployment.save();
+                                        console.log(`🎯 [LIVE SNIPER] Trailed SL updated to ₹${newTrailedSL.toFixed(2)} for ${currentLeg.symbol}`);
                                     }
                                 }
 
-                                // 🎯 CHECK TARGET (TP)
-                                if (tpVal > 0 && !isSlHit) {
-                                    if (tpType.includes("%") && pnlInPercentage >= tpVal) {
-                                        isTpHit = true; exitReason = `Target Hit (${tpVal}%)`;
-                                    } else if (!tpType.includes("%") && pnlInPoints >= tpVal) {
-                                        isTpHit = true; exitReason = `Target Hit (${tpVal} pts)`;
+                                let activeSlPrice = currentLeg.currentTrailedSL || initialSlPrice;
+
+                                // 🚨 CHECK STOPLOSS (SL)
+                                if (activeSlPrice > 0) {
+                                    if (currentLeg.action === 'BUY' && liveLtp <= activeSlPrice) {
+                                        isSlHit = true; 
+                                        exitReason = currentLeg.currentTrailedSL ? "LEG_TRAIL_SL" : `StopLoss Hit`;
+                                    } else if (currentLeg.action === 'SELL' && liveLtp >= activeSlPrice) {
+                                        isSlHit = true; 
+                                        exitReason = currentLeg.currentTrailedSL ? "LEG_TRAIL_SL" : `StopLoss Hit`;
                                     }
                                 }
                             }
