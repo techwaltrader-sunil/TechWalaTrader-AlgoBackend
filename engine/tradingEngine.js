@@ -1662,7 +1662,6 @@ cron.schedule('*/30 * * * * *', async () => {
                                 // =========================================================
                                 // 🚑 SEND DEAD LEGS TO LIVE HOSPITAL
                                 // =========================================================
-                                const advSettings = strategy.data?.advanceSettings || {};
                                 const reConfig = advSettings.reEntryExecuteConfig || {};
                                 
                                 if (advSettings.reEntryExecute && ["StopLoss Hit", "LEG_TRAIL_SL", "SL_MOVED_TO_COST"].includes(exitReason)) {
