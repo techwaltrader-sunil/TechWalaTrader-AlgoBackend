@@ -1526,12 +1526,6 @@ cron.schedule('*/30 * * * * *', async () => {
                                     
                                 let pnlInPercentage = (pnlInPoints / currentLeg.entryPrice) * 100;
 
-                                let pnlInPoints = currentLeg.action === 'BUY' 
-                                    ? (liveLtp - currentLeg.entryPrice) 
-                                    : (currentLeg.entryPrice - liveLtp);
-                                    
-                                let pnlInPercentage = (pnlInPoints / currentLeg.entryPrice) * 100;
-
                                 // ==============================================================
                                 // 🎯 ADVANCE FEATURE: TRAIL SL (Live Sniper Guard)
                                 // ==============================================================
