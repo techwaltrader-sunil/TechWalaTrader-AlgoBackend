@@ -7883,7 +7883,8 @@ const runBacktestSimulator = async (req, res) => {
                             lastKnownPremium: reviveStatus.revivePrice,
                             markedForExit: false,
                             currentTrailedSL: null,
-                            reEntryCycle: pTrade.reEntryCycle // Ensure cycle count moves forward
+                            reEntryCycle: pTrade.reEntryCycle, // Ensure cycle count moves forward
+                            entryReason: "Re-Entry" // 🔥 NAYA TAG (Ise Jodna Hai)
                         });
                     } else {
                         stillPending.push(pTrade); // Agar revive nahi hua, toh hospital me hi rehne do
@@ -7899,6 +7900,7 @@ const runBacktestSimulator = async (req, res) => {
             // =========================================================
             let shouldAttemptEntry = false;
             let activeSignalType = null;
+            let currentEntryReason = "Normal"; // 🔥 NAYA VARIABLE BANAEN
             const isWaitAndTradeActive = advanceFeaturesSettings.waitAndTrade === true;
             const waitConfig = advanceFeaturesSettings.waitAndTradeConfig || {};
 
@@ -7927,6 +7929,7 @@ const runBacktestSimulator = async (req, res) => {
                     if (waitStatus.shouldExecute) {
                         shouldAttemptEntry = true;
                         activeSignalType = dailyBreakdownMap[dateStr].waitSignalType;
+                        currentEntryReason = "Wait & Trade"; // 🔥 NAYA TAG (Ise Jodna Hai)
                         dailyBreakdownMap[dateStr].isWaitingForTrade = false; // Agle trade ke liye reset kardo
 
                         // 🔥 NAYA CONSOLE LOG: Jab 20 point ka target hit ho jaye
@@ -8048,7 +8051,8 @@ const runBacktestSimulator = async (req, res) => {
                             signalType: finalLongSignal ? "LONG" : "SHORT",
                             lastKnownPremium: finalEntryPrice,
                             markedForExit: false,
-                            currentTrailedSL: null  // 🔥 NAYA CODE: Memory for Trail SL
+                            currentTrailedSL: null,  
+                            entryReason: currentEntryReason // 🔥 NAYA TAG (Ise Jodna Hai)
                         });
                         tempLtps.push(finalEntryPrice);
                     }
@@ -8078,6 +8082,12 @@ const runBacktestSimulator = async (req, res) => {
                 // Agar Gatekeeper ne pass kar diya, toh finally Trades execute kardo
                 if (isPremiumDiffPassed && tempPendingTrades.length > 0) {
                     tempPendingTrades.forEach((trade, idx) => {
+
+                        // 🔥 NAYA CODE: Agar Premium Diff ON tha aur trade execute hua, toh Tag badal do
+                        if (advSettings.premiumDifference && trade.entryReason === "Normal") {
+                            trade.entryReason = "Premium Diff";
+                        }
+
                         openTrades.push(trade);
                         console.log(`✅ [TRADE OPEN] Leg ${idx + 1} | Time: ${h}:${m} | Spot: ${spotClosePrice} | Premium: ${trade.entryPrice} | Type: ${trade.optionConfig?.type}`);
                     });
