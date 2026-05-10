@@ -1110,6 +1110,81 @@ cron.schedule('*/30 * * * * *', async () => {
             const hasActiveLegs = hasLegs && deployment.executedLegs.some(l => l.status === 'ACTIVE');
 
             // ==============================================================
+            // 🏥 0. LIVE HOSPITAL CHECK (RE-ENTRY LOGIC)
+            // ==============================================================
+            if (strategy.data?.advanceSettings?.reEntryExecute && liveHospitalMap.has(deployment._id.toString())) {
+                let hospitalQueue = liveHospitalMap.get(deployment._id.toString()) || [];
+                if (hospitalQueue.length > 0) {
+                    let stillPending = [];
+                    const broker = await Broker.findById(deployment.brokers[0]);
+                    
+                    if (broker && broker.engineOn) {
+                        for (let pTrade of hospitalQueue) {
+                            await sleep(500);
+                            const liveLtp = await fetchLiveLTP(broker.clientId, broker.apiSecret, pTrade.exchange, pTrade.securityId);
+                            if (!liveLtp) { stillPending.push(pTrade); continue; }
+
+                            const fakePending = {
+                                reEntryConfig: pTrade.reEntryConfig,
+                                originalEntryPrice: pTrade.originalEntryPrice,
+                                transaction: pTrade.action,
+                                premiumChart: null // Live me hum Spot candle/LTP use karte hain
+                            };
+                            
+                            // IST Date banayein
+                            const istDate = new Date(new Date().getTime() + (5.5 * 3600000));
+                            const reviveStatus = evaluateReEntryLogic(fakePending, istDate, liveLtp);
+
+                            if (reviveStatus.shouldRevive) {
+                                console.log(`⚡ [LIVE RE-ENTRY] Reviving leg: ${pTrade.symbol} at ₹${liveLtp} | Cycle: ${pTrade.reEntryCycle}`);
+
+                                let entryPrice = liveLtp;
+                                let apiSuccess = true;
+
+                                if (deployment.executionType === 'LIVE') {
+                                    const orderData = { action: pTrade.action, quantity: pTrade.quantity, securityId: pTrade.securityId, segment: pTrade.exchange };
+                                    const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
+                                    if (orderResponse.success) {
+                                        await sleep(2000);
+                                        entryPrice = await fetchLiveLTP(broker.clientId, broker.apiSecret, pTrade.exchange, pTrade.securityId) || liveLtp;
+                                        await createAndEmitLog(broker, pTrade.symbol, pTrade.action, pTrade.quantity, 'SUCCESS', `Live Re-Entry Executed at ₹${entryPrice}`, orderResponse.data.orderId);
+                                    } else {
+                                        apiSuccess = false;
+                                        await createAndEmitLog(broker, pTrade.symbol, pTrade.action, pTrade.quantity, 'FAILED', `Re-Entry Failed: ${orderResponse.data?.remarks}`);
+                                    }
+                                } else {
+                                    await createAndEmitLog(broker, pTrade.symbol, pTrade.action, pTrade.quantity, 'SUCCESS', `Paper Re-Entry Executed at ₹${entryPrice}`);
+                                }
+
+                                if (apiSuccess) {
+                                    deployment.executedLegs.push({
+                                        securityId: pTrade.securityId,
+                                        exchange: pTrade.exchange,
+                                        symbol: pTrade.symbol,
+                                        action: pTrade.action,
+                                        quantity: pTrade.quantity,
+                                        entryPrice: entryPrice,
+                                        paperSlPrice: 0, 
+                                        status: 'ACTIVE',
+                                        currentTrailedSL: null,
+                                        reEntryCycle: pTrade.reEntryCycle,
+                                        entryReason: "Re-Entry" // 🔥 FRONTEND UI BADGE KE LIYE TAG
+                                    });
+                                    deployment.status = 'PARTIALLY_COMPLETED'; // Taaki engine ise chalata rahe
+                                    await deployment.save();
+                                } else {
+                                    stillPending.push(pTrade);
+                                }
+                            } else {
+                                stillPending.push(pTrade);
+                            }
+                        }
+                    }
+                    liveHospitalMap.set(deployment._id.toString(), stillPending);
+                }
+            }
+
+            // ==============================================================
             // ⚡ 1. ENTRY LOGIC (Fixed to use executedLegs array)
             // ==============================================================
             if (!executionLocks.has(entryLockKey) && !hasLegs) {
@@ -1269,7 +1344,8 @@ cron.schedule('*/30 * * * * *', async () => {
                                         entryPrice: entryPrice,
                                         paperSlPrice: paperSl,
                                         status: 'ACTIVE',
-                                        currentTrailedSL: null // 🔥 SNIPER MEMORY
+                                        currentTrailedSL: null, // 🔥 SNIPER MEMORY
+                                        entryReason: deployment.waitReferencePrice ? "Wait & Trade" : (advSettings.premiumDifference ? "Premium Diff" : "Normal") // 🔥 FRONTEND TAG
                                     });
 
                                     await deployment.save();
@@ -1333,7 +1409,8 @@ cron.schedule('*/30 * * * * *', async () => {
                                             entryPrice: entryPrice,
                                             paperSlPrice: liveSlPrice > 0 ? liveSlPrice : 0, // SL record karna
                                             status: 'ACTIVE',
-                                            currentTrailedSL: null // 🔥 SNIPER MEMORY
+                                            currentTrailedSL: null, // 🔥 SNIPER MEMORY
+                                            entryReason: deployment.waitReferencePrice ? "Wait & Trade" : (advSettings.premiumDifference ? "Premium Diff" : "Normal") // 🔥 FRONTEND TAG
                                         });
 
                                         await deployment.save();
@@ -1582,11 +1659,43 @@ cron.schedule('*/30 * * * * *', async () => {
                                 currentLeg.status = 'COMPLETED';
                                 currentLeg.exitReason = exitReason;
 
+                                // =========================================================
+                                // 🚑 SEND DEAD LEGS TO LIVE HOSPITAL
+                                // =========================================================
+                                const advSettings = strategy.data?.advanceSettings || {};
+                                const reConfig = advSettings.reEntryExecuteConfig || {};
+                                
+                                if (advSettings.reEntryExecute && ["StopLoss Hit", "LEG_TRAIL_SL", "SL_MOVED_TO_COST"].includes(exitReason)) {
+                                    const currentCycle = currentLeg.reEntryCycle || 0;
+                                    if (currentCycle < Number(reConfig.cycles || 0)) {
+                                        if (!liveHospitalMap.has(deployment._id.toString())) {
+                                            liveHospitalMap.set(deployment._id.toString(), []);
+                                        }
+                                        
+                                        liveHospitalMap.get(deployment._id.toString()).push({
+                                            originalLeg: currentLeg,
+                                            reEntryCycle: currentCycle + 1,
+                                            reEntryConfig: reConfig,
+                                            originalEntryPrice: currentLeg.entryPrice,
+                                            symbol: currentLeg.symbol,
+                                            action: currentLeg.action,
+                                            quantity: currentLeg.quantity,
+                                            securityId: currentLeg.securityId,
+                                            exchange: currentLeg.exchange
+                                        });
+                                        console.log(`🚑 [LIVE HOSPITAL] Leg ${currentLeg.symbol} sent to recovery | Cycle: ${currentCycle + 1}/${reConfig.cycles}`);
+                                    }
+                                }
+                                // =========================================================
+
                                 deployment.pnl = (deployment.pnl || 0) + finalPnl;
                                 deployment.realizedPnl = (deployment.realizedPnl || 0) + finalPnl;
                                 
                                 const allCompleted = deployment.executedLegs.every(l => l.status === 'COMPLETED');
-                                deployment.status = allCompleted ? 'COMPLETED' : 'PARTIALLY_COMPLETED';
+                                const hospitalQueue = liveHospitalMap.get(deployment._id.toString()) || [];
+                                
+                                // 🔥 THE FIX: Agar hospital me patient bacha hai, toh dukaan 'COMPLETED' mat karo!
+                                deployment.status = (allCompleted && hospitalQueue.length === 0) ? 'COMPLETED' : 'PARTIALLY_COMPLETED'
 
                                 await deployment.save();
 
