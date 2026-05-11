@@ -2471,7 +2471,6 @@ cron.schedule('*/30 * * * * *', async () => {
                                 }
                                 
                                 // 🔥 THE BULLETPROOF EXIT ALL LOGIC
-                                const advSettings = strategy.data?.advanceSettings || {};
                                 const isExitAllOn = advSettings.exitAllOnSLTgt === true || advSettings.exitAllOnSlTgt === true || advSettings.exitAllOnSLTgt === 'ON';
                                 
                                 // Agar Exit All ON hai aur kuch legs abhi bhi bache hain (!allCompleted)
