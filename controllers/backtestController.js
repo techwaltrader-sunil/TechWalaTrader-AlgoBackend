@@ -1623,6 +1623,7 @@ const { evaluateReEntryLogic } = require('../engine/features/advanceFeatures/reE
 
 
 const { isTradingHoliday } = require('../engine/utils/holidaysCalendar');
+const { getNearestExpiryString } = require('../engine/utils/expiryCalculator'); // ✅ Yeh NAYA add karein
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -1783,10 +1784,9 @@ const runBacktestSimulator = async (req, res) => {
         const isTimeBased = (strategy.config?.strategyType === 'Time Based' || strategy.data?.config?.strategyType === 'Time Based' || strategy.type === 'Time Based');
 
         // 🔥 THE CNC VARIABLES
-        const orderType = strategy.config?.orderType || strategy.data?.config?.orderType || "MIS";
-        const cncEntryDays = Number(strategy.config?.cncEntryDays ?? strategy.data?.config?.cncEntryDays ?? 4);
-        const cncExitDays = Number(strategy.config?.cncExitDays ?? strategy.data?.config?.cncExitDays ?? 1);
-
+        const orderType = strategy.data?.config?.orderType || strategy.config?.orderType || "MIS";
+        const cncEntryDays = Number(strategy.data?.config?.cncEntryDays ?? strategy.config?.cncEntryDays ?? 4);
+        const cncExitDays = Number(strategy.data?.config?.cncExitDays ?? strategy.config?.cncExitDays ?? 1);
         // =========================================================
         // 🗓️ THE FIX 1: EXTRACT ALLOWED TRADING DAYS
         // =========================================================
@@ -1991,49 +1991,49 @@ const runBacktestSimulator = async (req, res) => {
             return (entryP - exitP) * qty;
         };
 
-        const getNearestExpiryString = (tradeDateStr, symbolStr, reqExpiry = "WEEKLY") => {
-            const d = new Date(tradeDateStr);
-            const upSym = symbolStr.toUpperCase();
-            let expiryDate = new Date(d);
-            const targetDay = 2; // SEBI Tuesday
-            let forceMonthly = false;
+        // const getNearestExpiryString = (tradeDateStr, symbolStr, reqExpiry = "WEEKLY") => {
+        //     const d = new Date(tradeDateStr);
+        //     const upSym = symbolStr.toUpperCase();
+        //     let expiryDate = new Date(d);
+        //     const targetDay = 2; // SEBI Tuesday
+        //     let forceMonthly = false;
 
-            if (upSym.includes("BANK") || upSym.includes("FIN") || upSym.includes("MID")) forceMonthly = true;
+        //     if (upSym.includes("BANK") || upSym.includes("FIN") || upSym.includes("MID")) forceMonthly = true;
 
-            const upperReqExpiry = reqExpiry.toUpperCase();
-            const isMonthlyRequest = forceMonthly || upperReqExpiry === "MONTHLY";
+        //     const upperReqExpiry = reqExpiry.toUpperCase();
+        //     const isMonthlyRequest = forceMonthly || upperReqExpiry === "MONTHLY";
 
-            if (!isMonthlyRequest) {
-                while (expiryDate.getDay() !== targetDay) expiryDate.setDate(expiryDate.getDate() + 1);
-                if (upperReqExpiry === "NEXT WEEKLY" || upperReqExpiry === "NEXT WEEK") expiryDate.setDate(expiryDate.getDate() + 7);
-            } else {
-                const lastDayOfMonth = new Date(expiryDate.getFullYear(), expiryDate.getMonth() + 1, 0);
-                expiryDate = new Date(lastDayOfMonth);
-                while (expiryDate.getDay() !== targetDay) expiryDate.setDate(expiryDate.getDate() - 1);
+        //     if (!isMonthlyRequest) {
+        //         while (expiryDate.getDay() !== targetDay) expiryDate.setDate(expiryDate.getDate() + 1);
+        //         if (upperReqExpiry === "NEXT WEEKLY" || upperReqExpiry === "NEXT WEEK") expiryDate.setDate(expiryDate.getDate() + 7);
+        //     } else {
+        //         const lastDayOfMonth = new Date(expiryDate.getFullYear(), expiryDate.getMonth() + 1, 0);
+        //         expiryDate = new Date(lastDayOfMonth);
+        //         while (expiryDate.getDay() !== targetDay) expiryDate.setDate(expiryDate.getDate() - 1);
 
-                if (d > expiryDate) {
-                    const lastDayOfNextMonth = new Date(d.getFullYear(), d.getMonth() + 2, 0);
-                    expiryDate = new Date(lastDayOfNextMonth);
-                    while (expiryDate.getDay() !== targetDay) expiryDate.setDate(expiryDate.getDate() - 1);
-                }
-            }
+        //         if (d > expiryDate) {
+        //             const lastDayOfNextMonth = new Date(d.getFullYear(), d.getMonth() + 2, 0);
+        //             expiryDate = new Date(lastDayOfNextMonth);
+        //             while (expiryDate.getDay() !== targetDay) expiryDate.setDate(expiryDate.getDate() - 1);
+        //         }
+        //     }
 
-            // =========================================================
-            // 🔥 THE MASTER FIX: HOLIDAY EXPIRY SHIFTING
-            // Agar nikaali gayi expiry date (e.g., 14 Apr) chhuti ya weekend hai,
-            // toh ek din pehle (pichhle working day) par shift kar do!
-            // =========================================================
-            while (isTradingHoliday(expiryDate)) {
-                expiryDate.setDate(expiryDate.getDate() - 1);
-            }
-            // =========================================================
+        //     // =========================================================
+        //     // 🔥 THE MASTER FIX: HOLIDAY EXPIRY SHIFTING
+        //     // Agar nikaali gayi expiry date (e.g., 14 Apr) chhuti ya weekend hai,
+        //     // toh ek din pehle (pichhle working day) par shift kar do!
+        //     // =========================================================
+        //     while (isTradingHoliday(expiryDate)) {
+        //         expiryDate.setDate(expiryDate.getDate() - 1);
+        //     }
+        //     // =========================================================
 
-            const formattedDate = `${String(expiryDate.getDate()).padStart(2, '0')}${expiryDate.toLocaleString('en-US', { month: 'short' }).toUpperCase()}${String(expiryDate.getFullYear()).slice(-2)}`;
-            const today = new Date(); today.setHours(0, 0, 0, 0);
-            const expDateForCheck = new Date(expiryDate); expDateForCheck.setHours(0, 0, 0, 0);
+        //     const formattedDate = `${String(expiryDate.getDate()).padStart(2, '0')}${expiryDate.toLocaleString('en-US', { month: 'short' }).toUpperCase()}${String(expiryDate.getFullYear()).slice(-2)}`;
+        //     const today = new Date(); today.setHours(0, 0, 0, 0);
+        //     const expDateForCheck = new Date(expiryDate); expDateForCheck.setHours(0, 0, 0, 0);
 
-            return `${(expDateForCheck < today) ? "EXP" : "Upcoming EXP"} ${formattedDate}`;
-        };
+        //     return `${(expDateForCheck < today) ? "EXP" : "Upcoming EXP"} ${formattedDate}`;
+        // };
 
 
         // =========================================================
@@ -2459,8 +2459,19 @@ const runBacktestSimulator = async (req, res) => {
                     if (orderType === "MIS") {
                         if (isExitTime || isLastCandleOfDay) forceSquareOff = true;
                     } else { // CNC OR BTST
-                        const legExpiryStr = getNearestExpiryString(dateStr, upperSymbol, trade.legConfig?.expiry || "WEEKLY");
-                        const tradeDTE = getTradingDaysToExpiry(istDate, legExpiryStr);
+                        
+                        // 🔥 THE FIX: Moving Goalpost Bug 
+                        // Engine ko baar-baar naya expiry nikalne se roko. Trade ke name (symbol) se asli expiry fetch karo!
+                        let actualTradeExpiryStr = "";
+                        const expMatch = trade.symbol.match(/(?:Upcoming )?(EXP \d{2}[A-Z]{3}\d{2})/i);
+                        
+                        if (expMatch && expMatch[1]) {
+                            actualTradeExpiryStr = expMatch[1]; // Ex: "EXP 31MAR26"
+                        } else {
+                            actualTradeExpiryStr = getNearestExpiryString(dateStr, upperSymbol, trade.legConfig?.expiry || "WEEKLY");
+                        }
+
+                        const tradeDTE = getTradingDaysToExpiry(istDate, actualTradeExpiryStr);
                         
                         if (tradeDTE <= cncExitDays && isExitTime) forceSquareOff = true;
                         else if (tradeDTE <= 0 && isLastCandleOfDay) forceSquareOff = true; // Expiry day EOD force exit
@@ -2747,7 +2758,7 @@ const runBacktestSimulator = async (req, res) => {
 
                         const completedTrade = {
                             ...trade,
-                            exitTime: `${h}:${m}:00`,
+                            exitTime: `${dateStr.split('-').reverse().join('/')} ${h}:${m}:00`,
                             pnl: pnl,
                             exitType: trade.exitReason
                         };
@@ -2882,7 +2893,7 @@ const runBacktestSimulator = async (req, res) => {
                             
                             const forcedTrade = {
                                 ...trade,
-                                exitTime: currentMinute,
+                                exitTime: `${dateStr.split('-').reverse().join('/')} ${currentMinute}`,
                                 exitPrice: exitP,
                                 pnl: pnl,
                                 exitType: `EXIT_ALL_TRIGGERED_BY_${actualTriggerReason}`
@@ -2929,7 +2940,7 @@ const runBacktestSimulator = async (req, res) => {
                             symbol: pTrade.symbol,
                             transaction: pTrade.transaction,
                             quantity: pTrade.quantity,
-                            entryTime: `${h}:${m}:00`,
+                            entryTime: `${dateStr.split('-').reverse().join('/')} ${h}:${m}:00`,
                             entryPrice: reviveStatus.revivePrice,
                             exitTime: null, exitPrice: null, pnl: null, exitType: null,
                             optionConfig: pTrade.optionConfig,
@@ -3098,7 +3109,7 @@ const runBacktestSimulator = async (req, res) => {
                             symbol: tradeSymbol,
                             transaction: transActionTypeStr,
                             quantity: tradeQuantity,
-                            entryTime: `${h}:${m}:00`,
+                            entryTime: `${dateStr.split('-').reverse().join('/')} ${h}:${m}:00`,
                             entryPrice: finalEntryPrice,
                             exitTime: null, exitPrice: null, pnl: null, exitType: null,
                             optionConfig: isOptionsTrade ? { strike: targetStrike, type: activeOptionType } : null,

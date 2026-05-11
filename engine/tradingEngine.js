@@ -2483,6 +2483,10 @@ cron.schedule('*/30 * * * * *', async () => {
                                 currentLeg.livePnl = currentLeg.action === 'BUY' 
                                     ? (liveLtp - currentLeg.entryPrice) * currentLeg.quantity 
                                     : (currentLeg.entryPrice - liveLtp) * currentLeg.quantity;
+                                
+                                // 🔥 THE MONGOOSE FIX: Engine ko batana padega ki Array change hua hai
+                                deployment.markModified('executedLegs'); 
+                                
                                 await deployment.save();
                                 
                                 // 🔥 THE FIX: Trailing SL Logic & V-Shape Recovery Trigger 🔥
