@@ -1793,6 +1793,7 @@ const { calculateTrailedSL } = require('./features/advanceFeatures/trailSL.js');
 // Global execution locks
 const executionLocks = new Set();
 let isEngineRunning = false; 
+let liveHospitalMap = {};
 
 // ==========================================
 // ⚙️ THE CORE CRON JOB LOOP (Runs every 30s)
