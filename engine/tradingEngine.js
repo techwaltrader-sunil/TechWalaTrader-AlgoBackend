@@ -2342,6 +2342,9 @@ cron.schedule('*/30 * * * * *', async () => {
                             let isTpHit = false;
                             let exitReason = "";
 
+                            // 🔥 THE FIX: Extract advSettings safely at the top so ALL blocks can use it
+                            const advSettings = strategy.data?.advanceSettings || deployment.advanceSettings || {};
+
                             const legConfig = strategy.data.legs.find(l => 
                                 (l.action || "BUY").toUpperCase() === currentLeg.action && 
                                 currentLeg.symbol.includes(l.optionType === "Call" ? "CE" : "PE")
@@ -2368,7 +2371,7 @@ cron.schedule('*/30 * * * * *', async () => {
                                     initialSlPrice = currentLeg.action === 'BUY' ? currentLeg.entryPrice - slAmt : currentLeg.entryPrice + slAmt;
                                 }
 
-                                const advSettings = strategy.data?.advanceSettings || {};
+                                // (Yahan se const advSettings = ... hata diya gaya hai)
                                 if (advSettings.trailSL && initialSlPrice > 0) {
                                     const newTrailedSL = calculateTrailedSL(
                                         currentLeg.action,
