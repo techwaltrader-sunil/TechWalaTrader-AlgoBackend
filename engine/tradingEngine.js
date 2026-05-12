@@ -1790,6 +1790,9 @@ const { processWaitAndTrade } = require('./features/advanceFeatures/waitAndTrade
 const { checkPremiumDifference } = require('./features/advanceFeatures/premiumDifference.js');
 const { calculateTrailedSL } = require('./features/advanceFeatures/trailSL.js');
 
+// 🔥 THE FIX: Bring the Re-Entry Doctor to the Live Hospital
+const { evaluateReEntryLogic } = require('./features/advanceFeatures/reEntryLogic.js');
+
 // Global execution locks
 const executionLocks = new Set();
 let isEngineRunning = false; 
