@@ -2484,10 +2484,12 @@ cron.schedule('*/30 * * * * *', async () => {
                                     ? (liveLtp - currentLeg.entryPrice) * currentLeg.quantity 
                                     : (currentLeg.entryPrice - liveLtp) * currentLeg.quantity;
                                 
-                                // 🔥 THE MONGOOSE FIX: Engine ko batana padega ki Array change hua hai
-                                deployment.markModified('executedLegs'); 
-                                
-                                await deployment.save();
+                                // 🔥 THE MONGOOSE FIX (VersionError Proof)
+                                // save() ki jagah updateOne() use karenge taaki concurrent clash na ho
+                                await Deployment.updateOne(
+                                    { _id: deployment._id },
+                                    { $set: { executedLegs: deployment.executedLegs } }
+                                );
                                 
                                 // 🔥 THE FIX: Trailing SL Logic & V-Shape Recovery Trigger 🔥
                                 if (strategy.data?.riskManagement?.profitTrailing !== 'No Trailing') {
