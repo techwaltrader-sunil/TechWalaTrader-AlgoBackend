@@ -266,7 +266,7 @@ const axios = require('axios');
 
 // 🔥 1. APNI DETAILS YAHAN DALEIN
 const CLIENT_ID = "1103238744"; 
-const ACCESS_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzc4MjM1MjEwLCJpYXQiOjE3NzgxNDg4MTAsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTAzMjM4NzQ0In0.HHh4XDquUXcxSWRLQgZJX5nf_ywtHeyx6n1R8xb1JW8E9vUqb6v3SZj4QgCxxuUOqJvTRhaQ8BUoH8IowMe2zw";
+const ACCESS_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzc4NzU0NDg1LCJpYXQiOjE3Nzg2NjgwODUsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTAzMjM4NzQ0In0.FS0TN2JU1eaT4pWk0JUcKW3aEP4N2nB5IwaK-5CgyYL88utuGT6Dmq-8wpoa0Sma27NwlivRx-MZKHrDw-WxRw";
 
 // 🛑 Dhan API ko hang hone se bachane ke liye chota sa timeout/delay
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
