@@ -34,7 +34,8 @@ const strategySchema = new mongoose.Schema({
     entrySettings: { type: Object, default: {} },  // Stores Indicator conditions
 
     // ✅ NEW ADDITION: Risk Management Object
-    riskManagement: { type: Object, default: {} }
+    riskManagement: { type: Object, default: {} },
+    priceActionSettings: { type: Object, default: {} }
   },
   user: {
     type: mongoose.Schema.Types.ObjectId,

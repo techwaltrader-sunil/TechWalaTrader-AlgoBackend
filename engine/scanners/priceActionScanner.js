@@ -47,17 +47,16 @@
 // स्विंग्स डिटेक्ट करना (आसान भाषा में: मार्केट के लेवल्स को मार्क करना)
 const identifySwings = (candles) => {
     let swings = [];
+    // यहाँ i = 1 से शुरू करें, और स्विंग बनाने की कंडीशन को आसान करें
     for (let i = 1; i < candles.length - 1; i++) {
         const prev = candles[i - 1];
         const curr = candles[i];
         const next = candles[i + 1];
 
-        // Swing High: करंट हाई पिछले और अगले से बड़ा
-        if (curr.high > prev.high && curr.high > next.high) {
+        // थोड़ा ढीला रखें (>= या <= का प्रयोग करें)
+        if (curr.high >= prev.high && curr.high >= next.high) {
             swings.push({ type: 'HIGH', price: curr.high, index: i });
-        } 
-        // Swing Low: करंट लो पिछले और अगले से छोटा
-        else if (curr.low < prev.low && curr.low < next.low) {
+        } else if (curr.low <= prev.low && curr.low <= next.low) {
             swings.push({ type: 'LOW', price: curr.low, index: i });
         }
     }
@@ -66,6 +65,7 @@ const identifySwings = (candles) => {
 
 // एडवांस स्कैनर: BOS और CHoCH को पहचानना
 const checkPriceActionSignal = (candles, swings, setupType) => {
+    // console.log(`🔍 Scanner Running | Swings Found: ${swings.length} | Last Price: ${candles[candles.length - 1].close}`);
     if (swings.length < 3) return { long: false, short: false };
 
     const lastSwing = swings[swings.length - 1];
@@ -76,28 +76,27 @@ const checkPriceActionSignal = (candles, swings, setupType) => {
 
     // 1. BOS (Break of Structure): ट्रेंड जारी रहने का सिग्नल
     if (setupType === "BOS (Break of Structure)") {
+        // Bullish BOS (पिछले हाई को तोड़ा)
         if (lastSwing.type === 'HIGH' && currentPrice > lastSwing.price) {
-            return { long: true, short: false, reason: `BOS Bullish: Price ${currentPrice.toFixed(2)} > Swing High ${lastSwing.price}` };
+            signal = { long: true, short: false, reason: "BOS Bullish" };
         }
-        if (lastSwing.type === 'LOW' && currentPrice < lastSwing.price) {
-            return { long: false, short: true, reason: `BOS Bearish: Price ${currentPrice.toFixed(2)} < Swing Low ${lastSwing.price}` };
+        // 🔥 THE FIX: Bearish BOS (पिछले लो को तोड़ा) - यह मिसिंग था!
+        else if (lastSwing.type === 'LOW' && currentPrice < lastSwing.price) {
+            signal = { long: false, short: true, reason: "BOS Bearish" };
         }
     }
 
-    // 2. CHoCH (Change of Character): ट्रेंड रिवर्सल का सिग्नल (सबसे पावरफुल)
+    // 2. CHoCH (Change of Character): ट्रेंड रिवर्सल का सिग्नल
     else if (setupType === "CHoCH (Change of Character)") {
-    // अगर पिछले दो स्विंग्स LOW थे और अब नया हाई बना है, तो बुलिश CHoCH
-    // यहाँ हम 'lastSwing' की कीमत को 'Break' मान रहे हैं
-    if (lastSwing.type === 'HIGH' && prevSwing.type === 'LOW' && currentPrice > lastSwing.price) {
-        signal.long = true;
-        signal.reason = `CHoCH Bullish: Price ${currentPrice.toFixed(2)} broke above last High ${lastSwing.price.toFixed(2)}`;
+        // बुलिश CHoCH
+        if (lastSwing.type === 'HIGH' && prevSwing.type === 'LOW' && currentPrice > lastSwing.price) {
+            signal = { long: true, short: false, reason: `CHoCH Bullish` };
+        }
+        // बेयरिश CHoCH
+        else if (lastSwing.type === 'LOW' && prevSwing.type === 'HIGH' && currentPrice < lastSwing.price) {
+            signal = { long: false, short: true, reason: `CHoCH Bearish` };
+        }
     }
-    // अगर पिछले दो स्विंग्स HIGH थे और अब नया लो बना है, तो बेयरिश CHoCH
-    if (lastSwing.type === 'LOW' && prevSwing.type === 'HIGH' && currentPrice < lastSwing.price) {
-        signal.short = true;
-        signal.reason = `CHoCH Bearish: Price ${currentPrice.toFixed(2)} broke below last Low ${lastSwing.price.toFixed(2)}`;
-    }
-}
 
     return signal;
 };
