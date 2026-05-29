@@ -28,6 +28,9 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
     let lockedSwingHigh = null;
     let absoluteLowest = { price: candles[0].low, time: candles[0].timestamp };
 
+    let bearishPullbacks = []; 
+    let tempPullbackTracker_Bearish = null;
+
     // 🔥 Liquidity Sweep (X) Variables
     let refX_BOS_Bearish = null;
     let majorIdm_Bearish = { price: -Infinity, time: null };
@@ -84,12 +87,15 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
         if (trend === -1) {
 
             // 🔥 SMART AUTO FIX (यहाँ सबसे ऊपर रहेगा!): 
-            // अगर कोई BOS नहीं हुआ है और मार्केट ने शुरुआत वाले टॉप को तोड़ दिया है
             if (startingTrend === "AUTO" && lockedSwingHigh === null && curr.close > prevAbsoluteHighest) {
                 trend = 1;
                 isIdmTaken = false;
                 validLL = null; refLL = null; tempSwingHigh = null; confirmedLH = null;
-                absoluteLowest = { price: curr.low, time: curr.timestamp }; // नई शुरुआत के लिए बॉटम सेट करें
+                
+                bearishPullbacks = []; // 🎯 Added
+                tempPullbackTracker_Bearish = null; // 🎯 Added
+
+                absoluteLowest = { price: curr.low, time: curr.timestamp }; 
                 refCandle = curr;
                 continue;
             }
@@ -100,18 +106,16 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
 
             // RULE 5 & 6c: CHoCH & Sweep Logic
             if (lockedSwingHigh !== null) {
-                // इंजन चेक करने के लिए sweep level (breakLevel) यूज़ करेगा
                 let breakLevel = refX_CHoCH_Bearish ? refX_CHoCH_Bearish.price : lockedSwingHigh.price;
 
                 if (curr.high > breakLevel) {
                     if (curr.close > breakLevel) { // 🚀 Full Body Break (Valid CHoCH)
 
-                        // 🔥 VISUAL FIX: लाइन हमेशा ओरिजिनल 'lockedSwingHigh' से ही ड्रा होगी!
                         signals.push({
                             type: "CHoCH", trend: "BULLISH",
                             sweptSide: "HIGH",
-                            price: lockedSwingHigh.price,      // <-- Original Price
-                            startTime: lockedSwingHigh.time,   // <-- Original Time
+                            price: lockedSwingHigh.price,
+                            startTime: lockedSwingHigh.time,
                             endTime: curr.timestamp
                         });
 
@@ -120,6 +124,10 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
                         lockedSwingLow = { ...absoluteLowest };
                         validLL = null; refLL = null; tempSwingHigh = null; lockedSwingHigh = null; confirmedLH = null;
                         refX_CHoCH_Bearish = null; refX_BOS_Bearish = null;
+                        
+                        bearishPullbacks = []; // 🎯 Added
+                        tempPullbackTracker_Bearish = null; // 🎯 Added
+
                         absoluteHighest = { price: curr.high, time: curr.timestamp };
                         refCandle = curr;
                         continue;
@@ -129,26 +137,151 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
                 }
             }
 
-            // ... (PULLBACK और IDM का लॉजिक वही रहेगा) ...
-            if (brokeHigh && !isOutsideBar && refLL === null && !isIdmTaken) {
+            // ==========================================================
+            // 🔥 BULLETPROOF PULLBACK TRACKER (Bearish Engulfing Fix)
+            // ==========================================================
+            if (brokeHigh && !isOutsideBar && refLL === null) { 
                 refLL = { price: refCandle.low, time: refCandle.timestamp };
                 tempLH = { price: curr.high, time: curr.timestamp };
-            } else if (refLL !== null && !isIdmTaken) {
-                if (curr.high > tempLH.price) tempLH = { price: curr.high, time: curr.timestamp };
-                if (curr.low <= refLL.price) { confirmedLH = tempLH; refLL = null; }
+                
+                tempPullbackTracker_Bearish = {
+                    id: bearishPullbacks.length + 1,
+                    confirmLL: refCandle.low,
+                    confirmLLCandleIndex: i - 1, 
+                    validLH: curr.high,
+                    validLHCandleIndex: i, 
+                    startTime: refCandle.timestamp
+                };
+            } else if (refLL !== null) { 
+                if (curr.high > tempLH.price) {
+                    tempLH = { price: curr.high, time: curr.timestamp };
+                    if (tempPullbackTracker_Bearish) {
+                        tempPullbackTracker_Bearish.validLH = curr.high;
+                        tempPullbackTracker_Bearish.validLHCandleIndex = i;
+                    }
+                }
+                
+                if (curr.low <= refLL.price) { 
+                    // ❌ Fake Engulfing Pullback (Discard)
+                    if (curr.timestamp === tempLH.time) {
+                        refLL = null; 
+                        tempPullbackTracker_Bearish = null; 
+                    } else {
+                        // ✅ Valid Pullback (Confirm)
+                        confirmedLH = tempLH; 
+                        refLL = null; 
+                        
+                        if (tempPullbackTracker_Bearish) {
+                            tempPullbackTracker_Bearish.breakCandleIndex = i;
+                            bearishPullbacks.push({...tempPullbackTracker_Bearish});
+                            tempPullbackTracker_Bearish = null; 
+                        }
+                    }
+                }
             }
 
+            // 🎯 THE FINAL IDM CONFIRMATION & SUPPLY ZONE TRANSFORMATION
             if (confirmedLH !== null && curr.high >= confirmedLH.price && !isIdmTaken) {
                 isIdmTaken = true;
                 validLL = { ...absoluteLowest };
                 tempSwingHigh = { price: curr.high, time: curr.timestamp };
                 majorIdm_Bearish = { price: curr.high, time: curr.timestamp };
                 signals.push({ type: "IDM", trend: "BEARISH", price: confirmedLH.price, startTime: confirmedLH.time, endTime: curr.timestamp });
+
+                // 🔥 1. THE ROOT EXTREME FIX
+                const rootTime = lockedSwingHigh ? lockedSwingHigh.time : absoluteHighest.time;
+                const rootPrice = lockedSwingHigh ? lockedSwingHigh.price : absoluteHighest.price;
+
+                const swingLHIndex = candles.findIndex(c => c.timestamp === rootTime);
+                const refLLIndex = candles.findIndex(c => c.timestamp === validLL.time);
+
+                const rootExtreme = {
+                    id: "ROOT_SWING_LH",
+                    validLH: rootPrice,
+                    validLHCandleIndex: swingLHIndex,
+                    confirmLL: validLL.price,
+                    confirmLLCandleIndex: refLLIndex,
+                    breakCandleIndex: refLLIndex, 
+                    startTime: rootTime
+                };
+
+                const validPullbacksForSMC = bearishPullbacks.filter(pb => pb.validLH !== confirmedLH.price);
+
+                if (swingLHIndex !== -1 && refLLIndex !== -1) {
+                    validPullbacksForSMC.unshift(rootExtreme);
+                }
+
+                const poiZones = findSMCZones_Bearish(candles, validPullbacksForSMC, i);
+
+                // 🔥 2. THE MASTER STATE MANAGEMENT
+                signals.forEach(sig => {
+                    if (["E-OB", "D-OB", "E-OF", "D-OF"].includes(sig.type)) {
+                        
+                        // अगर पहले से Demand/Supply नाम नहीं हुआ है, तभी चेक करो
+                        if (!sig.displayName || (!sig.displayName.includes("Demand") && !sig.displayName.includes("Supply"))) {
+                            sig.isActive = false; // पुराने ज़ोन डीएक्टिवेट करें
+                            
+                            let isMitigated = false;
+                            let startIdx = candles.findIndex(c => c.timestamp === sig.startTime);
+                            
+                            if (startIdx !== -1) {
+                                for (let j = startIdx + 3; j <= i; j++) {
+                                    // बुलिश ज़ोन के लिए चेकिंग
+                                    if (sig.trend === "BULLISH" && candles[j].low <= sig.priceTop) {
+                                        isMitigated = true;
+                                        break;
+                                    }
+                                    // बेयरिश ज़ोन के लिए चेकिंग
+                                    if (sig.trend === "BEARISH" && candles[j].high >= sig.priceBottom) {
+                                        isMitigated = true;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            // 🎯 सिर्फ अनमिटिगेटेड ज़ोन्स का नाम उनके ट्रेंड के हिसाब से बदलें
+                            if (!isMitigated) {
+                                if (sig.trend === "BULLISH") {
+                                    if (sig.type === "E-OB" || sig.type === "D-OB") sig.displayName = "Demand Zone(OB)";
+                                    if (sig.type === "E-OF" || sig.type === "D-OF") sig.displayName = "Demand Zone(OF)";
+                                } else if (sig.trend === "BEARISH") {
+                                    if (sig.type === "E-OB" || sig.type === "D-OB") sig.displayName = "Supply Zone(OB)";
+                                    if (sig.type === "E-OF" || sig.type === "D-OF") sig.displayName = "Supply Zone(OF)";
+                                }
+                            }
+                        }
+                    }
+                });
+
+                // 🔥 3. THE VISUAL FIX
+                if (poiZones.eof && !poiZones.eof.isMitigated) {
+                    let mitTimeEOF = findMitigationTime_Bearish(poiZones.eof.bottom, i, candles);
+                    signals.push({ type: "E-OF", displayName: "E-OF", trend: "BEARISH", priceTop: poiZones.eof.top, priceBottom: poiZones.eof.bottom, startTime: poiZones.eof.startTime, endTime: mitTimeEOF, isActive: true });
+                }
+                if (poiZones.eob) {
+                    let mitTimeEOB = findMitigationTime_Bearish(poiZones.eob.bottom, i, candles);
+                    signals.push({ type: "E-OB", displayName: "E-OB", trend: "BEARISH", priceTop: poiZones.eob.top, priceBottom: poiZones.eob.bottom, startTime: poiZones.eob.startTime, fvgTop: poiZones.eob.fvgTop, fvgBottom: poiZones.eob.fvgBottom, endTime: mitTimeEOB, isActive: true });
+                }
+                if (poiZones.dof && !poiZones.dof.isMitigated) {
+                    let mitTimeDOF = findMitigationTime_Bearish(poiZones.dof.bottom, i, candles);
+                    signals.push({ type: "D-OF", displayName: "D-OF", trend: "BEARISH", priceTop: poiZones.dof.top, priceBottom: poiZones.dof.bottom, startTime: poiZones.dof.startTime, endTime: mitTimeDOF, isActive: true });
+                }
+                if (poiZones.dob) {
+                    let mitTimeDOB = findMitigationTime_Bearish(poiZones.dob.bottom, i, candles);
+                    signals.push({ type: "D-OB", displayName: "D-OB", trend: "BEARISH", priceTop: poiZones.dob.top, priceBottom: poiZones.dob.bottom, startTime: poiZones.dob.startTime, fvgTop: poiZones.dob.fvgTop, fvgBottom: poiZones.dob.fvgBottom, endTime: mitTimeDOB, isActive: true });
+                }
+                
+                bearishPullbacks = []; 
+                tempPullbackTracker_Bearish = null;
                 confirmedLH = null;
             }
 
+            // 🎯 New High before BOS (Unlock Tracker)
             if (isIdmTaken && curr.high > tempSwingHigh.price) {
                 tempSwingHigh = { price: curr.high, time: curr.timestamp };
+                bearishPullbacks = []; // 🎯 Added
+                refLL = null; 
+                tempPullbackTracker_Bearish = null; // 🎯 Added
             }
 
             // RULE 3 & 6a: BOS & Sweep Logic
@@ -157,12 +290,10 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
 
                 if (curr.low < breakLevel) {
                     if (curr.close < breakLevel) { // 🚀 Full Body Break (Valid BOS)
-
-                        // 🔥 VISUAL FIX: लाइन हमेशा ओरिजिनल 'validLL' से ही ड्रा होगी!
                         signals.push({
                             type: "BOS", trend: "BEARISH",
-                            price: validLL.price,        // <-- Original Price
-                            startTime: validLL.time,     // <-- Original Time
+                            price: validLL.price, 
+                            startTime: validLL.time, 
                             endTime: curr.timestamp
                         });
 
@@ -175,6 +306,9 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
                         isIdmTaken = false;
                         validLL = null; refLL = null; refX_BOS_Bearish = null;
                         absoluteLowest = { price: curr.low, time: curr.timestamp };
+                        
+                        bearishPullbacks = []; // 🎯 Added
+                        tempPullbackTracker_Bearish = null; // 🎯 Added
                     } else { // 🧹 Sweep (Ref X)
                         refX_BOS_Bearish = { price: curr.low, time: curr.timestamp, majorIdmTarget: { ...majorIdm_Bearish } };
                     }
@@ -183,8 +317,7 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
                 if (refX_BOS_Bearish && refX_BOS_Bearish.majorIdmTarget) {
                     if (curr.high > refX_BOS_Bearish.majorIdmTarget.price) {
                         signals.push({ type: "IDM", trend: "BEARISH", price: refX_BOS_Bearish.majorIdmTarget.price, startTime: refX_BOS_Bearish.majorIdmTarget.time, endTime: curr.timestamp });
-
-                        signals.push({ type: "X", trend: "BEARISH", sweptSide: "LOW", price: validLL.price, startTime: validLL.time, endTime: refX_BOS_Bearish.time }); // <-- यहाँ बदलाव है
+                        signals.push({ type: "X", trend: "BEARISH", sweptSide: "LOW", price: validLL.price, startTime: validLL.time, endTime: refX_BOS_Bearish.time });
 
                         validLL = { price: refX_BOS_Bearish.price, time: refX_BOS_Bearish.time };
                         refX_BOS_Bearish = null;
@@ -348,28 +481,39 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
                 
                 // 1. जब नया IDM कन्फर्म होता है, तो 'signals' एरे में मौजूद पिछले सारे ज़ोन्स 'पुराने' बन जाते हैं।
                 signals.forEach(sig => {
-                    if (sig.trend === "BULLISH" && ["E-OB", "D-OB", "E-OF", "D-OF"].includes(sig.type)) {
+                    if (["E-OB", "D-OB", "E-OF", "D-OF"].includes(sig.type)) {
                         
-                        if (!sig.displayName || !sig.displayName.includes("Demand")) {
+                        // अगर पहले से Demand/Supply नाम नहीं हुआ है, तभी चेक करो
+                        if (!sig.displayName || (!sig.displayName.includes("Demand") && !sig.displayName.includes("Supply"))) {
                             sig.isActive = false; // पुराने ज़ोन डीएक्टिवेट करें
                             
                             let isMitigated = false;
                             let startIdx = candles.findIndex(c => c.timestamp === sig.startTime);
                             
                             if (startIdx !== -1) {
-                                // 🎯 बग फिक्स: स्कैनिंग startIdx + 3 से शुरू होगी! (ताकि FVG बनाने वाली कैंडल्स इग्नोर हो जाएं)
                                 for (let j = startIdx + 3; j <= i; j++) {
-                                    if (candles[j].low <= sig.priceTop) {
+                                    // बुलिश ज़ोन के लिए चेकिंग
+                                    if (sig.trend === "BULLISH" && candles[j].low <= sig.priceTop) {
+                                        isMitigated = true;
+                                        break;
+                                    }
+                                    // बेयरिश ज़ोन के लिए चेकिंग
+                                    if (sig.trend === "BEARISH" && candles[j].high >= sig.priceBottom) {
                                         isMitigated = true;
                                         break;
                                     }
                                 }
                             }
 
-                            // 🎯 अगर भविष्य में मार्केट ने इसे टच नहीं किया है, तो नाम बदल दो
+                            // 🎯 सिर्फ अनमिटिगेटेड ज़ोन्स का नाम उनके ट्रेंड के हिसाब से बदलें
                             if (!isMitigated) {
-                                if (sig.type === "E-OB" || sig.type === "D-OB") sig.displayName = "Demand Zone(OB)";
-                                if (sig.type === "E-OF" || sig.type === "D-OF") sig.displayName = "Demand Zone(OF)";
+                                if (sig.trend === "BULLISH") {
+                                    if (sig.type === "E-OB" || sig.type === "D-OB") sig.displayName = "Demand Zone(OB)";
+                                    if (sig.type === "E-OF" || sig.type === "D-OF") sig.displayName = "Demand Zone(OF)";
+                                } else if (sig.trend === "BEARISH") {
+                                    if (sig.type === "E-OB" || sig.type === "D-OB") sig.displayName = "Supply Zone(OB)";
+                                    if (sig.type === "E-OF" || sig.type === "D-OF") sig.displayName = "Supply Zone(OF)";
+                                }
                             }
                         }
                     }
@@ -520,21 +664,88 @@ const findMitigationTime = (zoneTop, startIndex, candles) => {
     return candles[candles.length - 1].timestamp;
 };
 
+/**
+ * 🎯 BEARISH Mitigation Time: कट-ऑफ टाइम ढूँढना जब प्राइस सप्लाई ज़ोन को हिट करे
+ */
+const findMitigationTime_Bearish = (zoneBottomPrice, startIndex, candles) => {
+    // IDM के बाद वाली कैंडल से स्कैन शुरू करेंगे
+    for (let j = startIndex + 1; j < candles.length; j++) {
+        // 🎯 Bearish Rule: क्या प्राइस नीचे से ऊपर जाकर ज़ोन के बॉटम से टकराया?
+        if (candles[j].high >= zoneBottomPrice) {
+            return candles[j].timestamp; // जैसे ही टच हुआ, वही टाइम लॉक कर दो
+        }
+    }
+    // अगर किसी ने टच नहीं किया (Unmitigated), तो चार्ट के अंत तक बॉक्स खींच दो
+    return candles[candles.length - 1].timestamp; 
+};
+
 
 /**
  * 🎯 Helper: Check if Order Flow (Pullback) is Mitigated
  */
+// const isOfMitigated = (pb, candles, currentIndex) => {
+//     // ब्रेकआउट कैंडल के बाद से IDM तक चेक करेंगे
+//     const startIdx = pb.breakCandleIndex + 1;
+//     for (let j = startIdx; j <= currentIndex; j++) {
+//         if (j >= candles.length) break;
+//         // बुलिश में: अगर कोई कैंडल OF के टॉप (confirmHH) को नीचे की तरफ टच कर दे
+//         if (candles[j].low <= pb.confirmHH) {
+//             return true; // OF मिटिगेट हो गया!
+//         }
+//     }
+//     return false; // OF अभी भी फ्रेश है!
+// };
+
+
+// /**
+//  * 🎯 Helper: Check if Bearish Order Flow (Pullback) is Mitigated
+//  */
+// const isOfMitigated_Bearish = (pb, candles, currentIndex) => {
+//     // ब्रेकआउट कैंडल के बाद से IDM तक चेक करेंगे
+//     const startIdx = pb.breakCandleIndex + 1;
+//     for (let j = startIdx; j <= currentIndex; j++) {
+//         if (j >= candles.length) break;
+//         // 🎯 Bearish में: अगर कोई कैंडल ऊपर उठकर OF के बॉटम (confirmLL) को टच कर दे
+//         if (candles[j].high >= pb.confirmLL) {
+//             return true; // OF मिटिगेट हो गया!
+//         }
+//     }
+//     return false; // OF अभी भी फ्रेश है!
+// };
+
+
+/**
+ * 🎯 Helper: Check if Bullish Order Flow is Mitigated (TAPPED)
+ */
 const isOfMitigated = (pb, candles, currentIndex) => {
-    // ब्रेकआउट कैंडल के बाद से IDM तक चेक करेंगे
     const startIdx = pb.breakCandleIndex + 1;
     for (let j = startIdx; j <= currentIndex; j++) {
         if (j >= candles.length) break;
-        // बुलिश में: अगर कोई कैंडल OF के टॉप (confirmHH) को नीचे की तरफ टच कर दे
-        if (candles[j].low <= pb.confirmHH) {
-            return true; // OF मिटिगेट हो गया!
+
+        // 🎯 SMC Rule: बुलिश OF का टॉप (confirmHH) है। 
+        // प्राइस जैसे ही नीचे गिरकर इसे टच करेगा, ज़ोन मिटिगेट!
+        if (candles[j].low <= pb.confirmHH) { 
+            return true; 
         }
     }
-    return false; // OF अभी भी फ्रेश है!
+    return false; // टच नहीं हुआ, मतलब फ्रेश है!
+};
+
+/**
+ * 🎯 Helper: Check if Bearish Order Flow is Mitigated (TAPPED)
+ */
+const isOfMitigated_Bearish = (pb, candles, currentIndex) => {
+    const startIdx = pb.breakCandleIndex + 1;
+    for (let j = startIdx; j <= currentIndex; j++) {
+        if (j >= candles.length) break;
+        
+        // 🎯 SMC Rule: बेयरिश OF का बॉटम (confirmLL) है।
+        // प्राइस जैसे ही ऊपर उठकर इसे टच करेगा, ज़ोन मिटिगेट!
+        if (candles[j].high >= pb.confirmLL) { 
+            return true; 
+        }
+    }
+    return false; // टच नहीं हुआ, मतलब फ्रेश है!
 };
 
 /**
@@ -586,6 +797,52 @@ const findValidOrderBlock = (pullback, candles, currentIndex) => {
     return { found: false };
 };
 
+
+/**
+ * 🎯 E-OB / D-OB ढूँढने का BEARISH SMC रूल: "Swing High to Ref LL"
+ */
+const findBearishValidOrderBlock = (pullback, candles, currentIndex) => {
+    
+    // 1. Start: "Swing High" (Top) वाली कैंडल को 1st कैंडल मानेंगे
+    const startIdx = pullback.validLHCandleIndex; // Bearish में Lower High (LH)
+    const endIdx = pullback.breakCandleIndex; 
+
+    for (let i = startIdx; i <= endIdx; i++) {
+        if (i + 2 >= candles.length) continue;
+
+        const firstCandle = candles[i];
+        const thirdCandle = candles[i + 2];
+
+        // 2. Bearish FVG Check: क्या 1st कैंडल का Low, 3rd कैंडल के High से ऊपर है? (Imbalance)
+        if (firstCandle.low > thirdCandle.high) {
+            
+            // Mitigation चेक (क्या भविष्य में मार्केट ऊपर आकर इसे टच किया है?)
+            let isMitigated = false;
+            for (let j = i + 3; j <= currentIndex; j++) {
+                if (j >= candles.length) break;
+                // 🎯 Bearish में कैंडल का High ज़ोन के Bottom (firstCandle.low) को टच करता है
+                if (candles[j].high >= firstCandle.low) { 
+                    isMitigated = true;
+                    break;
+                }
+            }
+
+            if (!isMitigated) {
+                // ✅ 3. Bearish FVG मिल गया!
+                return {
+                    found: true,
+                    // Bearish बॉक्स का Top (High) और Bottom (Low)
+                    price: { top: firstCandle.high, bottom: firstCandle.low }, 
+                    fvgZone: { top: firstCandle.low, bottom: thirdCandle.high },
+                    startTime: firstCandle.timestamp,
+                    candleIndex: i
+                };
+            }
+        }
+    }
+    return { found: false };
+};
+
 /**
  * 🎯 MAIN POI ENGINE: Extreme & Decisional ज़ोन फ़िल्टर
  */
@@ -627,30 +884,93 @@ const findSMCZones = (candles, pullbacksArray, currentIndex) => {
         const obResult = findValidOrderBlock(pb, candles, currentIndex);
 
         if (obResult.found) {
+            // 🎯 THE OVERLAP GUARD: अगर D-OB का टाइम E-OB से टकरा रहा है, तो इसे स्किप कर दो!
+            if (smcZones.eob && smcZones.eob.startTime === obResult.startTime) {
+                continue; 
+            }
+
             const mitigatedOF = isOfMitigated(pb, candles, currentIndex);
             
             smcZones.dof = { 
-                type: "D-OF", 
-                top: pb.confirmHH, 
-                bottom: pb.validHL, 
-                startTime: pb.startTime, 
-                isMitigated: mitigatedOF, 
-                data: pb 
+                type: "D-OF", top: pb.confirmHH, bottom: pb.validHL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb 
             };
 
-            // ✅ Yahan dekhiye: Humne `obResult` se dynamic `startTime` aur `price` utha liya hai
             smcZones.dob = { 
-                type: "D-OB", 
-                top: obResult.price.high, 
-                bottom: obResult.price.low, 
-                startTime: obResult.startTime, // 🚀 Ye ab dynamic hai!
-                fvgTop: obResult.fvgZone.top, 
-                fvgBottom: obResult.fvgZone.high, // Ye aapke fvgZone logic ke hisaab se hoga
-                data: pb
+                type: "D-OB", top: obResult.price.high, bottom: obResult.price.low, startTime: obResult.startTime, fvgTop: obResult.fvgZone.top, fvgBottom: obResult.fvgZone.bottom, data: pb
             };
             break; 
         }
     }
+    return smcZones;
+};
+
+
+const findSMCZones_Bearish = (candles, pullbacksArray, currentIndex) => {
+    let smcZones = { eof: null, eob: null, dof: null, dob: null };
+    if (!pullbacksArray || pullbacksArray.length === 0) return smcZones;
+
+    // ==============================================================
+    // 🔥 1. EXTREME ZONES (E-OF / E-OB) - Bearish
+    // ==============================================================
+    // यहाँ हम लूप लगा रहे हैं ताकि अगर पहला लेग फेल हो जाए, तो इंजन अगले लेग को चेक करे
+    for (let i = 0; i < pullbacksArray.length; i++) {
+        const pb = pullbacksArray[i];
+        const obResult = findBearishValidOrderBlock(pb, candles, currentIndex);
+
+        if (obResult.found) {
+            // 🎯 असली जादू यहाँ है: अब हम चेक कर रहे हैं कि OF मिटिगेट हुआ है या नहीं!
+            const mitigatedOF = isOfMitigated_Bearish(pb, candles, currentIndex);
+            
+            smcZones.eof = { 
+                type: "E-OF", 
+                top: pb.validLH,       // Bearish pullback top (Supply)
+                bottom: pb.confirmLL,  // Bearish pullback bottom (Break point)
+                startTime: pb.startTime, 
+                isMitigated: mitigatedOF, // 🚀 अब यह डायनामिक है!
+                data: pb 
+            };
+            
+            smcZones.eob = { 
+                type: "E-OB", 
+                top: obResult.price.top, 
+                bottom: obResult.price.bottom, 
+                startTime: obResult.startTime, 
+                fvgTop: obResult.fvgZone.top, 
+                fvgBottom: obResult.fvgZone.bottom 
+            };
+            break; 
+        }
+    }
+
+    // ==============================================================
+    // 🔥 2. DECISIONAL ZONES (D-OF / D-OB) - BEARISH
+    // ==============================================================
+    for (let i = pullbacksArray.length - 1; i >= 0; i--) {
+        const pb = pullbacksArray[i];
+        
+        if (smcZones.eof && smcZones.eof.data.id === pb.id) break;
+
+        const obResult = findBearishValidOrderBlock(pb, candles, currentIndex);
+
+        if (obResult.found) {
+            // 🎯 THE OVERLAP GUARD: अगर D-OB का टाइम E-OB से टकरा रहा है, तो इसे स्किप कर दो!
+            if (smcZones.eob && smcZones.eob.startTime === obResult.startTime) {
+                continue; 
+            }
+
+            const mitigatedOF = isOfMitigated_Bearish(pb, candles, currentIndex);
+            
+            smcZones.dof = { 
+                type: "D-OF", top: pb.validLH, bottom: pb.confirmLL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb 
+            };
+
+            smcZones.dob = { 
+                type: "D-OB", top: obResult.price.top, bottom: obResult.price.bottom, startTime: obResult.startTime, fvgTop: obResult.fvgZone.top, fvgBottom: obResult.fvgZone.bottom, data: pb
+            };
+            break; 
+        }
+    }
+    
     return smcZones;
 };
 
