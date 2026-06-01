@@ -1,5 +1,73 @@
 
 
+
+// // =========================================================================
+// // 🧠 SMART RETRO-SCANNER (Visual Zig-Zag Logic by Chanchal Bhai)
+// // =========================================================================
+// const scanRetroactivePullbacks = (startIndex, endIndex, candles, trendType) => {
+//     let validPullbacks = [];
+//     let inPullback = false;
+//     let tempExtreme = null;
+//     let targetBreakLevel = null;
+
+//     if (trendType === "BEARISH") {
+//         for (let j = startIndex + 1; j <= endIndex; j++) {
+//             let curr = candles[j];
+//             let prev = candles[j - 1];
+//             let isOutsideBar = curr.high > prev.high && curr.low < prev.low;
+//             let brokeHigh = curr.high > prev.high;
+
+//             if (!inPullback && brokeHigh && !isOutsideBar) {
+//                 inPullback = true;
+//                 targetBreakLevel = prev.low;
+//                 tempExtreme = { price: curr.high, time: curr.timestamp };
+//             }
+//             else if (inPullback) {
+//                 if (curr.high > tempExtreme.price) {
+//                     tempExtreme = { price: curr.high, time: curr.timestamp };
+//                 }
+//                 if (curr.low < targetBreakLevel) {
+//                     validPullbacks.push({
+//                         price: tempExtreme.price,
+//                         time: tempExtreme.time,
+//                         confirmLL: targetBreakLevel // 🎯 E-OF के बॉटम के लिए
+//                     });
+//                     inPullback = false;
+//                 }
+//             }
+//         }
+//     }
+//     else if (trendType === "BULLISH") {
+//         for (let j = startIndex + 1; j <= endIndex; j++) {
+//             let curr = candles[j];
+//             let prev = candles[j - 1];
+//             let isOutsideBar = curr.high > prev.high && curr.low < prev.low;
+//             let brokeLow = curr.low < prev.low;
+
+//             if (!inPullback && brokeLow && !isOutsideBar) {
+//                 inPullback = true;
+//                 targetBreakLevel = prev.high;
+//                 tempExtreme = { price: curr.low, time: curr.timestamp };
+//             }
+//             else if (inPullback) {
+//                 if (curr.low < tempExtreme.price) {
+//                     tempExtreme = { price: curr.low, time: curr.timestamp };
+//                 }
+//                 if (curr.high > targetBreakLevel) {
+//                     validPullbacks.push({
+//                         price: tempExtreme.price,
+//                         time: tempExtreme.time,
+//                         confirmHH: targetBreakLevel // 🎯 E-OF के टॉप के लिए
+//                     });
+//                     inPullback = false;
+//                 }
+//             }
+//         }
+//     }
+//     return validPullbacks; // 🔥 पूरा लिस्ट रिटर्न करेगा
+// };
+
+
 // const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
 
 //     // 🔥 2. User Input के हिसाब से Initial Trend सेट करें
@@ -28,13 +96,57 @@
 //     let lockedSwingHigh = null;
 //     let absoluteLowest = { price: candles[0].low, time: candles[0].timestamp };
 
-//     let bearishPullbacks = []; 
+//     let bearishPullbacks = [];
 //     let tempPullbackTracker_Bearish = null;
 
 //     // 🔥 Liquidity Sweep (X) Variables
 //     let refX_BOS_Bearish = null;
 //     let majorIdm_Bearish = { price: -Infinity, time: null };
 //     let refX_CHoCH_Bearish = null;
+
+
+//     // 🔥 COUNTER STRUCTURE (D2S) VARIABLES FOR BULLISH TREND
+//     let isDobTapped_D2S = false;
+//     let tappingCandle_D2S = null;
+//     let isDobFailed_D2S = false;
+//     let refLL_D2S = null;
+//     let tempLH_D2S = null;
+//     let confirmedLH_D2S = null;
+//     let idm_D2S_Taken = false;
+
+
+//     // Phase 2 ke variables (Advance preparation)
+//     let swingLH_D2S = null;
+//     let pullbacks_D2S = [];
+
+//     // ==========================================
+//     // 🧹 THE GHOST KILLER & MAGIC ERASER
+//     // ==========================================
+//     const wipeCounterStructure = () => {
+//         // 1. D2S मेमोरी क्लियर
+//         isDobTapped_D2S = false; tappingCandle_D2S = null; isDobFailed_D2S = false;
+//         refLL_D2S = null; tempLH_D2S = null; confirmedLH_D2S = null; idm_D2S_Taken = false;
+//         swingLH_D2S = null; pullbacks_D2S = [];
+
+//         // 2. S2D मेमोरी क्लियर
+//         isDobTapped_S2D = false; tappingCandle_S2D = null; isDobFailed_S2D = false;
+//         refHH_S2D = null; tempHL_S2D = null; confirmedHL_S2D = null; idm_S2D_Taken = false;
+
+//         // 🔥 THE MAGIC ERASER: चार्ट से पुरानी लाइनों को हमेशा के लिए डिलीट करो!
+//         signals = signals.filter(sig => sig.type !== "IDM(D2S)" && sig.type !== "IDM(S2D)");
+//     };
+
+//     // 🔥 NEW: COUNTER STRUCTURE (S2D) VARIABLES FOR BEARISH TREND
+//     let isDobTapped_S2D = false;
+//     let tappingCandle_S2D = null;
+//     let isDobFailed_S2D = false;
+//     let refHH_S2D = null;
+//     let tempHL_S2D = null;
+//     let confirmedHL_S2D = null;
+//     let idm_S2D_Taken = false;
+
+
+
 
 //     // ==========================================
 //     // 📈 BULLISH STATE VARIABLES
@@ -61,7 +173,7 @@
 
 //     let current_bullish_structure = [];
 //     let previous_bullish_structure = [];
-    
+
 
 //     for (let i = 1; i < candles.length; i++) {
 //         const curr = candles[i];
@@ -72,6 +184,8 @@
 //         // अब नया हाई/लो अपडेट करें
 //         if (curr.low < absoluteLowest.price) absoluteLowest = { price: curr.low, time: curr.timestamp };
 //         if (curr.high > absoluteHighest.price) absoluteHighest = { price: curr.high, time: curr.timestamp };
+
+       
 
 //         let isInsideBar = curr.high <= refCandle.high && curr.low >= refCandle.low;
 //         let isOutsideBar = curr.high > refCandle.high && curr.low < refCandle.low;
@@ -90,12 +204,13 @@
 //             if (startingTrend === "AUTO" && lockedSwingHigh === null && curr.close > prevAbsoluteHighest) {
 //                 trend = 1;
 //                 isIdmTaken = false;
+//                 wipeCounterStructure();
 //                 validLL = null; refLL = null; tempSwingHigh = null; confirmedLH = null;
-                
+
 //                 bearishPullbacks = []; // 🎯 Added
 //                 tempPullbackTracker_Bearish = null; // 🎯 Added
 
-//                 absoluteLowest = { price: curr.low, time: curr.timestamp }; 
+//                 absoluteLowest = { price: curr.low, time: curr.timestamp };
 //                 refCandle = curr;
 //                 continue;
 //             }
@@ -110,7 +225,6 @@
 
 //                 if (curr.high > breakLevel) {
 //                     if (curr.close > breakLevel) { // 🚀 Full Body Break (Valid CHoCH)
-
 //                         signals.push({
 //                             type: "CHoCH", trend: "BULLISH",
 //                             sweptSide: "HIGH",
@@ -121,12 +235,19 @@
 
 //                         trend = 1;
 //                         isIdmTaken = false;
+//                         wipeCounterStructure();
 //                         lockedSwingLow = { ...absoluteLowest };
-//                         validLL = null; refLL = null; tempSwingHigh = null; lockedSwingHigh = null; confirmedLH = null;
+
+//                         validLL = null; refLL = null; tempSwingHigh = null; lockedSwingHigh = null;
 //                         refX_CHoCH_Bearish = null; refX_BOS_Bearish = null;
-                        
-//                         bearishPullbacks = []; // 🎯 Added
-//                         tempPullbackTracker_Bearish = null; // 🎯 Added
+//                         bearishPullbacks = []; tempPullbackTracker_Bearish = null;
+
+//                         refHH = null; tempHL = null; bullishPullbacks = []; tempPullbackTracker = null;
+
+//                         // 🔥 RETRO-SCANNER INJECTION: CHoCH के पहले वाले Bullish पुलबैक्स ढूँढो
+//                         let startIdx = candles.findIndex(c => c.timestamp === lockedSwingLow.time);
+//                         let retroPBs = scanRetroactivePullbacks(startIdx, i, candles, "BULLISH");
+//                         confirmedHL = retroPBs.length > 0 ? retroPBs[retroPBs.length - 1] : null;
 
 //                         absoluteHighest = { price: curr.high, time: curr.timestamp };
 //                         refCandle = curr;
@@ -140,19 +261,19 @@
 //             // ==========================================================
 //             // 🔥 BULLETPROOF PULLBACK TRACKER (Bearish Engulfing Fix)
 //             // ==========================================================
-//             if (brokeHigh && !isOutsideBar && refLL === null) { 
+//             if (brokeHigh && !isOutsideBar && refLL === null) {
 //                 refLL = { price: refCandle.low, time: refCandle.timestamp };
 //                 tempLH = { price: curr.high, time: curr.timestamp };
-                
+
 //                 tempPullbackTracker_Bearish = {
 //                     id: bearishPullbacks.length + 1,
 //                     confirmLL: refCandle.low,
-//                     confirmLLCandleIndex: i - 1, 
+//                     confirmLLCandleIndex: i - 1,
 //                     validLH: curr.high,
-//                     validLHCandleIndex: i, 
+//                     validLHCandleIndex: i,
 //                     startTime: refCandle.timestamp
 //                 };
-//             } else if (refLL !== null) { 
+//             } else if (refLL !== null) {
 //                 if (curr.high > tempLH.price) {
 //                     tempLH = { price: curr.high, time: curr.timestamp };
 //                     if (tempPullbackTracker_Bearish) {
@@ -160,21 +281,21 @@
 //                         tempPullbackTracker_Bearish.validLHCandleIndex = i;
 //                     }
 //                 }
-                
-//                 if (curr.low <= refLL.price) { 
+
+//                 if (curr.low <= refLL.price) {
 //                     // ❌ Fake Engulfing Pullback (Discard)
 //                     if (curr.timestamp === tempLH.time) {
-//                         refLL = null; 
-//                         tempPullbackTracker_Bearish = null; 
+//                         refLL = null;
+//                         tempPullbackTracker_Bearish = null;
 //                     } else {
 //                         // ✅ Valid Pullback (Confirm)
-//                         confirmedLH = tempLH; 
-//                         refLL = null; 
-                        
+//                         confirmedLH = tempLH;
+//                         refLL = null;
+
 //                         if (tempPullbackTracker_Bearish) {
 //                             tempPullbackTracker_Bearish.breakCandleIndex = i;
-//                             bearishPullbacks.push({...tempPullbackTracker_Bearish});
-//                             tempPullbackTracker_Bearish = null; 
+//                             bearishPullbacks.push({ ...tempPullbackTracker_Bearish });
+//                             tempPullbackTracker_Bearish = null;
 //                         }
 //                     }
 //                 }
@@ -195,13 +316,20 @@
 //                 const swingLHIndex = candles.findIndex(c => c.timestamp === rootTime);
 //                 const refLLIndex = candles.findIndex(c => c.timestamp === validLL.time);
 
+//                 // 🎯 THE E-OF SIZE FIX: स्कैनर से पहला पुलबैक निकालो
+//                 let rootConfirmLL = validLL.price;
+//                 let wavePullbacks = scanRetroactivePullbacks(swingLHIndex, refLLIndex, candles, "BEARISH");
+//                 if (wavePullbacks.length > 0) {
+//                     rootConfirmLL = wavePullbacks[0].confirmLL; // पहला पुलबैक का Low
+//                 }
+
 //                 const rootExtreme = {
 //                     id: "ROOT_SWING_LH",
 //                     validLH: rootPrice,
 //                     validLHCandleIndex: swingLHIndex,
-//                     confirmLL: validLL.price,
+//                     confirmLL: rootConfirmLL, // <--- परफेक्ट साइज़
 //                     confirmLLCandleIndex: refLLIndex,
-//                     breakCandleIndex: refLLIndex, 
+//                     breakCandleIndex: refLLIndex,
 //                     startTime: rootTime
 //                 };
 
@@ -216,14 +344,14 @@
 //                 // 🔥 2. THE MASTER STATE MANAGEMENT
 //                 signals.forEach(sig => {
 //                     if (["E-OB", "D-OB", "E-OF", "D-OF"].includes(sig.type)) {
-                        
+
 //                         // अगर पहले से Demand/Supply नाम नहीं हुआ है, तभी चेक करो
 //                         if (!sig.displayName || (!sig.displayName.includes("Demand") && !sig.displayName.includes("Supply"))) {
 //                             sig.isActive = false; // पुराने ज़ोन डीएक्टिवेट करें
-                            
+
 //                             let isMitigated = false;
 //                             let startIdx = candles.findIndex(c => c.timestamp === sig.startTime);
-                            
+
 //                             if (startIdx !== -1) {
 //                                 for (let j = startIdx + 3; j <= i; j++) {
 //                                     // बुलिश ज़ोन के लिए चेकिंग
@@ -270,8 +398,8 @@
 //                     let mitTimeDOB = findMitigationTime_Bearish(poiZones.dob.bottom, i, candles);
 //                     signals.push({ type: "D-OB", displayName: "D-OB", trend: "BEARISH", priceTop: poiZones.dob.top, priceBottom: poiZones.dob.bottom, startTime: poiZones.dob.startTime, fvgTop: poiZones.dob.fvgTop, fvgBottom: poiZones.dob.fvgBottom, endTime: mitTimeDOB, isActive: true });
 //                 }
-                
-//                 bearishPullbacks = []; 
+
+//                 bearishPullbacks = [];
 //                 tempPullbackTracker_Bearish = null;
 //                 confirmedLH = null;
 //             }
@@ -280,7 +408,7 @@
 //             if (isIdmTaken && curr.high > tempSwingHigh.price) {
 //                 tempSwingHigh = { price: curr.high, time: curr.timestamp };
 //                 bearishPullbacks = []; // 🎯 Added
-//                 refLL = null; 
+//                 refLL = null;
 //                 tempPullbackTracker_Bearish = null; // 🎯 Added
 //             }
 
@@ -292,8 +420,8 @@
 //                     if (curr.close < breakLevel) { // 🚀 Full Body Break (Valid BOS)
 //                         signals.push({
 //                             type: "BOS", trend: "BEARISH",
-//                             price: validLL.price, 
-//                             startTime: validLL.time, 
+//                             price: validLL.price,
+//                             startTime: validLL.time,
 //                             endTime: curr.timestamp
 //                         });
 
@@ -304,11 +432,18 @@
 
 //                         lockedSwingHigh = { ...tempSwingHigh };
 //                         isIdmTaken = false;
+//                         wipeCounterStructure();
 //                         validLL = null; refLL = null; refX_BOS_Bearish = null;
-//                         absoluteLowest = { price: curr.low, time: curr.timestamp };
+
+//                         // 🔥 RETRO-SCANNER INJECTION: BOS के पहले वाले पुलबैक्स ढूँढो
+//                         let startIdx = candles.findIndex(c => c.timestamp === lockedSwingHigh.time);
+//                         let retroPBs = scanRetroactivePullbacks(startIdx, i, candles, "BEARISH");
+//                         confirmedLH = retroPBs.length > 0 ? retroPBs[retroPBs.length - 1] : null;
                         
-//                         bearishPullbacks = []; // 🎯 Added
-//                         tempPullbackTracker_Bearish = null; // 🎯 Added
+//                         bearishPullbacks = [];
+//                         tempPullbackTracker_Bearish = null;
+//                         absoluteLowest = { price: curr.low, time: curr.timestamp };
+
 //                     } else { // 🧹 Sweep (Ref X)
 //                         refX_BOS_Bearish = { price: curr.low, time: curr.timestamp, majorIdmTarget: { ...majorIdm_Bearish } };
 //                     }
@@ -325,7 +460,101 @@
 //                     }
 //                 }
 //             }
+//             // =========================================================================
+//             // 🔥 PHASE 1: COUNTER STRUCTURE (S2D) LOGIC STARTS HERE 🔥
+//             // =========================================================================
+
+//             // 🛑 THE CHoCH/BOS AUTO-CLEANER (Chanchal Bhai's Rule)
+//             let currentWaveStart_S2D = lockedSwingHigh ? lockedSwingHigh.time : absoluteHighest.time;
+
+//             if ( (confirmedHL_S2D && confirmedHL_S2D.time < currentWaveStart_S2D) || 
+//                  (refHH_S2D && refHH_S2D.time < currentWaveStart_S2D) ) {
+//                 isDobTapped_S2D = false; tappingCandle_S2D = null; isDobFailed_S2D = false;
+//                 refHH_S2D = null; tempHL_S2D = null; confirmedHL_S2D = null; idm_S2D_Taken = false;
+//             }
+            
+//             // 🎯 1. Active D-OB (Supply Zone) को ढूँढना
+//             let activeDobZone_Bearish = null;
+//             if (isIdmTaken) {
+//                 for (let s = signals.length - 1; s >= 0; s--) {
+//                     if (signals[s].type === "D-OB" && signals[s].trend === "BEARISH" && signals[s].isActive !== false) {
+//                         if (signals[s].startTime >= currentWaveStart_S2D) { 
+//                             activeDobZone_Bearish = signals[s];
+//                             break;
+//                         }
+//                     }
+//                 }
+//             }
+
+//             if (activeDobZone_Bearish) {
+//                 // 🎯 2. TAPPING CHECK 
+//                 if (!isDobTapped_S2D && curr.high >= activeDobZone_Bearish.priceBottom) {
+//                     isDobTapped_S2D = true;
+//                     tappingCandle_S2D = curr;
+//                 }
+
+//                 // 🎯 3. D-OB FAILURE CHECK 
+//                 if (isDobTapped_S2D && !isDobFailed_S2D) {
+//                     let isOutsideBar_S2D = curr.high > tappingCandle_S2D.high && curr.low < tappingCandle_S2D.low;
+//                     if (!isOutsideBar_S2D) {
+//                         if (curr.high > tappingCandle_S2D.high || tappingCandle_S2D.close > activeDobZone_Bearish.priceTop) {
+//                             isDobFailed_S2D = true;
+//                             refHH_S2D = { price: curr.high, time: curr.timestamp };
+//                         }
+//                     }
+//                 }
+//             }
+
+//             // 🎯 4. IDM(S2D) PULLBACK TRACKING 
+//             if (isDobFailed_S2D && !idm_S2D_Taken) {
+//                 let brokeLow = curr.low < refCandle.low; 
+
+//                 if (brokeLow && !isOutsideBar && refHH_S2D !== null && tempHL_S2D === null) {
+//                     tempHL_S2D = { price: curr.low, time: curr.timestamp };
+//                 } 
+//                 else if (refHH_S2D !== null) {
+//                     if (tempHL_S2D !== null && curr.low < tempHL_S2D.price) {
+//                         tempHL_S2D = { price: curr.low, time: curr.timestamp };
+//                     }
+//                     if (tempHL_S2D === null && curr.high > refHH_S2D.price) {
+//                         refHH_S2D = { price: curr.high, time: curr.timestamp };
+//                     }
+//                     if (tempHL_S2D !== null && curr.high >= refHH_S2D.price) {
+//                         if (curr.timestamp === tempHL_S2D.time) {
+//                             refHH_S2D = null; 
+//                             tempHL_S2D = null; 
+//                         } else {
+//                             confirmedHL_S2D = tempHL_S2D;
+//                             refHH_S2D = { price: curr.high, time: curr.timestamp }; 
+//                             tempHL_S2D = null; 
+//                         }
+//                     }
+//                 }
+
+//                 // 🎯 5. IDM(S2D) HIT!
+//                 if (confirmedHL_S2D !== null && curr.low <= confirmedHL_S2D.price) {
+//                     idm_S2D_Taken = true;
+                    
+//                     signals.push({ 
+//                         type: "IDM(S2D)", 
+//                         trend: "BULLISH_COUNTER", 
+//                         price: confirmedHL_S2D.price, 
+//                         startTime: confirmedHL_S2D.time, 
+//                         endTime: curr.timestamp,
+//                         sweptSide: "LOW",     
+//                         position: "bottom"    
+//                     });
+                    
+//                     refHH_S2D = null;
+//                     tempHL_S2D = null;
+//                     confirmedHL_S2D = null; // 🔥 EXTRA SAFETY
+//                 }
+//             }
+//             // =========================================================================
+//             // 🔥 PHASE 1: COUNTER STRUCTURE ENDS HERE 🔥
+//             // =========================================================================
 //         }
+
 
 //         // ==========================================
 //         // 📈 BULLISH STRUCTURE LOGIC (1)
@@ -337,6 +566,7 @@
 //             if (startingTrend === "AUTO" && lockedSwingLow === null && curr.close < prevAbsoluteLowest) {
 //                 trend = -1;
 //                 isIdmTaken = false;
+//                 wipeCounterStructure();
 //                 validHH = null; refHH = null; tempSwingLow = null; confirmedHL = null;
 
 //                 bullishPullbacks = [];
@@ -357,23 +587,28 @@
 
 //                 if (curr.low < breakLevel) {
 //                     if (curr.close < breakLevel) { // 🚀 Full Body Break
-
-//                         // 🔥 VISUAL FIX: लाइन हमेशा ओरिजिनल 'lockedSwingLow' से ही ड्रा होगी!
 //                         signals.push({
 //                             type: "CHoCH", trend: "BEARISH",
-//                             price: lockedSwingLow.price,     // <-- Original Price
-//                             startTime: lockedSwingLow.time,  // <-- Original Time
+//                             price: lockedSwingLow.price,
+//                             startTime: lockedSwingLow.time,
 //                             endTime: curr.timestamp
 //                         });
 
 //                         trend = -1;
 //                         isIdmTaken = false;
+//                         wipeCounterStructure();
 //                         lockedSwingHigh = { ...absoluteHighest };
-//                         validHH = null; refHH = null; tempSwingLow = null; lockedSwingLow = null; confirmedHL = null;
-//                         refX_CHoCH_Bullish = null; refX_BOS_Bullish = null;
 
-//                         bullishPullbacks = [];
-//                         tempPullbackTracker = null;
+//                         validHH = null; refHH = null; tempSwingLow = null; lockedSwingLow = null;
+//                         refX_CHoCH_Bullish = null; refX_BOS_Bullish = null;
+//                         bullishPullbacks = []; tempPullbackTracker = null;
+
+//                         refLL = null; tempLH = null; bearishPullbacks = []; tempPullbackTracker_Bearish = null;
+
+//                         // 🔥 RETRO-SCANNER INJECTION: CHoCH के पहले वाले Bearish पुलबैक्स ढूँढो
+//                         let startIdx = candles.findIndex(c => c.timestamp === lockedSwingHigh.time);
+//                         let retroPBs = scanRetroactivePullbacks(startIdx, i, candles, "BEARISH");
+//                         confirmedLH = retroPBs.length > 0 ? retroPBs[retroPBs.length - 1] : null;
 
 //                         absoluteLowest = { price: curr.low, time: curr.timestamp };
 //                         refCandle = curr;
@@ -387,19 +622,19 @@
 //             // ==========================================================
 //             // 🔥 BULLETPROOF PULLBACK TRACKER (The Smart Engulfing Fix)
 //             // ==========================================================
-//             if (brokeLow && !isOutsideBar && refHH === null) { 
+//             if (brokeLow && !isOutsideBar && refHH === null) {
 //                 refHH = { price: refCandle.high, time: refCandle.timestamp };
 //                 tempHL = { price: curr.low, time: curr.timestamp };
-                
+
 //                 tempPullbackTracker = {
 //                     id: bullishPullbacks.length + 1,
 //                     confirmHH: refCandle.high,
-//                     confirmHHCandleIndex: i - 1, 
+//                     confirmHHCandleIndex: i - 1,
 //                     validHL: curr.low,
-//                     validHLCandleIndex: i, 
+//                     validHLCandleIndex: i,
 //                     startTime: refCandle.timestamp
 //                 };
-//             } else if (refHH !== null) { 
+//             } else if (refHH !== null) {
 //                 if (curr.low < tempHL.price) {
 //                     tempHL = { price: curr.low, time: curr.timestamp };
 //                     if (tempPullbackTracker) {
@@ -407,8 +642,8 @@
 //                         tempPullbackTracker.validHLCandleIndex = i;
 //                     }
 //                 }
-                
-//                 if (curr.high >= refHH.price) { 
+
+//                 if (curr.high >= refHH.price) {
 //                     // ==================================================
 //                     // 🔥 THE SMART ENGULFING FIX (1-Candle Sweep Filter)
 //                     // ==================================================
@@ -417,20 +652,20 @@
 //                     // (यानी curr.timestamp === tempHL.time), तो इसका मतलब है कि 
 //                     // यह एक 'राक्षस कैंडल' है जिसने बॉटम और टॉप दोनों एक साथ खा लिए।
 //                     // इसे फेक पुलबैक मानकर डिलीट कर देंगे!
-                    
+
 //                     if (curr.timestamp === tempHL.time) {
 //                         // ❌ Fake Engulfing Pullback (Discard)
-//                         refHH = null; 
-//                         tempPullbackTracker = null; 
+//                         refHH = null;
+//                         tempPullbackTracker = null;
 //                     } else {
 //                         // ✅ Valid Pullback (Confirm)
-//                         confirmedHL = tempHL; 
-//                         refHH = null; 
-                        
+//                         confirmedHL = tempHL;
+//                         refHH = null;
+
 //                         if (tempPullbackTracker) {
 //                             tempPullbackTracker.breakCandleIndex = i;
-//                             bullishPullbacks.push({...tempPullbackTracker});
-//                             tempPullbackTracker = null; 
+//                             bullishPullbacks.push({ ...tempPullbackTracker });
+//                             tempPullbackTracker = null;
 //                         }
 //                     }
 //                 }
@@ -445,28 +680,32 @@
 
 //                 // ==========================================================
 //                 // 🔥 THE ROOT EXTREME FIX (Null Crash Fix)
-//                 // ==========================================================
-                
-//                 // 1. सेफ़्टी चेक: अगर पहली लहर (First Wave) है और lockedSwingLow अभी null है, 
-//                 // तो इंजन बॉटम के लिए absoluteLowest का यूज़ करेगा!
+//                 // ==========================================================   
 //                 const rootTime = lockedSwingLow ? lockedSwingLow.time : absoluteLowest.time;
 //                 const rootPrice = lockedSwingLow ? lockedSwingLow.price : absoluteLowest.price;
 
 //                 const swingHLIndex = candles.findIndex(c => c.timestamp === rootTime);
 //                 const refHHIndex = candles.findIndex(c => c.timestamp === validHH.time);
 
+//                 // 🎯 THE E-OF SIZE FIX: स्कैनर से पहला पुलबैक निकालो
+//                 let rootConfirmHH = validHH.price;
+//                 let wavePullbacks = scanRetroactivePullbacks(swingHLIndex, refHHIndex, candles, "BULLISH");
+//                 if (wavePullbacks.length > 0) {
+//                     rootConfirmHH = wavePullbacks[0].confirmHH; // पहला पुलबैक का High
+//                 }
+
 //                 const rootExtreme = {
 //                     id: "ROOT_SWING_HL",
 //                     validHL: rootPrice,
 //                     validHLCandleIndex: swingHLIndex,
-//                     confirmHH: validHH.price,
+//                     confirmHH: rootConfirmHH, // <--- परफेक्ट साइज़
 //                     confirmHHCandleIndex: refHHIndex,
-//                     breakCandleIndex: refHHIndex, 
+//                     breakCandleIndex: refHHIndex,
 //                     startTime: rootTime
 //                 };
 
 //                 const validPullbacksForSMC = bullishPullbacks.filter(pb =>
-//                     pb.validHL !== confirmedHL.price 
+//                     pb.validHL !== confirmedHL.price
 //                 );
 
 //                 if (swingHLIndex !== -1 && refHHIndex !== -1) {
@@ -478,18 +717,18 @@
 //                 // ==========================================================
 //                 // 🔥 THE VISUAL FIX
 //                 // ==========================================================
-                
+
 //                 // 1. जब नया IDM कन्फर्म होता है, तो 'signals' एरे में मौजूद पिछले सारे ज़ोन्स 'पुराने' बन जाते हैं।
 //                 signals.forEach(sig => {
 //                     if (["E-OB", "D-OB", "E-OF", "D-OF"].includes(sig.type)) {
-                        
+
 //                         // अगर पहले से Demand/Supply नाम नहीं हुआ है, तभी चेक करो
 //                         if (!sig.displayName || (!sig.displayName.includes("Demand") && !sig.displayName.includes("Supply"))) {
 //                             sig.isActive = false; // पुराने ज़ोन डीएक्टिवेट करें
-                            
+
 //                             let isMitigated = false;
 //                             let startIdx = candles.findIndex(c => c.timestamp === sig.startTime);
-                            
+
 //                             if (startIdx !== -1) {
 //                                 for (let j = startIdx + 3; j <= i; j++) {
 //                                     // बुलिश ज़ोन के लिए चेकिंग
@@ -524,7 +763,7 @@
 //                     let mitTimeEOF = findMitigationTime(poiZones.eof.top, i, candles);
 //                     signals.push({ type: "E-OF", displayName: "E-OF", trend: "BULLISH", priceTop: poiZones.eof.top, priceBottom: poiZones.eof.bottom, startTime: poiZones.eof.startTime, endTime: mitTimeEOF, isActive: true });
 //                 }
-                
+
 //                 if (poiZones.eob) {
 //                     let mitTimeEOB = findMitigationTime(poiZones.eob.top, i, candles);
 //                     signals.push({ type: "E-OB", displayName: "E-OB", trend: "BULLISH", priceTop: poiZones.eob.top, priceBottom: poiZones.eob.bottom, startTime: poiZones.eob.startTime, fvgTop: poiZones.eob.fvgTop, fvgBottom: poiZones.eob.fvgBottom, endTime: mitTimeEOB, isActive: true });
@@ -534,13 +773,13 @@
 //                     let mitTimeDOF = findMitigationTime(poiZones.dof.top, i, candles);
 //                     signals.push({ type: "D-OF", displayName: "D-OF", trend: "BULLISH", priceTop: poiZones.dof.top, priceBottom: poiZones.dof.bottom, startTime: poiZones.dof.startTime, endTime: mitTimeDOF, isActive: true });
 //                 }
-                
+
 //                 if (poiZones.dob) {
 //                     let mitTimeDOB = findMitigationTime(poiZones.dob.top, i, candles);
 //                     signals.push({ type: "D-OB", displayName: "D-OB", trend: "BULLISH", priceTop: poiZones.dob.top, priceBottom: poiZones.dob.bottom, startTime: poiZones.dob.startTime, fvgTop: poiZones.dob.fvgTop, fvgBottom: poiZones.dob.fvgBottom, endTime: mitTimeDOB, isActive: true });
 //                 }
-                
-//                 bullishPullbacks = []; 
+
+//                 bullishPullbacks = [];
 //                 tempPullbackTracker = null;
 //                 confirmedHL = null;
 //             }
@@ -563,8 +802,8 @@
 //                         // 🔥 VISUAL FIX: लाइन हमेशा ओरिजिनल 'validHH' से ही ड्रा होगी!
 //                         signals.push({
 //                             type: "BOS", trend: "BULLISH",
-//                             price: validHH.price,       // <-- Original Price
-//                             startTime: validHH.time,    // <-- Original Time
+//                             price: validHH.price,
+//                             startTime: validHH.time,
 //                             endTime: curr.timestamp
 //                         });
 
@@ -575,10 +814,18 @@
 
 //                         lockedSwingLow = { ...tempSwingLow };
 //                         isIdmTaken = false;
+//                         wipeCounterStructure();
 //                         validHH = null; refHH = null; refX_BOS_Bullish = null;
 
+//                         // 🔥 RETRO-SCANNER INJECTION: BOS के पहले वाले Bullish पुलबैक्स ढूँढो
+//                         let startIdx = candles.findIndex(c => c.timestamp === lockedSwingLow.time);
+//                         let retroPBs = scanRetroactivePullbacks(startIdx, i, candles, "BULLISH");
+//                         confirmedHL = retroPBs.length > 0 ? retroPBs[retroPBs.length - 1] : null;
 
+//                         bullishPullbacks = [];
+//                         tempPullbackTracker = null;
 //                         absoluteHighest = { price: curr.high, time: curr.timestamp };
+
 //                     } else { // 🧹 Sweep (Ref X)
 //                         refX_BOS_Bullish = { price: curr.high, time: curr.timestamp, majorIdmTarget: { ...majorIdm_Bullish } };
 //                     }
@@ -596,6 +843,101 @@
 //                     }
 //                 }
 //             }
+
+//             // =========================================================================
+//             // 🔥 PHASE 1: COUNTER STRUCTURE (D2S) LOGIC STARTS HERE 🔥
+//             // =========================================================================
+
+//            // 🛑 THE CHoCH/BOS AUTO-CLEANER (Chanchal Bhai's Rule)
+//             // अगर पुराना D2S ट्रैकर (LL/LH) मेन स्ट्रक्चर (CHoCH/BOS) से पहले का है, तो उसे तुरंत क्लियर कर दो!
+//             let currentWaveStart_D2S = lockedSwingLow ? lockedSwingLow.time : absoluteLowest.time;
+            
+//             if ( (confirmedLH_D2S && confirmedLH_D2S.time < currentWaveStart_D2S) || 
+//                  (refLL_D2S && refLL_D2S.time < currentWaveStart_D2S) ) {
+//                 isDobTapped_D2S = false; tappingCandle_D2S = null; isDobFailed_D2S = false;
+//                 refLL_D2S = null; tempLH_D2S = null; confirmedLH_D2S = null; idm_D2S_Taken = false;
+//             }
+
+//             // 🎯 1. Active D-OB Zone को ढूँढना (Ghost Fix Applied)
+//             let activeDobZone = null;
+//             if (isIdmTaken) {
+//                 for (let s = signals.length - 1; s >= 0; s--) {
+//                     if (signals[s].type === "D-OB" && signals[s].trend === "BULLISH" && signals[s].isActive !== false) {
+//                         // सिर्फ करेंट वेव का D-OB उठाओ
+//                         if (signals[s].startTime >= currentWaveStart_D2S) {
+//                             activeDobZone = signals[s];
+//                             break;
+//                         }
+//                     }
+//                 }
+//             }
+
+//             if (activeDobZone) {
+//                 // 🎯 2. TAPPING CHECK 
+//                 if (!isDobTapped_D2S && curr.low <= activeDobZone.priceTop) {
+//                     isDobTapped_D2S = true;
+//                     tappingCandle_D2S = curr;
+//                 }
+
+//                 // 🎯 3. D-OB FAILURE CHECK
+//                 if (isDobTapped_D2S && !isDobFailed_D2S) {
+//                     let isOutsideBar = curr.high > tappingCandle_D2S.high && curr.low < tappingCandle_D2S.low;
+//                     if (!isOutsideBar) {
+//                         if (curr.low < tappingCandle_D2S.low || tappingCandle_D2S.close < activeDobZone.priceBottom) {
+//                             isDobFailed_D2S = true;
+//                             refLL_D2S = { price: curr.low, time: curr.timestamp };
+//                         }
+//                     }
+//                 }
+//             }
+
+//             // 🎯 4. IDM(D2S) PULLBACK TRACKING 
+//             if (isDobFailed_D2S && !idm_D2S_Taken) {
+//                 let brokeHigh = curr.high > refCandle.high; 
+
+//                 if (brokeHigh && !isOutsideBar && refLL_D2S !== null && tempLH_D2S === null) {
+//                     tempLH_D2S = { price: curr.high, time: curr.timestamp };
+//                 } 
+//                 else if (refLL_D2S !== null) {
+//                     if (tempLH_D2S !== null && curr.high > tempLH_D2S.price) {
+//                         tempLH_D2S = { price: curr.high, time: curr.timestamp };
+//                     }
+//                     if (tempLH_D2S === null && curr.low < refLL_D2S.price) {
+//                         refLL_D2S = { price: curr.low, time: curr.timestamp };
+//                     }
+//                     if (tempLH_D2S !== null && curr.low <= refLL_D2S.price) {
+//                         if (curr.timestamp === tempLH_D2S.time) {
+//                             refLL_D2S = null; 
+//                             tempLH_D2S = null; 
+//                         } else {
+//                             confirmedLH_D2S = tempLH_D2S;
+//                             refLL_D2S = { price: curr.low, time: curr.timestamp }; 
+//                             tempLH_D2S = null; 
+//                         }
+//                     }
+//                 }
+
+//                 // 🎯 5. IDM(D2S) HIT!
+//                 if (confirmedLH_D2S !== null && curr.high >= confirmedLH_D2S.price) {
+//                     idm_D2S_Taken = true;
+                    
+//                     signals.push({ 
+//                         type: "IDM(D2S)", 
+//                         trend: "BEARISH_COUNTER", 
+//                         price: confirmedLH_D2S.price, 
+//                         startTime: confirmedLH_D2S.time, 
+//                         endTime: curr.timestamp 
+//                     });
+                    
+//                     // IDM हिट होने के बाद वेरिएबल्स साफ कर दें
+//                     refLL_D2S = null;
+//                     tempLH_D2S = null;
+//                     confirmedLH_D2S = null; // 🔥 EXTRA SAFETY
+//                 }
+//             }
+//             // =========================================================================
+//             // 🔥 PHASE 1: COUNTER STRUCTURE ENDS HERE 🔥
+//             // =========================================================================
 //         }
 
 //         refCandle = curr;
@@ -676,42 +1018,8 @@
 //         }
 //     }
 //     // अगर किसी ने टच नहीं किया (Unmitigated), तो चार्ट के अंत तक बॉक्स खींच दो
-//     return candles[candles.length - 1].timestamp; 
+//     return candles[candles.length - 1].timestamp;
 // };
-
-
-// /**
-//  * 🎯 Helper: Check if Order Flow (Pullback) is Mitigated
-//  */
-// // const isOfMitigated = (pb, candles, currentIndex) => {
-// //     // ब्रेकआउट कैंडल के बाद से IDM तक चेक करेंगे
-// //     const startIdx = pb.breakCandleIndex + 1;
-// //     for (let j = startIdx; j <= currentIndex; j++) {
-// //         if (j >= candles.length) break;
-// //         // बुलिश में: अगर कोई कैंडल OF के टॉप (confirmHH) को नीचे की तरफ टच कर दे
-// //         if (candles[j].low <= pb.confirmHH) {
-// //             return true; // OF मिटिगेट हो गया!
-// //         }
-// //     }
-// //     return false; // OF अभी भी फ्रेश है!
-// // };
-
-
-// // /**
-// //  * 🎯 Helper: Check if Bearish Order Flow (Pullback) is Mitigated
-// //  */
-// // const isOfMitigated_Bearish = (pb, candles, currentIndex) => {
-// //     // ब्रेकआउट कैंडल के बाद से IDM तक चेक करेंगे
-// //     const startIdx = pb.breakCandleIndex + 1;
-// //     for (let j = startIdx; j <= currentIndex; j++) {
-// //         if (j >= candles.length) break;
-// //         // 🎯 Bearish में: अगर कोई कैंडल ऊपर उठकर OF के बॉटम (confirmLL) को टच कर दे
-// //         if (candles[j].high >= pb.confirmLL) {
-// //             return true; // OF मिटिगेट हो गया!
-// //         }
-// //     }
-// //     return false; // OF अभी भी फ्रेश है!
-// // };
 
 
 // /**
@@ -724,8 +1032,8 @@
 
 //         // 🎯 SMC Rule: बुलिश OF का टॉप (confirmHH) है। 
 //         // प्राइस जैसे ही नीचे गिरकर इसे टच करेगा, ज़ोन मिटिगेट!
-//         if (candles[j].low <= pb.confirmHH) { 
-//             return true; 
+//         if (candles[j].low <= pb.confirmHH) {
+//             return true;
 //         }
 //     }
 //     return false; // टच नहीं हुआ, मतलब फ्रेश है!
@@ -738,11 +1046,11 @@
 //     const startIdx = pb.breakCandleIndex + 1;
 //     for (let j = startIdx; j <= currentIndex; j++) {
 //         if (j >= candles.length) break;
-        
+
 //         // 🎯 SMC Rule: बेयरिश OF का बॉटम (confirmLL) है।
 //         // प्राइस जैसे ही ऊपर उठकर इसे टच करेगा, ज़ोन मिटिगेट!
-//         if (candles[j].high >= pb.confirmLL) { 
-//             return true; 
+//         if (candles[j].high >= pb.confirmLL) {
+//             return true;
 //         }
 //     }
 //     return false; // टच नहीं हुआ, मतलब फ्रेश है!
@@ -752,12 +1060,12 @@
 //  * 🎯 E-OB / D-OB ढूँढने का "Swing HL to Ref HH" एडवांस लॉजिक
 //  */
 // const findValidOrderBlock = (pullback, candles, currentIndex) => {
-    
+
 //     // 1. Start: "Swing HL" वाली कैंडल को ही exactly 1st कैंडल मानेंगे (No -1 logic)
-//     const startIdx = pullback.validHLCandleIndex; 
-    
+//     const startIdx = pullback.validHLCandleIndex;
+
 //     // 2. Limitation: FVG चेक करते हुए सिर्फ "Ref HH" (Breakout Candle) तक ही जाएंगे
-//     const endIdx = pullback.breakCandleIndex; 
+//     const endIdx = pullback.breakCandleIndex;
 
 //     // 1-1 कैंडल ऊपर बढ़ते जाएंगे
 //     for (let i = startIdx; i <= endIdx; i++) {
@@ -768,7 +1076,7 @@
 
 //         // 3. FVG Check: क्या इस 1st कैंडल और 3rd कैंडल के बीच FVG (Imbalance) है?
 //         if (firstCandle.high < thirdCandle.low) {
-            
+
 //             // Mitigation चेक (क्या भविष्य में ये कैंडल टच हुई है?)
 //             let isMitigated = false;
 //             for (let j = i + 3; j <= currentIndex; j++) {
@@ -802,10 +1110,10 @@
 //  * 🎯 E-OB / D-OB ढूँढने का BEARISH SMC रूल: "Swing High to Ref LL"
 //  */
 // const findBearishValidOrderBlock = (pullback, candles, currentIndex) => {
-    
+
 //     // 1. Start: "Swing High" (Top) वाली कैंडल को 1st कैंडल मानेंगे
 //     const startIdx = pullback.validLHCandleIndex; // Bearish में Lower High (LH)
-//     const endIdx = pullback.breakCandleIndex; 
+//     const endIdx = pullback.breakCandleIndex;
 
 //     for (let i = startIdx; i <= endIdx; i++) {
 //         if (i + 2 >= candles.length) continue;
@@ -815,13 +1123,13 @@
 
 //         // 2. Bearish FVG Check: क्या 1st कैंडल का Low, 3rd कैंडल के High से ऊपर है? (Imbalance)
 //         if (firstCandle.low > thirdCandle.high) {
-            
+
 //             // Mitigation चेक (क्या भविष्य में मार्केट ऊपर आकर इसे टच किया है?)
 //             let isMitigated = false;
 //             for (let j = i + 3; j <= currentIndex; j++) {
 //                 if (j >= candles.length) break;
 //                 // 🎯 Bearish में कैंडल का High ज़ोन के Bottom (firstCandle.low) को टच करता है
-//                 if (candles[j].high >= firstCandle.low) { 
+//                 if (candles[j].high >= firstCandle.low) {
 //                     isMitigated = true;
 //                     break;
 //                 }
@@ -832,7 +1140,7 @@
 //                 return {
 //                     found: true,
 //                     // Bearish बॉक्स का Top (High) और Bottom (Low)
-//                     price: { top: firstCandle.high, bottom: firstCandle.low }, 
+//                     price: { top: firstCandle.high, bottom: firstCandle.low },
 //                     fvgZone: { top: firstCandle.low, bottom: thirdCandle.high },
 //                     startTime: firstCandle.timestamp,
 //                     candleIndex: i
@@ -859,23 +1167,22 @@
 
 //         if (obResult.found) {
 //             const mitigatedOF = isOfMitigated(pb, candles, currentIndex);
-//             smcZones.eof = { type: "E-OF", top: pb.confirmHH, bottom: pb.validHL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb };
-            
-//             // यहाँ 'obResult.startTime' का यूज़ करना बहुत ज़रूरी है
-//             smcZones.eob = { 
-//                 type: "E-OB", 
-//                 top: obResult.price.high, 
-//                 bottom: obResult.price.low, 
-//                 startTime: obResult.startTime, // बॉक्स अब यहीं से शुरू होगा
-//                 fvgTop: obResult.fvgZone.top, 
-//                 fvgBottom: obResult.fvgZone.bottom 
+
+//             // 🔥 THE FIX: अगर यह हमारा फेक 'ROOT' पुलबैक है, तो इसका विशालकाय E-OF ड्रा मत करो!
+//             if (pb.id !== "ROOT_SWING_HL") {
+//                 smcZones.eof = { type: "E-OF", top: pb.confirmHH, bottom: pb.validHL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb };
+//             }
+
+//             smcZones.eob = {
+//                 type: "E-OB", top: obResult.price.high, bottom: obResult.price.low,
+//                 startTime: obResult.startTime, fvgTop: obResult.fvgZone.top, fvgBottom: obResult.fvgZone.bottom
 //             };
-//             break; 
+//             break;
 //         }
 //     }
 
 //     // ==============================================================
-//     // 🔥 2. DECISIONAL ZONES (D-OF / D-OB) - UPDATED DYNAMIC LOGIC
+//     // 🔥 2. DECISIONAL ZONES (D-OF / D-OB)
 //     // ==============================================================
 //     for (let i = pullbacksArray.length - 1; i >= 0; i--) {
 //         const pb = pullbacksArray[i];
@@ -884,21 +1191,20 @@
 //         const obResult = findValidOrderBlock(pb, candles, currentIndex);
 
 //         if (obResult.found) {
-//             // 🎯 THE OVERLAP GUARD: अगर D-OB का टाइम E-OB से टकरा रहा है, तो इसे स्किप कर दो!
-//             if (smcZones.eob && smcZones.eob.startTime === obResult.startTime) {
-//                 continue; 
-//             }
+//             if (smcZones.eob && smcZones.eob.startTime === obResult.startTime) continue;
 
 //             const mitigatedOF = isOfMitigated(pb, candles, currentIndex);
-            
-//             smcZones.dof = { 
-//                 type: "D-OF", top: pb.confirmHH, bottom: pb.validHL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb 
-//             };
 
-//             smcZones.dob = { 
-//                 type: "D-OB", top: obResult.price.high, bottom: obResult.price.low, startTime: obResult.startTime, fvgTop: obResult.fvgZone.top, fvgBottom: obResult.fvgZone.bottom, data: pb
+//             // 🔥 THE FIX: अगर यह फेक 'ROOT' पुलबैक है, तो इसका विशालकाय D-OF ड्रा मत करो!
+//             if (pb.id !== "ROOT_SWING_HL") {
+//                 smcZones.dof = { type: "D-OF", top: pb.confirmHH, bottom: pb.validHL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb };
+//             }
+
+//             smcZones.dob = {
+//                 type: "D-OB", top: obResult.price.high, bottom: obResult.price.low,
+//                 startTime: obResult.startTime, fvgTop: obResult.fvgZone.top, fvgBottom: obResult.fvgZone.bottom, data: pb
 //             };
-//             break; 
+//             break;
 //         }
 //     }
 //     return smcZones;
@@ -912,33 +1218,23 @@
 //     // ==============================================================
 //     // 🔥 1. EXTREME ZONES (E-OF / E-OB) - Bearish
 //     // ==============================================================
-//     // यहाँ हम लूप लगा रहे हैं ताकि अगर पहला लेग फेल हो जाए, तो इंजन अगले लेग को चेक करे
 //     for (let i = 0; i < pullbacksArray.length; i++) {
 //         const pb = pullbacksArray[i];
 //         const obResult = findBearishValidOrderBlock(pb, candles, currentIndex);
 
 //         if (obResult.found) {
-//             // 🎯 असली जादू यहाँ है: अब हम चेक कर रहे हैं कि OF मिटिगेट हुआ है या नहीं!
 //             const mitigatedOF = isOfMitigated_Bearish(pb, candles, currentIndex);
-            
-//             smcZones.eof = { 
-//                 type: "E-OF", 
-//                 top: pb.validLH,       // Bearish pullback top (Supply)
-//                 bottom: pb.confirmLL,  // Bearish pullback bottom (Break point)
-//                 startTime: pb.startTime, 
-//                 isMitigated: mitigatedOF, // 🚀 अब यह डायनामिक है!
-//                 data: pb 
+
+//             // 🔥 THE FIX: 'ROOT_SWING_LH' के लिए OF ड्रा नहीं होगा
+//             if (pb.id !== "ROOT_SWING_LH") {
+//                 smcZones.eof = { type: "E-OF", top: pb.validLH, bottom: pb.confirmLL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb };
+//             }
+
+//             smcZones.eob = {
+//                 type: "E-OB", top: obResult.price.top, bottom: obResult.price.bottom,
+//                 startTime: obResult.startTime, fvgTop: obResult.fvgZone.top, fvgBottom: obResult.fvgZone.bottom
 //             };
-            
-//             smcZones.eob = { 
-//                 type: "E-OB", 
-//                 top: obResult.price.top, 
-//                 bottom: obResult.price.bottom, 
-//                 startTime: obResult.startTime, 
-//                 fvgTop: obResult.fvgZone.top, 
-//                 fvgBottom: obResult.fvgZone.bottom 
-//             };
-//             break; 
+//             break;
 //         }
 //     }
 
@@ -947,7 +1243,34 @@
 //     // ==============================================================
 //     for (let i = pullbacksArray.length - 1; i >= 0; i--) {
 //         const pb = pullbacksArray[i];
-        
+//         if (smcZones.eof && smcZones.eof.data.id === pb.id) break;
+
+//         const obResult = findBearishValidOrderBlock(pb, candles, currentIndex);
+
+//         if (obResult.found) {
+//             if (smcZones.eob && smcZones.eob.startTime === obResult.startTime) continue;
+
+//             const mitigatedOF = isOfMitigated_Bearish(pb, candles, currentIndex);
+
+//             // 🔥 THE FIX: 'ROOT_SWING_LH' के लिए OF ड्रा नहीं होगा
+//             if (pb.id !== "ROOT_SWING_LH") {
+//                 smcZones.dof = { type: "D-OF", top: pb.validLH, bottom: pb.confirmLL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb };
+//             }
+
+//             smcZones.dob = {
+//                 type: "D-OB", top: obResult.price.top, bottom: obResult.price.bottom,
+//                 startTime: obResult.startTime, fvgTop: obResult.fvgZone.top, fvgBottom: obResult.fvgZone.bottom, data: pb
+//             };
+//             break;
+//         }
+//     }
+
+//     // ==============================================================
+//     // 🔥 2. DECISIONAL ZONES (D-OF / D-OB) - BEARISH
+//     // ==============================================================
+//     for (let i = pullbacksArray.length - 1; i >= 0; i--) {
+//         const pb = pullbacksArray[i];
+
 //         if (smcZones.eof && smcZones.eof.data.id === pb.id) break;
 
 //         const obResult = findBearishValidOrderBlock(pb, candles, currentIndex);
@@ -955,22 +1278,22 @@
 //         if (obResult.found) {
 //             // 🎯 THE OVERLAP GUARD: अगर D-OB का टाइम E-OB से टकरा रहा है, तो इसे स्किप कर दो!
 //             if (smcZones.eob && smcZones.eob.startTime === obResult.startTime) {
-//                 continue; 
+//                 continue;
 //             }
 
 //             const mitigatedOF = isOfMitigated_Bearish(pb, candles, currentIndex);
-            
-//             smcZones.dof = { 
-//                 type: "D-OF", top: pb.validLH, bottom: pb.confirmLL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb 
+
+//             smcZones.dof = {
+//                 type: "D-OF", top: pb.validLH, bottom: pb.confirmLL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb
 //             };
 
-//             smcZones.dob = { 
+//             smcZones.dob = {
 //                 type: "D-OB", top: obResult.price.top, bottom: obResult.price.bottom, startTime: obResult.startTime, fvgTop: obResult.fvgZone.top, fvgBottom: obResult.fvgZone.bottom, data: pb
 //             };
-//             break; 
+//             break;
 //         }
 //     }
-    
+
 //     return smcZones;
 // };
 
@@ -1029,6 +1352,78 @@
 
 
 
+
+
+
+
+
+
+
+// // =========================================================================
+// // 🧠 SMART RETRO-SCANNER (Visual Zig-Zag Logic by Chanchal Bhai)
+// // =========================================================================
+// const scanRetroactivePullbacks = (startIndex, endIndex, candles, trendType) => {
+//     let validPullbacks = [];
+//     let inPullback = false;
+//     let tempExtreme = null;
+//     let targetBreakLevel = null;
+
+//     if (trendType === "BEARISH") {
+//         for (let j = startIndex + 1; j <= endIndex; j++) {
+//             let curr = candles[j];
+//             let prev = candles[j - 1];
+//             let isOutsideBar = curr.high > prev.high && curr.low < prev.low;
+//             let brokeHigh = curr.high > prev.high;
+
+//             if (!inPullback && brokeHigh && !isOutsideBar) {
+//                 inPullback = true;
+//                 targetBreakLevel = prev.low;
+//                 tempExtreme = { price: curr.high, time: curr.timestamp };
+//             }
+//             else if (inPullback) {
+//                 if (curr.high > tempExtreme.price) {
+//                     tempExtreme = { price: curr.high, time: curr.timestamp };
+//                 }
+//                 if (curr.low < targetBreakLevel) {
+//                     validPullbacks.push({
+//                         price: tempExtreme.price,
+//                         time: tempExtreme.time,
+//                         confirmLL: targetBreakLevel // 🎯 E-OF के बॉटम के लिए
+//                     });
+//                     inPullback = false;
+//                 }
+//             }
+//         }
+//     }
+//     else if (trendType === "BULLISH") {
+//         for (let j = startIndex + 1; j <= endIndex; j++) {
+//             let curr = candles[j];
+//             let prev = candles[j - 1];
+//             let isOutsideBar = curr.high > prev.high && curr.low < prev.low;
+//             let brokeLow = curr.low < prev.low;
+
+//             if (!inPullback && brokeLow && !isOutsideBar) {
+//                 inPullback = true;
+//                 targetBreakLevel = prev.high;
+//                 tempExtreme = { price: curr.low, time: curr.timestamp };
+//             }
+//             else if (inPullback) {
+//                 if (curr.low < tempExtreme.price) {
+//                     tempExtreme = { price: curr.low, time: curr.timestamp };
+//                 }
+//                 if (curr.high > targetBreakLevel) {
+//                     validPullbacks.push({
+//                         price: tempExtreme.price,
+//                         time: tempExtreme.time,
+//                         confirmHH: targetBreakLevel // 🎯 E-OF के टॉप के लिए
+//                     });
+//                     inPullback = false;
+//                 }
+//             }
+//         }
+//     }
+//     return validPullbacks; // 🔥 पूरा लिस्ट रिटर्न करेगा
+// };
 
 
 // const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
@@ -1059,13 +1454,75 @@
 //     let lockedSwingHigh = null;
 //     let absoluteLowest = { price: candles[0].low, time: candles[0].timestamp };
 
-//     let bearishPullbacks = []; 
+//     let bearishPullbacks = [];
 //     let tempPullbackTracker_Bearish = null;
 
 //     // 🔥 Liquidity Sweep (X) Variables
 //     let refX_BOS_Bearish = null;
 //     let majorIdm_Bearish = { price: -Infinity, time: null };
 //     let refX_CHoCH_Bearish = null;
+
+
+//     // 🔥 COUNTER STRUCTURE (D2S) VARIABLES FOR BULLISH TREND
+//     let isDobTapped_D2S = false;
+//     let tappingCandle_D2S = null;
+//     let isDobFailed_D2S = false;
+//     let refLL_D2S = null;
+//     let tempLH_D2S = null;
+//     let confirmedLH_D2S = null;
+//     let idm_D2S_Taken = false;
+
+
+//     // Phase 2 ke variables (Advance preparation)
+//     let swingLH_D2S = null;
+//     let pullbacks_D2S = [];
+
+//     // 🔥 NEW: COUNTER STRUCTURE (S2D) PHASE 2 & 3 VARIABLES
+//     let validHH_S2D = null;
+//     let tempSwingLow_S2D = null;
+//     let activeDob_S2D = null;
+//     let activeDof_S2D = null;
+//     let activeEob_S2D = null;  // 🎯 PHASE 3 
+//     let activeEof_S2D = null;  // 🎯 PHASE 3 
+//     let refX_S2D = null;
+
+//     // ==========================================
+//     // 🧹 THE GHOST KILLER & MAGIC ERASER
+//     // ==========================================
+//     const wipeCounterStructure = () => {
+//         // D2S मेमोरी
+//         isDobTapped_D2S = false; tappingCandle_D2S = null; isDobFailed_D2S = false;
+//         refLL_D2S = null; tempLH_D2S = null; confirmedLH_D2S = null; idm_D2S_Taken = false;
+//         swingLH_D2S = null; pullbacks_D2S = [];
+
+//         // S2D मेमोरी (Phase 1, 2 & 3)
+//         isDobTapped_S2D = false; tappingCandle_S2D = null; isDobFailed_S2D = false;
+//         refHH_S2D = null; tempHL_S2D = null; confirmedHL_S2D = null; idm_S2D_Taken = false;
+//         validHH_S2D = null; tempSwingLow_S2D = null; 
+//         activeDob_S2D = null; activeDof_S2D = null; 
+//         activeEob_S2D = null; activeEof_S2D = null; // 🔥 NEW
+//         refX_S2D = null;
+
+//         // 🔥 THE MAGIC ERASER: पुराने काउंटर ज़ोन्स और लाइनों को हटाओ!
+//         signals = signals.filter(sig => 
+//             sig.type !== "IDM(D2S)" && sig.type !== "IDM(S2D)" && 
+//             sig.type !== "BOS(C)" && sig.type !== "X(C)" &&
+//             sig.displayName !== "D-S2D(OF)" && sig.displayName !== "D-S2D(OB)" &&
+//             sig.displayName !== "E-S2D(OF)" && sig.displayName !== "E-S2D(OB)" // 🔥 NEW
+//         );
+//     };
+
+//     // 🔥 NEW: COUNTER STRUCTURE (S2D) VARIABLES FOR BEARISH TREND
+//     let isDobTapped_S2D = false;
+//     let tappingCandle_S2D = null;
+//     let isDobFailed_S2D = false;
+//     let refHH_S2D = null;
+//     let tempHL_S2D = null;
+//     let confirmedHL_S2D = null;
+//     let idm_S2D_Taken = false;
+
+
+
 
 //     // ==========================================
 //     // 📈 BULLISH STATE VARIABLES
@@ -1094,16 +1551,6 @@
 //     let previous_bullish_structure = [];
 
 
-//     // 🔥 NEW: COUNTER STRUCTURE (D2S) VARIABLES FOR BULLISH TREND
-//     let isDobTapped_D2S = false;
-//     let tappingCandle_D2S = null;
-//     let isDobFailed_D2S = false;
-//     let refLL_D2S = null;
-//     let tempLH_D2S = null;
-//     let confirmedLH_D2S = null;
-//     let idm_D2S_Taken = false;
-    
-
 //     for (let i = 1; i < candles.length; i++) {
 //         const curr = candles[i];
 
@@ -1113,6 +1560,8 @@
 //         // अब नया हाई/लो अपडेट करें
 //         if (curr.low < absoluteLowest.price) absoluteLowest = { price: curr.low, time: curr.timestamp };
 //         if (curr.high > absoluteHighest.price) absoluteHighest = { price: curr.high, time: curr.timestamp };
+
+       
 
 //         let isInsideBar = curr.high <= refCandle.high && curr.low >= refCandle.low;
 //         let isOutsideBar = curr.high > refCandle.high && curr.low < refCandle.low;
@@ -1131,12 +1580,13 @@
 //             if (startingTrend === "AUTO" && lockedSwingHigh === null && curr.close > prevAbsoluteHighest) {
 //                 trend = 1;
 //                 isIdmTaken = false;
+//                 wipeCounterStructure();
 //                 validLL = null; refLL = null; tempSwingHigh = null; confirmedLH = null;
-                
+
 //                 bearishPullbacks = []; // 🎯 Added
 //                 tempPullbackTracker_Bearish = null; // 🎯 Added
 
-//                 absoluteLowest = { price: curr.low, time: curr.timestamp }; 
+//                 absoluteLowest = { price: curr.low, time: curr.timestamp };
 //                 refCandle = curr;
 //                 continue;
 //             }
@@ -1151,7 +1601,6 @@
 
 //                 if (curr.high > breakLevel) {
 //                     if (curr.close > breakLevel) { // 🚀 Full Body Break (Valid CHoCH)
-
 //                         signals.push({
 //                             type: "CHoCH", trend: "BULLISH",
 //                             sweptSide: "HIGH",
@@ -1162,12 +1611,19 @@
 
 //                         trend = 1;
 //                         isIdmTaken = false;
+//                         wipeCounterStructure();
 //                         lockedSwingLow = { ...absoluteLowest };
-//                         validLL = null; refLL = null; tempSwingHigh = null; lockedSwingHigh = null; confirmedLH = null;
+
+//                         validLL = null; refLL = null; tempSwingHigh = null; lockedSwingHigh = null;
 //                         refX_CHoCH_Bearish = null; refX_BOS_Bearish = null;
-                        
-//                         bearishPullbacks = []; // 🎯 Added
-//                         tempPullbackTracker_Bearish = null; // 🎯 Added
+//                         bearishPullbacks = []; tempPullbackTracker_Bearish = null;
+
+//                         refHH = null; tempHL = null; bullishPullbacks = []; tempPullbackTracker = null;
+
+//                         // 🔥 RETRO-SCANNER INJECTION: CHoCH के पहले वाले Bullish पुलबैक्स ढूँढो
+//                         let startIdx = candles.findIndex(c => c.timestamp === lockedSwingLow.time);
+//                         let retroPBs = scanRetroactivePullbacks(startIdx, i, candles, "BULLISH");
+//                         confirmedHL = retroPBs.length > 0 ? retroPBs[retroPBs.length - 1] : null;
 
 //                         absoluteHighest = { price: curr.high, time: curr.timestamp };
 //                         refCandle = curr;
@@ -1179,21 +1635,21 @@
 //             }
 
 //             // ==========================================================
-//             // 🔥 BULLETPROOF PULLBACK TRACKER (Bearish)
+//             // 🔥 BULLETPROOF PULLBACK TRACKER (Bearish Engulfing Fix)
 //             // ==========================================================
-//             if (brokeHigh && !isOutsideBar && refLL === null) { 
+//             if (brokeHigh && !isOutsideBar && refLL === null) {
 //                 refLL = { price: refCandle.low, time: refCandle.timestamp };
 //                 tempLH = { price: curr.high, time: curr.timestamp };
-                
+
 //                 tempPullbackTracker_Bearish = {
 //                     id: bearishPullbacks.length + 1,
 //                     confirmLL: refCandle.low,
-//                     confirmLLCandleIndex: i - 1, 
+//                     confirmLLCandleIndex: i - 1,
 //                     validLH: curr.high,
-//                     validLHCandleIndex: i, 
+//                     validLHCandleIndex: i,
 //                     startTime: refCandle.timestamp
 //                 };
-//             } else if (refLL !== null) { 
+//             } else if (refLL !== null) {
 //                 if (curr.high > tempLH.price) {
 //                     tempLH = { price: curr.high, time: curr.timestamp };
 //                     if (tempPullbackTracker_Bearish) {
@@ -1201,24 +1657,21 @@
 //                         tempPullbackTracker_Bearish.validLHCandleIndex = i;
 //                     }
 //                 }
-                
-//                 // 🔥 THE FIX: SMC True Pullback Confirmation Rule
-//                 // पुलबैक तब कन्फर्म होता है जब कोई कैंडल पिछली कैंडल का Low तोड़ दे (brokeLow), 
-//                 // या फिर मार्केट सच में पूरा नीचे गिरकर refLL को तोड़ दे।
-//                 if (brokeLow || curr.low <= refLL.price) { 
-//                     // ❌ 1-Candle Fake Sweep Filter
-//                     if (curr.timestamp === tempLH.time && curr.low <= refLL.price) {
-//                         refLL = null; 
-//                         tempPullbackTracker_Bearish = null; 
+
+//                 if (curr.low <= refLL.price) {
+//                     // ❌ Fake Engulfing Pullback (Discard)
+//                     if (curr.timestamp === tempLH.time) {
+//                         refLL = null;
+//                         tempPullbackTracker_Bearish = null;
 //                     } else {
 //                         // ✅ Valid Pullback (Confirm)
-//                         confirmedLH = tempLH; 
-//                         refLL = null; // Reset tracker for next pullback
-                        
+//                         confirmedLH = tempLH;
+//                         refLL = null;
+
 //                         if (tempPullbackTracker_Bearish) {
 //                             tempPullbackTracker_Bearish.breakCandleIndex = i;
-//                             bearishPullbacks.push({...tempPullbackTracker_Bearish});
-//                             tempPullbackTracker_Bearish = null; 
+//                             bearishPullbacks.push({ ...tempPullbackTracker_Bearish });
+//                             tempPullbackTracker_Bearish = null;
 //                         }
 //                     }
 //                 }
@@ -1239,13 +1692,20 @@
 //                 const swingLHIndex = candles.findIndex(c => c.timestamp === rootTime);
 //                 const refLLIndex = candles.findIndex(c => c.timestamp === validLL.time);
 
+//                 // 🎯 THE E-OF SIZE FIX: स्कैनर से पहला पुलबैक निकालो
+//                 let rootConfirmLL = validLL.price;
+//                 let wavePullbacks = scanRetroactivePullbacks(swingLHIndex, refLLIndex, candles, "BEARISH");
+//                 if (wavePullbacks.length > 0) {
+//                     rootConfirmLL = wavePullbacks[0].confirmLL; // पहला पुलबैक का Low
+//                 }
+
 //                 const rootExtreme = {
 //                     id: "ROOT_SWING_LH",
 //                     validLH: rootPrice,
 //                     validLHCandleIndex: swingLHIndex,
-//                     confirmLL: validLL.price,
+//                     confirmLL: rootConfirmLL, // <--- परफेक्ट साइज़
 //                     confirmLLCandleIndex: refLLIndex,
-//                     breakCandleIndex: refLLIndex, 
+//                     breakCandleIndex: refLLIndex,
 //                     startTime: rootTime
 //                 };
 
@@ -1260,14 +1720,14 @@
 //                 // 🔥 2. THE MASTER STATE MANAGEMENT
 //                 signals.forEach(sig => {
 //                     if (["E-OB", "D-OB", "E-OF", "D-OF"].includes(sig.type)) {
-                        
+
 //                         // अगर पहले से Demand/Supply नाम नहीं हुआ है, तभी चेक करो
 //                         if (!sig.displayName || (!sig.displayName.includes("Demand") && !sig.displayName.includes("Supply"))) {
 //                             sig.isActive = false; // पुराने ज़ोन डीएक्टिवेट करें
-                            
+
 //                             let isMitigated = false;
 //                             let startIdx = candles.findIndex(c => c.timestamp === sig.startTime);
-                            
+
 //                             if (startIdx !== -1) {
 //                                 for (let j = startIdx + 3; j <= i; j++) {
 //                                     // बुलिश ज़ोन के लिए चेकिंग
@@ -1314,8 +1774,8 @@
 //                     let mitTimeDOB = findMitigationTime_Bearish(poiZones.dob.bottom, i, candles);
 //                     signals.push({ type: "D-OB", displayName: "D-OB", trend: "BEARISH", priceTop: poiZones.dob.top, priceBottom: poiZones.dob.bottom, startTime: poiZones.dob.startTime, fvgTop: poiZones.dob.fvgTop, fvgBottom: poiZones.dob.fvgBottom, endTime: mitTimeDOB, isActive: true });
 //                 }
-                
-//                 bearishPullbacks = []; 
+
+//                 bearishPullbacks = [];
 //                 tempPullbackTracker_Bearish = null;
 //                 confirmedLH = null;
 //             }
@@ -1324,7 +1784,7 @@
 //             if (isIdmTaken && curr.high > tempSwingHigh.price) {
 //                 tempSwingHigh = { price: curr.high, time: curr.timestamp };
 //                 bearishPullbacks = []; // 🎯 Added
-//                 refLL = null; 
+//                 refLL = null;
 //                 tempPullbackTracker_Bearish = null; // 🎯 Added
 //             }
 
@@ -1336,8 +1796,8 @@
 //                     if (curr.close < breakLevel) { // 🚀 Full Body Break (Valid BOS)
 //                         signals.push({
 //                             type: "BOS", trend: "BEARISH",
-//                             price: validLL.price, 
-//                             startTime: validLL.time, 
+//                             price: validLL.price,
+//                             startTime: validLL.time,
 //                             endTime: curr.timestamp
 //                         });
 
@@ -1348,14 +1808,18 @@
 
 //                         lockedSwingHigh = { ...tempSwingHigh };
 //                         isIdmTaken = false;
+//                         wipeCounterStructure();
 //                         validLL = null; refLL = null; refX_BOS_Bearish = null;
+
+//                         // 🔥 RETRO-SCANNER INJECTION: BOS के पहले वाले पुलबैक्स ढूँढो
+//                         let startIdx = candles.findIndex(c => c.timestamp === lockedSwingHigh.time);
+//                         let retroPBs = scanRetroactivePullbacks(startIdx, i, candles, "BEARISH");
+//                         confirmedLH = retroPBs.length > 0 ? retroPBs[retroPBs.length - 1] : null;
                         
-//                         // 🔥 THE MASTER FIX: BOS के बाद पुरानी IDM मेमोरी को जड़ से मिटाएं!
-//                         confirmedLH = null; 
-//                         bearishPullbacks = []; 
-//                         tempPullbackTracker_Bearish = null; 
-                        
+//                         bearishPullbacks = [];
+//                         tempPullbackTracker_Bearish = null;
 //                         absoluteLowest = { price: curr.low, time: curr.timestamp };
+
 //                     } else { // 🧹 Sweep (Ref X)
 //                         refX_BOS_Bearish = { price: curr.low, time: curr.timestamp, majorIdmTarget: { ...majorIdm_Bearish } };
 //                     }
@@ -1372,7 +1836,237 @@
 //                     }
 //                 }
 //             }
+//             // =========================================================================
+//             // 🔥 PHASE 1: COUNTER STRUCTURE (S2D) LOGIC STARTS HERE 🔥
+//             // =========================================================================
+
+//             // 🛑 THE CHoCH/BOS AUTO-CLEANER (Chanchal Bhai's Rule)
+//             let currentWaveStart_S2D = lockedSwingHigh ? lockedSwingHigh.time : absoluteHighest.time;
+
+//             if ( (confirmedHL_S2D && confirmedHL_S2D.time < currentWaveStart_S2D) || 
+//                  (refHH_S2D && refHH_S2D.time < currentWaveStart_S2D) ) {
+//                 isDobTapped_S2D = false; tappingCandle_S2D = null; isDobFailed_S2D = false;
+//                 refHH_S2D = null; tempHL_S2D = null; confirmedHL_S2D = null; idm_S2D_Taken = false;
+//             }
+            
+//             // 🎯 1. Active D-OB (Supply Zone) को ढूँढना
+//             let activeDobZone_Bearish = null;
+//             if (isIdmTaken) {
+//                 for (let s = signals.length - 1; s >= 0; s--) {
+//                     if (signals[s].type === "D-OB" && signals[s].trend === "BEARISH" && signals[s].isActive !== false) {
+//                         if (signals[s].startTime >= currentWaveStart_S2D) { 
+//                             activeDobZone_Bearish = signals[s];
+//                             break;
+//                         }
+//                     }
+//                 }
+//             }
+
+//             if (activeDobZone_Bearish) {
+//                 // 🎯 2. TAPPING CHECK 
+//                 if (!isDobTapped_S2D && curr.high >= activeDobZone_Bearish.priceBottom) {
+//                     isDobTapped_S2D = true;
+//                     tappingCandle_S2D = curr;
+//                 }
+
+//                 // 🎯 3. D-OB FAILURE CHECK 
+//                 if (isDobTapped_S2D && !isDobFailed_S2D) {
+//                     let isOutsideBar_S2D = curr.high > tappingCandle_S2D.high && curr.low < tappingCandle_S2D.low;
+//                     if (!isOutsideBar_S2D) {
+//                         if (curr.high > tappingCandle_S2D.high || tappingCandle_S2D.close > activeDobZone_Bearish.priceTop) {
+//                             isDobFailed_S2D = true;
+//                             refHH_S2D = { price: curr.high, time: curr.timestamp };
+//                         }
+//                     }
+//                 }
+//             }
+
+//             // 🎯 4. IDM(S2D) PULLBACK TRACKING 
+//             if (isDobFailed_S2D && !idm_S2D_Taken) {
+//                 let brokeLow = curr.low < refCandle.low; 
+
+//                 if (brokeLow && !isOutsideBar && refHH_S2D !== null && tempHL_S2D === null) {
+//                     tempHL_S2D = { price: curr.low, time: curr.timestamp };
+//                 } 
+//                 else if (refHH_S2D !== null) {
+//                     if (tempHL_S2D !== null && curr.low < tempHL_S2D.price) {
+//                         tempHL_S2D = { price: curr.low, time: curr.timestamp };
+//                     }
+//                     if (tempHL_S2D === null && curr.high > refHH_S2D.price) {
+//                         refHH_S2D = { price: curr.high, time: curr.timestamp };
+//                     }
+//                     if (tempHL_S2D !== null && curr.high >= refHH_S2D.price) {
+//                         if (curr.timestamp === tempHL_S2D.time) {
+//                             refHH_S2D = null; 
+//                             tempHL_S2D = null; 
+//                         } else {
+//                             confirmedHL_S2D = tempHL_S2D;
+//                             refHH_S2D = { price: curr.high, time: curr.timestamp }; 
+//                             tempHL_S2D = null; 
+//                         }
+//                     }
+//                 }
+
+//                 // 🎯 5. IDM(S2D) HIT & ZONE GENERATION!
+//                 if (confirmedHL_S2D !== null && curr.low <= confirmedHL_S2D.price) {
+                    
+//                     let isGhost = false;
+//                     for(let k = signals.length - 1; k >= 0; k--) {
+//                         let sig = signals[k];
+//                         if(sig.type === "CHoCH" || sig.type === "BOS") {
+//                             if(sig.endTime > confirmedHL_S2D.time) { isGhost = true; break; }
+//                         }
+//                     }
+
+//                     if (!isGhost) {
+//                         idm_S2D_Taken = true;
+//                         // 🔥 Phase 2 की शुरुआत: Top और Bottom लॉक करो!
+//                         validHH_S2D = { price: refHH_S2D.price, time: refHH_S2D.time };
+//                         tempSwingLow_S2D = { price: curr.low, time: curr.timestamp };
+
+//                         signals.push({ 
+//                             type: "IDM(S2D)", trend: "BULLISH_COUNTER", 
+//                             price: confirmedHL_S2D.price, startTime: confirmedHL_S2D.time, 
+//                             endTime: curr.timestamp, sweptSide: "LOW", position: "bottom"    
+//                         });
+
+//                         // =======================================================
+//                         // 🔥 THE BUG FIX: S2D का सही Bottom (Start Index) ढूँढना!
+//                         // =======================================================
+//                         let tempStartIdx = candles.findIndex(c => c.timestamp === currentWaveStart_S2D);
+//                         let endIdx_S2D = candles.findIndex(c => c.timestamp === validHH_S2D.time);
+                        
+//                         let startIdx_S2D = tempStartIdx;
+//                         if (tempStartIdx !== -1 && endIdx_S2D !== -1) {
+//                             let minLow = candles[tempStartIdx].low;
+//                             for (let k = tempStartIdx; k <= endIdx_S2D; k++) {
+//                                 if (candles[k].low < minLow) {
+//                                     minLow = candles[k].low;
+//                                     startIdx_S2D = k;
+//                                 }
+//                             }
+//                         }
+                        
+//                         let s2dPullbacks = scanRetroactivePullbacks(startIdx_S2D, endIdx_S2D, candles, "BULLISH");
+
+//                         // 🔥 ROOT EXTREME FIX FOR S2D (ताकि D-OB सही से मिले)
+//                         if (startIdx_S2D !== -1 && endIdx_S2D !== -1) {
+//                             let rootConfirmHH = s2dPullbacks.length > 0 ? s2dPullbacks[0].confirmHH : validHH_S2D.price;
+//                             s2dPullbacks.unshift({
+//                                 id: "ROOT_SWING_HL",
+//                                 validHL: candles[startIdx_S2D].low,
+//                                 validHLCandleIndex: startIdx_S2D,
+//                                 confirmHH: rootConfirmHH,
+//                                 confirmHHCandleIndex: endIdx_S2D,
+//                                 breakCandleIndex: endIdx_S2D, 
+//                                 startTime: candles[startIdx_S2D].timestamp
+//                             });
+//                         }
+
+//                         let poiZones_S2D = findSMCZones(candles, s2dPullbacks, i);
+//                         // =======================================================
+                        
+//                         if (poiZones_S2D.dof) {
+//                             let mitTimeDof = findMitigationTime(poiZones_S2D.dof.top, i, candles);
+//                             activeDof_S2D = { type: "D-OF", displayName: "D-S2D(OF)", trend: "BULLISH", priceTop: poiZones_S2D.dof.top, priceBottom: poiZones_S2D.dof.bottom, startTime: poiZones_S2D.dof.startTime, endTime: mitTimeDof, isActive: true };
+//                             signals.push(activeDof_S2D);
+//                         }
+//                         if (poiZones_S2D.dob) {
+//                             let mitTimeDob = findMitigationTime(poiZones_S2D.dob.top, i, candles);
+//                             activeDob_S2D = { type: "D-OB", displayName: "D-S2D(OB)", trend: "BULLISH", priceTop: poiZones_S2D.dob.top, priceBottom: poiZones_S2D.dob.bottom, startTime: poiZones_S2D.dob.startTime, fvgTop: poiZones_S2D.dob.fvgTop, fvgBottom: poiZones_S2D.dob.fvgBottom, endTime: mitTimeDob, isActive: true };
+//                             signals.push(activeDob_S2D);
+//                         }
+                        
+//                         // --- 🔥 PHASE 3: EXTREME ZONES (S2D) ---
+//                         if (poiZones_S2D.eof) {
+//                             let mitTimeEof = findMitigationTime(poiZones_S2D.eof.top, i, candles);
+//                             activeEof_S2D = { 
+//                                 type: "E-OF", 
+//                                 displayName: "E-S2D(OF)", // 🎯 यही नाम फ्रंटएंड पर छपेगा
+//                                 trend: "BULLISH", 
+//                                 priceTop: poiZones_S2D.eof.top, 
+//                                 priceBottom: poiZones_S2D.eof.bottom, 
+//                                 startTime: poiZones_S2D.eof.startTime, 
+//                                 endTime: mitTimeEof, 
+//                                 isActive: true 
+//                             };
+//                             signals.push(activeEof_S2D);
+//                         }
+//                         if (poiZones_S2D.eob) {
+//                             let mitTimeEob = findMitigationTime(poiZones_S2D.eob.top, i, candles);
+//                             activeEob_S2D = { 
+//                                 type: "E-OB", 
+//                                 displayName: "E-S2D(OB)", // 🎯 यही नाम फ्रंटएंड पर छपेगा
+//                                 trend: "BULLISH", 
+//                                 priceTop: poiZones_S2D.eob.top, 
+//                                 priceBottom: poiZones_S2D.eob.bottom, 
+//                                 startTime: poiZones_S2D.eob.startTime, 
+//                                 fvgTop: poiZones_S2D.eob.fvgTop, 
+//                                 fvgBottom: poiZones_S2D.eob.fvgBottom, 
+//                                 endTime: mitTimeEob, 
+//                                 isActive: true 
+//                             };
+//                             signals.push(activeEob_S2D);
+//                         }
+//                     }
+                    
+//                     refHH_S2D = null; tempHL_S2D = null; confirmedHL_S2D = null;
+//                 }
+//             }
+//             // =========================================================================
+//             // 🔥 PHASE 1: COUNTER STRUCTURE ENDS HERE 🔥
+//             // =========================================================================
+//             // 🎯 6. PHASE 2 & 3: BOS(C) LOGIC FOR S2D
+//             if (idm_S2D_Taken && validHH_S2D !== null) {
+//                 // Dip ट्रैक करो
+//                 if (curr.low < tempSwingLow_S2D.price) {
+//                     tempSwingLow_S2D = { price: curr.low, time: curr.timestamp };
+//                 }
+                
+//                 let breakLevel_S2D = refX_S2D ? refX_S2D.price : validHH_S2D.price;
+                
+//                 if (curr.high > breakLevel_S2D) {
+//                     if (curr.close > breakLevel_S2D) { // 🚀 Full Body Break (BOS-C)
+                        
+//                         // 🔥 चेक करो कि क्या ब्रेक करने से पहले किसी भी ज़ोन (Decisional या Extreme) को टैप किया था?
+//                         let isTapped = false;
+//                         if ((activeDob_S2D && tempSwingLow_S2D.price <= activeDob_S2D.priceTop) || 
+//                             (activeDof_S2D && tempSwingLow_S2D.price <= activeDof_S2D.priceTop) ||
+//                             (activeEob_S2D && tempSwingLow_S2D.price <= activeEob_S2D.priceTop) ||
+//                             (activeEof_S2D && tempSwingLow_S2D.price <= activeEof_S2D.priceTop)) {
+//                             isTapped = true;
+//                         }
+                        
+//                         if (isTapped) {
+//                             signals.push({ type: "BOS(C)", trend: "BULLISH", price: validHH_S2D.price, startTime: validHH_S2D.time, endTime: curr.timestamp });
+//                             if (refX_S2D) {
+//                                 signals.push({ type: "X(C)", sweptSide: "HIGH", trend: "BULLISH", price: validHH_S2D.price, startTime: validHH_S2D.time, endTime: refX_S2D.time });
+//                             }
+//                         } else {
+//                             // 🧹 बिना टैप किये ब्रेक किया: चार्ट से पुराने सारे D और E ज़ोन मिटा दो!
+//                             signals = signals.filter(s => 
+//                                 s !== activeDob_S2D && s !== activeDof_S2D && 
+//                                 s !== activeEob_S2D && s !== activeEof_S2D
+//                             );
+//                             signals.push({ type: "BOS(C)", trend: "BULLISH", price: validHH_S2D.price, startTime: validHH_S2D.time, endTime: curr.timestamp });
+//                         }
+                        
+//                         // 🔥 S2D का ट्रेंड चालू रहेगा! अगले पुलबैक के लिए रीसेट करो
+//                         idm_S2D_Taken = false;
+//                         refHH_S2D = { price: curr.high, time: curr.timestamp };
+//                         validHH_S2D = null; tempSwingLow_S2D = null; 
+//                         activeDob_S2D = null; activeDof_S2D = null; 
+//                         activeEob_S2D = null; activeEof_S2D = null; 
+//                         refX_S2D = null;
+                        
+//                     } else { 
+//                         // 🧹 Sweep हुआ (X-C)
+//                         refX_S2D = { price: curr.high, time: curr.timestamp };
+//                     }
+//                 }
+//             }
 //         }
+
 
 //         // ==========================================
 //         // 📈 BULLISH STRUCTURE LOGIC (1)
@@ -1384,6 +2078,7 @@
 //             if (startingTrend === "AUTO" && lockedSwingLow === null && curr.close < prevAbsoluteLowest) {
 //                 trend = -1;
 //                 isIdmTaken = false;
+//                 wipeCounterStructure();
 //                 validHH = null; refHH = null; tempSwingLow = null; confirmedHL = null;
 
 //                 bullishPullbacks = [];
@@ -1404,23 +2099,28 @@
 
 //                 if (curr.low < breakLevel) {
 //                     if (curr.close < breakLevel) { // 🚀 Full Body Break
-
-//                         // 🔥 VISUAL FIX: लाइन हमेशा ओरिजिनल 'lockedSwingLow' से ही ड्रा होगी!
 //                         signals.push({
 //                             type: "CHoCH", trend: "BEARISH",
-//                             price: lockedSwingLow.price,     // <-- Original Price
-//                             startTime: lockedSwingLow.time,  // <-- Original Time
+//                             price: lockedSwingLow.price,
+//                             startTime: lockedSwingLow.time,
 //                             endTime: curr.timestamp
 //                         });
 
 //                         trend = -1;
 //                         isIdmTaken = false;
+//                         wipeCounterStructure();
 //                         lockedSwingHigh = { ...absoluteHighest };
-//                         validHH = null; refHH = null; tempSwingLow = null; lockedSwingLow = null; confirmedHL = null;
-//                         refX_CHoCH_Bullish = null; refX_BOS_Bullish = null;
 
-//                         bullishPullbacks = [];
-//                         tempPullbackTracker = null;
+//                         validHH = null; refHH = null; tempSwingLow = null; lockedSwingLow = null;
+//                         refX_CHoCH_Bullish = null; refX_BOS_Bullish = null;
+//                         bullishPullbacks = []; tempPullbackTracker = null;
+
+//                         refLL = null; tempLH = null; bearishPullbacks = []; tempPullbackTracker_Bearish = null;
+
+//                         // 🔥 RETRO-SCANNER INJECTION: CHoCH के पहले वाले Bearish पुलबैक्स ढूँढो
+//                         let startIdx = candles.findIndex(c => c.timestamp === lockedSwingHigh.time);
+//                         let retroPBs = scanRetroactivePullbacks(startIdx, i, candles, "BEARISH");
+//                         confirmedLH = retroPBs.length > 0 ? retroPBs[retroPBs.length - 1] : null;
 
 //                         absoluteLowest = { price: curr.low, time: curr.timestamp };
 //                         refCandle = curr;
@@ -1431,22 +2131,22 @@
 //                 }
 //             }
 
-//            // ==========================================================
-//             // 🔥 BULLETPROOF PULLBACK TRACKER (Bullish)
 //             // ==========================================================
-//             if (brokeLow && !isOutsideBar && refHH === null) { 
+//             // 🔥 BULLETPROOF PULLBACK TRACKER (The Smart Engulfing Fix)
+//             // ==========================================================
+//             if (brokeLow && !isOutsideBar && refHH === null) {
 //                 refHH = { price: refCandle.high, time: refCandle.timestamp };
 //                 tempHL = { price: curr.low, time: curr.timestamp };
-                
+
 //                 tempPullbackTracker = {
 //                     id: bullishPullbacks.length + 1,
 //                     confirmHH: refCandle.high,
-//                     confirmHHCandleIndex: i - 1, 
+//                     confirmHHCandleIndex: i - 1,
 //                     validHL: curr.low,
-//                     validHLCandleIndex: i, 
+//                     validHLCandleIndex: i,
 //                     startTime: refCandle.timestamp
 //                 };
-//             } else if (refHH !== null) { 
+//             } else if (refHH !== null) {
 //                 if (curr.low < tempHL.price) {
 //                     tempHL = { price: curr.low, time: curr.timestamp };
 //                     if (tempPullbackTracker) {
@@ -1454,24 +2154,30 @@
 //                         tempPullbackTracker.validHLCandleIndex = i;
 //                     }
 //                 }
-                
-//                 // 🔥 THE FIX: SMC True Pullback Confirmation Rule
-//                 // पुलबैक तब कन्फर्म होता है जब कोई कैंडल पिछली कैंडल का High तोड़ दे (brokeHigh),
-//                 // या फिर मार्केट सच में पूरा ऊपर जाकर refHH को तोड़ दे।
-//                 if (brokeHigh || curr.high >= refHH.price) { 
-//                     // ❌ 1-Candle Fake Sweep Filter
-//                     if (curr.timestamp === tempHL.time && curr.high >= refHH.price) {
-//                         refHH = null; 
-//                         tempPullbackTracker = null; 
+
+//                 if (curr.high >= refHH.price) {
+//                     // ==================================================
+//                     // 🔥 THE SMART ENGULFING FIX (1-Candle Sweep Filter)
+//                     // ==================================================
+//                     // अगर जो कैंडल हाई (refHH) को ब्रेक कर रही है, उसी कैंडल ने 
+//                     // इस पुलबैक का सबसे निचला लो (Lowest Low) भी बनाया है 
+//                     // (यानी curr.timestamp === tempHL.time), तो इसका मतलब है कि 
+//                     // यह एक 'राक्षस कैंडल' है जिसने बॉटम और टॉप दोनों एक साथ खा लिए।
+//                     // इसे फेक पुलबैक मानकर डिलीट कर देंगे!
+
+//                     if (curr.timestamp === tempHL.time) {
+//                         // ❌ Fake Engulfing Pullback (Discard)
+//                         refHH = null;
+//                         tempPullbackTracker = null;
 //                     } else {
 //                         // ✅ Valid Pullback (Confirm)
-//                         confirmedHL = tempHL; 
-//                         refHH = null; // Reset tracker for next pullback
-                        
+//                         confirmedHL = tempHL;
+//                         refHH = null;
+
 //                         if (tempPullbackTracker) {
 //                             tempPullbackTracker.breakCandleIndex = i;
-//                             bullishPullbacks.push({...tempPullbackTracker});
-//                             tempPullbackTracker = null; 
+//                             bullishPullbacks.push({ ...tempPullbackTracker });
+//                             tempPullbackTracker = null;
 //                         }
 //                     }
 //                 }
@@ -1486,28 +2192,32 @@
 
 //                 // ==========================================================
 //                 // 🔥 THE ROOT EXTREME FIX (Null Crash Fix)
-//                 // ==========================================================
-                
-//                 // 1. सेफ़्टी चेक: अगर पहली लहर (First Wave) है और lockedSwingLow अभी null है, 
-//                 // तो इंजन बॉटम के लिए absoluteLowest का यूज़ करेगा!
+//                 // ==========================================================   
 //                 const rootTime = lockedSwingLow ? lockedSwingLow.time : absoluteLowest.time;
 //                 const rootPrice = lockedSwingLow ? lockedSwingLow.price : absoluteLowest.price;
 
 //                 const swingHLIndex = candles.findIndex(c => c.timestamp === rootTime);
 //                 const refHHIndex = candles.findIndex(c => c.timestamp === validHH.time);
 
+//                 // 🎯 THE E-OF SIZE FIX: स्कैनर से पहला पुलबैक निकालो
+//                 let rootConfirmHH = validHH.price;
+//                 let wavePullbacks = scanRetroactivePullbacks(swingHLIndex, refHHIndex, candles, "BULLISH");
+//                 if (wavePullbacks.length > 0) {
+//                     rootConfirmHH = wavePullbacks[0].confirmHH; // पहला पुलबैक का High
+//                 }
+
 //                 const rootExtreme = {
 //                     id: "ROOT_SWING_HL",
 //                     validHL: rootPrice,
 //                     validHLCandleIndex: swingHLIndex,
-//                     confirmHH: validHH.price,
+//                     confirmHH: rootConfirmHH, // <--- परफेक्ट साइज़
 //                     confirmHHCandleIndex: refHHIndex,
-//                     breakCandleIndex: refHHIndex, 
+//                     breakCandleIndex: refHHIndex,
 //                     startTime: rootTime
 //                 };
 
 //                 const validPullbacksForSMC = bullishPullbacks.filter(pb =>
-//                     pb.validHL !== confirmedHL.price 
+//                     pb.validHL !== confirmedHL.price
 //                 );
 
 //                 if (swingHLIndex !== -1 && refHHIndex !== -1) {
@@ -1519,18 +2229,18 @@
 //                 // ==========================================================
 //                 // 🔥 THE VISUAL FIX
 //                 // ==========================================================
-                
+
 //                 // 1. जब नया IDM कन्फर्म होता है, तो 'signals' एरे में मौजूद पिछले सारे ज़ोन्स 'पुराने' बन जाते हैं।
 //                 signals.forEach(sig => {
 //                     if (["E-OB", "D-OB", "E-OF", "D-OF"].includes(sig.type)) {
-                        
+
 //                         // अगर पहले से Demand/Supply नाम नहीं हुआ है, तभी चेक करो
 //                         if (!sig.displayName || (!sig.displayName.includes("Demand") && !sig.displayName.includes("Supply"))) {
 //                             sig.isActive = false; // पुराने ज़ोन डीएक्टिवेट करें
-                            
+
 //                             let isMitigated = false;
 //                             let startIdx = candles.findIndex(c => c.timestamp === sig.startTime);
-                            
+
 //                             if (startIdx !== -1) {
 //                                 for (let j = startIdx + 3; j <= i; j++) {
 //                                     // बुलिश ज़ोन के लिए चेकिंग
@@ -1565,7 +2275,7 @@
 //                     let mitTimeEOF = findMitigationTime(poiZones.eof.top, i, candles);
 //                     signals.push({ type: "E-OF", displayName: "E-OF", trend: "BULLISH", priceTop: poiZones.eof.top, priceBottom: poiZones.eof.bottom, startTime: poiZones.eof.startTime, endTime: mitTimeEOF, isActive: true });
 //                 }
-                
+
 //                 if (poiZones.eob) {
 //                     let mitTimeEOB = findMitigationTime(poiZones.eob.top, i, candles);
 //                     signals.push({ type: "E-OB", displayName: "E-OB", trend: "BULLISH", priceTop: poiZones.eob.top, priceBottom: poiZones.eob.bottom, startTime: poiZones.eob.startTime, fvgTop: poiZones.eob.fvgTop, fvgBottom: poiZones.eob.fvgBottom, endTime: mitTimeEOB, isActive: true });
@@ -1575,13 +2285,13 @@
 //                     let mitTimeDOF = findMitigationTime(poiZones.dof.top, i, candles);
 //                     signals.push({ type: "D-OF", displayName: "D-OF", trend: "BULLISH", priceTop: poiZones.dof.top, priceBottom: poiZones.dof.bottom, startTime: poiZones.dof.startTime, endTime: mitTimeDOF, isActive: true });
 //                 }
-                
+
 //                 if (poiZones.dob) {
 //                     let mitTimeDOB = findMitigationTime(poiZones.dob.top, i, candles);
 //                     signals.push({ type: "D-OB", displayName: "D-OB", trend: "BULLISH", priceTop: poiZones.dob.top, priceBottom: poiZones.dob.bottom, startTime: poiZones.dob.startTime, fvgTop: poiZones.dob.fvgTop, fvgBottom: poiZones.dob.fvgBottom, endTime: mitTimeDOB, isActive: true });
 //                 }
-                
-//                 bullishPullbacks = []; 
+
+//                 bullishPullbacks = [];
 //                 tempPullbackTracker = null;
 //                 confirmedHL = null;
 //             }
@@ -1604,8 +2314,8 @@
 //                         // 🔥 VISUAL FIX: लाइन हमेशा ओरिजिनल 'validHH' से ही ड्रा होगी!
 //                         signals.push({
 //                             type: "BOS", trend: "BULLISH",
-//                             price: validHH.price,       // <-- Original Price
-//                             startTime: validHH.time,    // <-- Original Time
+//                             price: validHH.price,
+//                             startTime: validHH.time,
 //                             endTime: curr.timestamp
 //                         });
 
@@ -1616,14 +2326,18 @@
 
 //                         lockedSwingLow = { ...tempSwingLow };
 //                         isIdmTaken = false;
+//                         wipeCounterStructure();
 //                         validHH = null; refHH = null; refX_BOS_Bullish = null;
-                        
-//                         // 🔥 THE MASTER FIX: BOS के बाद पुरानी IDM मेमोरी को जड़ से मिटाएं!
-//                         confirmedHL = null; 
-//                         bullishPullbacks = []; 
-//                         tempPullbackTracker = null;
 
+//                         // 🔥 RETRO-SCANNER INJECTION: BOS के पहले वाले Bullish पुलबैक्स ढूँढो
+//                         let startIdx = candles.findIndex(c => c.timestamp === lockedSwingLow.time);
+//                         let retroPBs = scanRetroactivePullbacks(startIdx, i, candles, "BULLISH");
+//                         confirmedHL = retroPBs.length > 0 ? retroPBs[retroPBs.length - 1] : null;
+
+//                         bullishPullbacks = [];
+//                         tempPullbackTracker = null;
 //                         absoluteHighest = { price: curr.high, time: curr.timestamp };
+
 //                     } else { // 🧹 Sweep (Ref X)
 //                         refX_BOS_Bullish = { price: curr.high, time: curr.timestamp, majorIdmTarget: { ...majorIdm_Bullish } };
 //                     }
@@ -1641,6 +2355,101 @@
 //                     }
 //                 }
 //             }
+
+//             // =========================================================================
+//             // 🔥 PHASE 1: COUNTER STRUCTURE (D2S) LOGIC STARTS HERE 🔥
+//             // =========================================================================
+
+//            // 🛑 THE CHoCH/BOS AUTO-CLEANER (Chanchal Bhai's Rule)
+//             // अगर पुराना D2S ट्रैकर (LL/LH) मेन स्ट्रक्चर (CHoCH/BOS) से पहले का है, तो उसे तुरंत क्लियर कर दो!
+//             let currentWaveStart_D2S = lockedSwingLow ? lockedSwingLow.time : absoluteLowest.time;
+            
+//             if ( (confirmedLH_D2S && confirmedLH_D2S.time < currentWaveStart_D2S) || 
+//                  (refLL_D2S && refLL_D2S.time < currentWaveStart_D2S) ) {
+//                 isDobTapped_D2S = false; tappingCandle_D2S = null; isDobFailed_D2S = false;
+//                 refLL_D2S = null; tempLH_D2S = null; confirmedLH_D2S = null; idm_D2S_Taken = false;
+//             }
+
+//             // 🎯 1. Active D-OB Zone को ढूँढना (Ghost Fix Applied)
+//             let activeDobZone = null;
+//             if (isIdmTaken) {
+//                 for (let s = signals.length - 1; s >= 0; s--) {
+//                     if (signals[s].type === "D-OB" && signals[s].trend === "BULLISH" && signals[s].isActive !== false) {
+//                         // सिर्फ करेंट वेव का D-OB उठाओ
+//                         if (signals[s].startTime >= currentWaveStart_D2S) {
+//                             activeDobZone = signals[s];
+//                             break;
+//                         }
+//                     }
+//                 }
+//             }
+
+//             if (activeDobZone) {
+//                 // 🎯 2. TAPPING CHECK 
+//                 if (!isDobTapped_D2S && curr.low <= activeDobZone.priceTop) {
+//                     isDobTapped_D2S = true;
+//                     tappingCandle_D2S = curr;
+//                 }
+
+//                 // 🎯 3. D-OB FAILURE CHECK
+//                 if (isDobTapped_D2S && !isDobFailed_D2S) {
+//                     let isOutsideBar = curr.high > tappingCandle_D2S.high && curr.low < tappingCandle_D2S.low;
+//                     if (!isOutsideBar) {
+//                         if (curr.low < tappingCandle_D2S.low || tappingCandle_D2S.close < activeDobZone.priceBottom) {
+//                             isDobFailed_D2S = true;
+//                             refLL_D2S = { price: curr.low, time: curr.timestamp };
+//                         }
+//                     }
+//                 }
+//             }
+
+//             // 🎯 4. IDM(D2S) PULLBACK TRACKING 
+//             if (isDobFailed_D2S && !idm_D2S_Taken) {
+//                 let brokeHigh = curr.high > refCandle.high; 
+
+//                 if (brokeHigh && !isOutsideBar && refLL_D2S !== null && tempLH_D2S === null) {
+//                     tempLH_D2S = { price: curr.high, time: curr.timestamp };
+//                 } 
+//                 else if (refLL_D2S !== null) {
+//                     if (tempLH_D2S !== null && curr.high > tempLH_D2S.price) {
+//                         tempLH_D2S = { price: curr.high, time: curr.timestamp };
+//                     }
+//                     if (tempLH_D2S === null && curr.low < refLL_D2S.price) {
+//                         refLL_D2S = { price: curr.low, time: curr.timestamp };
+//                     }
+//                     if (tempLH_D2S !== null && curr.low <= refLL_D2S.price) {
+//                         if (curr.timestamp === tempLH_D2S.time) {
+//                             refLL_D2S = null; 
+//                             tempLH_D2S = null; 
+//                         } else {
+//                             confirmedLH_D2S = tempLH_D2S;
+//                             refLL_D2S = { price: curr.low, time: curr.timestamp }; 
+//                             tempLH_D2S = null; 
+//                         }
+//                     }
+//                 }
+
+//                 // 🎯 5. IDM(D2S) HIT!
+//                 if (confirmedLH_D2S !== null && curr.high >= confirmedLH_D2S.price) {
+//                     idm_D2S_Taken = true;
+                    
+//                     signals.push({ 
+//                         type: "IDM(D2S)", 
+//                         trend: "BEARISH_COUNTER", 
+//                         price: confirmedLH_D2S.price, 
+//                         startTime: confirmedLH_D2S.time, 
+//                         endTime: curr.timestamp 
+//                     });
+                    
+//                     // IDM हिट होने के बाद वेरिएबल्स साफ कर दें
+//                     refLL_D2S = null;
+//                     tempLH_D2S = null;
+//                     confirmedLH_D2S = null; // 🔥 EXTRA SAFETY
+//                 }
+//             }
+//             // =========================================================================
+//             // 🔥 PHASE 1: COUNTER STRUCTURE ENDS HERE 🔥
+//             // =========================================================================
 //         }
 
 //         refCandle = curr;
@@ -1721,42 +2530,8 @@
 //         }
 //     }
 //     // अगर किसी ने टच नहीं किया (Unmitigated), तो चार्ट के अंत तक बॉक्स खींच दो
-//     return candles[candles.length - 1].timestamp; 
+//     return candles[candles.length - 1].timestamp;
 // };
-
-
-// /**
-//  * 🎯 Helper: Check if Order Flow (Pullback) is Mitigated
-//  */
-// // const isOfMitigated = (pb, candles, currentIndex) => {
-// //     // ब्रेकआउट कैंडल के बाद से IDM तक चेक करेंगे
-// //     const startIdx = pb.breakCandleIndex + 1;
-// //     for (let j = startIdx; j <= currentIndex; j++) {
-// //         if (j >= candles.length) break;
-// //         // बुलिश में: अगर कोई कैंडल OF के टॉप (confirmHH) को नीचे की तरफ टच कर दे
-// //         if (candles[j].low <= pb.confirmHH) {
-// //             return true; // OF मिटिगेट हो गया!
-// //         }
-// //     }
-// //     return false; // OF अभी भी फ्रेश है!
-// // };
-
-
-// // /**
-// //  * 🎯 Helper: Check if Bearish Order Flow (Pullback) is Mitigated
-// //  */
-// // const isOfMitigated_Bearish = (pb, candles, currentIndex) => {
-// //     // ब्रेकआउट कैंडल के बाद से IDM तक चेक करेंगे
-// //     const startIdx = pb.breakCandleIndex + 1;
-// //     for (let j = startIdx; j <= currentIndex; j++) {
-// //         if (j >= candles.length) break;
-// //         // 🎯 Bearish में: अगर कोई कैंडल ऊपर उठकर OF के बॉटम (confirmLL) को टच कर दे
-// //         if (candles[j].high >= pb.confirmLL) {
-// //             return true; // OF मिटिगेट हो गया!
-// //         }
-// //     }
-// //     return false; // OF अभी भी फ्रेश है!
-// // };
 
 
 // /**
@@ -1769,8 +2544,8 @@
 
 //         // 🎯 SMC Rule: बुलिश OF का टॉप (confirmHH) है। 
 //         // प्राइस जैसे ही नीचे गिरकर इसे टच करेगा, ज़ोन मिटिगेट!
-//         if (candles[j].low <= pb.confirmHH) { 
-//             return true; 
+//         if (candles[j].low <= pb.confirmHH) {
+//             return true;
 //         }
 //     }
 //     return false; // टच नहीं हुआ, मतलब फ्रेश है!
@@ -1783,11 +2558,11 @@
 //     const startIdx = pb.breakCandleIndex + 1;
 //     for (let j = startIdx; j <= currentIndex; j++) {
 //         if (j >= candles.length) break;
-        
+
 //         // 🎯 SMC Rule: बेयरिश OF का बॉटम (confirmLL) है।
 //         // प्राइस जैसे ही ऊपर उठकर इसे टच करेगा, ज़ोन मिटिगेट!
-//         if (candles[j].high >= pb.confirmLL) { 
-//             return true; 
+//         if (candles[j].high >= pb.confirmLL) {
+//             return true;
 //         }
 //     }
 //     return false; // टच नहीं हुआ, मतलब फ्रेश है!
@@ -1797,12 +2572,12 @@
 //  * 🎯 E-OB / D-OB ढूँढने का "Swing HL to Ref HH" एडवांस लॉजिक
 //  */
 // const findValidOrderBlock = (pullback, candles, currentIndex) => {
-    
+
 //     // 1. Start: "Swing HL" वाली कैंडल को ही exactly 1st कैंडल मानेंगे (No -1 logic)
-//     const startIdx = pullback.validHLCandleIndex; 
-    
+//     const startIdx = pullback.validHLCandleIndex;
+
 //     // 2. Limitation: FVG चेक करते हुए सिर्फ "Ref HH" (Breakout Candle) तक ही जाएंगे
-//     const endIdx = pullback.breakCandleIndex; 
+//     const endIdx = pullback.breakCandleIndex;
 
 //     // 1-1 कैंडल ऊपर बढ़ते जाएंगे
 //     for (let i = startIdx; i <= endIdx; i++) {
@@ -1813,7 +2588,7 @@
 
 //         // 3. FVG Check: क्या इस 1st कैंडल और 3rd कैंडल के बीच FVG (Imbalance) है?
 //         if (firstCandle.high < thirdCandle.low) {
-            
+
 //             // Mitigation चेक (क्या भविष्य में ये कैंडल टच हुई है?)
 //             let isMitigated = false;
 //             for (let j = i + 3; j <= currentIndex; j++) {
@@ -1847,10 +2622,10 @@
 //  * 🎯 E-OB / D-OB ढूँढने का BEARISH SMC रूल: "Swing High to Ref LL"
 //  */
 // const findBearishValidOrderBlock = (pullback, candles, currentIndex) => {
-    
+
 //     // 1. Start: "Swing High" (Top) वाली कैंडल को 1st कैंडल मानेंगे
 //     const startIdx = pullback.validLHCandleIndex; // Bearish में Lower High (LH)
-//     const endIdx = pullback.breakCandleIndex; 
+//     const endIdx = pullback.breakCandleIndex;
 
 //     for (let i = startIdx; i <= endIdx; i++) {
 //         if (i + 2 >= candles.length) continue;
@@ -1860,13 +2635,13 @@
 
 //         // 2. Bearish FVG Check: क्या 1st कैंडल का Low, 3rd कैंडल के High से ऊपर है? (Imbalance)
 //         if (firstCandle.low > thirdCandle.high) {
-            
+
 //             // Mitigation चेक (क्या भविष्य में मार्केट ऊपर आकर इसे टच किया है?)
 //             let isMitigated = false;
 //             for (let j = i + 3; j <= currentIndex; j++) {
 //                 if (j >= candles.length) break;
 //                 // 🎯 Bearish में कैंडल का High ज़ोन के Bottom (firstCandle.low) को टच करता है
-//                 if (candles[j].high >= firstCandle.low) { 
+//                 if (candles[j].high >= firstCandle.low) {
 //                     isMitigated = true;
 //                     break;
 //                 }
@@ -1877,7 +2652,7 @@
 //                 return {
 //                     found: true,
 //                     // Bearish बॉक्स का Top (High) और Bottom (Low)
-//                     price: { top: firstCandle.high, bottom: firstCandle.low }, 
+//                     price: { top: firstCandle.high, bottom: firstCandle.low },
 //                     fvgZone: { top: firstCandle.low, bottom: thirdCandle.high },
 //                     startTime: firstCandle.timestamp,
 //                     candleIndex: i
@@ -1904,23 +2679,22 @@
 
 //         if (obResult.found) {
 //             const mitigatedOF = isOfMitigated(pb, candles, currentIndex);
-//             smcZones.eof = { type: "E-OF", top: pb.confirmHH, bottom: pb.validHL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb };
-            
-//             // यहाँ 'obResult.startTime' का यूज़ करना बहुत ज़रूरी है
-//             smcZones.eob = { 
-//                 type: "E-OB", 
-//                 top: obResult.price.high, 
-//                 bottom: obResult.price.low, 
-//                 startTime: obResult.startTime, // बॉक्स अब यहीं से शुरू होगा
-//                 fvgTop: obResult.fvgZone.top, 
-//                 fvgBottom: obResult.fvgZone.bottom 
+
+//             // 🔥 THE FIX: अगर यह हमारा फेक 'ROOT' पुलबैक है, तो इसका विशालकाय E-OF ड्रा मत करो!
+//             if (pb.id !== "ROOT_SWING_HL") {
+//                 smcZones.eof = { type: "E-OF", top: pb.confirmHH, bottom: pb.validHL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb };
+//             }
+
+//             smcZones.eob = {
+//                 type: "E-OB", top: obResult.price.high, bottom: obResult.price.low,
+//                 startTime: obResult.startTime, fvgTop: obResult.fvgZone.top, fvgBottom: obResult.fvgZone.bottom
 //             };
-//             break; 
+//             break;
 //         }
 //     }
 
 //     // ==============================================================
-//     // 🔥 2. DECISIONAL ZONES (D-OF / D-OB) - UPDATED DYNAMIC LOGIC
+//     // 🔥 2. DECISIONAL ZONES (D-OF / D-OB)
 //     // ==============================================================
 //     for (let i = pullbacksArray.length - 1; i >= 0; i--) {
 //         const pb = pullbacksArray[i];
@@ -1929,21 +2703,20 @@
 //         const obResult = findValidOrderBlock(pb, candles, currentIndex);
 
 //         if (obResult.found) {
-//             // 🎯 THE OVERLAP GUARD: अगर D-OB का टाइम E-OB से टकरा रहा है, तो इसे स्किप कर दो!
-//             if (smcZones.eob && smcZones.eob.startTime === obResult.startTime) {
-//                 continue; 
-//             }
+//             if (smcZones.eob && smcZones.eob.startTime === obResult.startTime) continue;
 
 //             const mitigatedOF = isOfMitigated(pb, candles, currentIndex);
-            
-//             smcZones.dof = { 
-//                 type: "D-OF", top: pb.confirmHH, bottom: pb.validHL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb 
-//             };
 
-//             smcZones.dob = { 
-//                 type: "D-OB", top: obResult.price.high, bottom: obResult.price.low, startTime: obResult.startTime, fvgTop: obResult.fvgZone.top, fvgBottom: obResult.fvgZone.bottom, data: pb
+//             // 🔥 THE FIX: अगर यह फेक 'ROOT' पुलबैक है, तो इसका विशालकाय D-OF ड्रा मत करो!
+//             if (pb.id !== "ROOT_SWING_HL") {
+//                 smcZones.dof = { type: "D-OF", top: pb.confirmHH, bottom: pb.validHL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb };
+//             }
+
+//             smcZones.dob = {
+//                 type: "D-OB", top: obResult.price.high, bottom: obResult.price.low,
+//                 startTime: obResult.startTime, fvgTop: obResult.fvgZone.top, fvgBottom: obResult.fvgZone.bottom, data: pb
 //             };
-//             break; 
+//             break;
 //         }
 //     }
 //     return smcZones;
@@ -1957,33 +2730,23 @@
 //     // ==============================================================
 //     // 🔥 1. EXTREME ZONES (E-OF / E-OB) - Bearish
 //     // ==============================================================
-//     // यहाँ हम लूप लगा रहे हैं ताकि अगर पहला लेग फेल हो जाए, तो इंजन अगले लेग को चेक करे
 //     for (let i = 0; i < pullbacksArray.length; i++) {
 //         const pb = pullbacksArray[i];
 //         const obResult = findBearishValidOrderBlock(pb, candles, currentIndex);
 
 //         if (obResult.found) {
-//             // 🎯 असली जादू यहाँ है: अब हम चेक कर रहे हैं कि OF मिटिगेट हुआ है या नहीं!
 //             const mitigatedOF = isOfMitigated_Bearish(pb, candles, currentIndex);
-            
-//             smcZones.eof = { 
-//                 type: "E-OF", 
-//                 top: pb.validLH,       // Bearish pullback top (Supply)
-//                 bottom: pb.confirmLL,  // Bearish pullback bottom (Break point)
-//                 startTime: pb.startTime, 
-//                 isMitigated: mitigatedOF, // 🚀 अब यह डायनामिक है!
-//                 data: pb 
+
+//             // 🔥 THE FIX: 'ROOT_SWING_LH' के लिए OF ड्रा नहीं होगा
+//             if (pb.id !== "ROOT_SWING_LH") {
+//                 smcZones.eof = { type: "E-OF", top: pb.validLH, bottom: pb.confirmLL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb };
+//             }
+
+//             smcZones.eob = {
+//                 type: "E-OB", top: obResult.price.top, bottom: obResult.price.bottom,
+//                 startTime: obResult.startTime, fvgTop: obResult.fvgZone.top, fvgBottom: obResult.fvgZone.bottom
 //             };
-            
-//             smcZones.eob = { 
-//                 type: "E-OB", 
-//                 top: obResult.price.top, 
-//                 bottom: obResult.price.bottom, 
-//                 startTime: obResult.startTime, 
-//                 fvgTop: obResult.fvgZone.top, 
-//                 fvgBottom: obResult.fvgZone.bottom 
-//             };
-//             break; 
+//             break;
 //         }
 //     }
 
@@ -1992,7 +2755,34 @@
 //     // ==============================================================
 //     for (let i = pullbacksArray.length - 1; i >= 0; i--) {
 //         const pb = pullbacksArray[i];
-        
+//         if (smcZones.eof && smcZones.eof.data.id === pb.id) break;
+
+//         const obResult = findBearishValidOrderBlock(pb, candles, currentIndex);
+
+//         if (obResult.found) {
+//             if (smcZones.eob && smcZones.eob.startTime === obResult.startTime) continue;
+
+//             const mitigatedOF = isOfMitigated_Bearish(pb, candles, currentIndex);
+
+//             // 🔥 THE FIX: 'ROOT_SWING_LH' के लिए OF ड्रा नहीं होगा
+//             if (pb.id !== "ROOT_SWING_LH") {
+//                 smcZones.dof = { type: "D-OF", top: pb.validLH, bottom: pb.confirmLL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb };
+//             }
+
+//             smcZones.dob = {
+//                 type: "D-OB", top: obResult.price.top, bottom: obResult.price.bottom,
+//                 startTime: obResult.startTime, fvgTop: obResult.fvgZone.top, fvgBottom: obResult.fvgZone.bottom, data: pb
+//             };
+//             break;
+//         }
+//     }
+
+//     // ==============================================================
+//     // 🔥 2. DECISIONAL ZONES (D-OF / D-OB) - BEARISH
+//     // ==============================================================
+//     for (let i = pullbacksArray.length - 1; i >= 0; i--) {
+//         const pb = pullbacksArray[i];
+
 //         if (smcZones.eof && smcZones.eof.data.id === pb.id) break;
 
 //         const obResult = findBearishValidOrderBlock(pb, candles, currentIndex);
@@ -2000,22 +2790,22 @@
 //         if (obResult.found) {
 //             // 🎯 THE OVERLAP GUARD: अगर D-OB का टाइम E-OB से टकरा रहा है, तो इसे स्किप कर दो!
 //             if (smcZones.eob && smcZones.eob.startTime === obResult.startTime) {
-//                 continue; 
+//                 continue;
 //             }
 
 //             const mitigatedOF = isOfMitigated_Bearish(pb, candles, currentIndex);
-            
-//             smcZones.dof = { 
-//                 type: "D-OF", top: pb.validLH, bottom: pb.confirmLL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb 
+
+//             smcZones.dof = {
+//                 type: "D-OF", top: pb.validLH, bottom: pb.confirmLL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb
 //             };
 
-//             smcZones.dob = { 
+//             smcZones.dob = {
 //                 type: "D-OB", top: obResult.price.top, bottom: obResult.price.bottom, startTime: obResult.startTime, fvgTop: obResult.fvgZone.top, fvgBottom: obResult.fvgZone.bottom, data: pb
 //             };
-//             break; 
+//             break;
 //         }
 //     }
-    
+
 //     return smcZones;
 // };
 
@@ -2073,84 +2863,78 @@
 // module.exports = { identifyMechanicalStructure, checkPriceActionSignal };
 
 
+
+
+
+
+
+
 // =========================================================================
 // 🧠 SMART RETRO-SCANNER (Visual Zig-Zag Logic by Chanchal Bhai)
 // =========================================================================
 const scanRetroactivePullbacks = (startIndex, endIndex, candles, trendType) => {
-    let validPullbacks = []; // सारे पक्के पुलबैक्स यहाँ जमा होंगे
+    let validPullbacks = [];
     let inPullback = false;
     let tempExtreme = null;
     let targetBreakLevel = null;
 
-    // 📉 1. BEARISH STRUCTURE: गिरते हुए मार्केट में चोटियां (Lower Highs) ढूँढना
     if (trendType === "BEARISH") {
         for (let j = startIndex + 1; j <= endIndex; j++) {
             let curr = candles[j];
             let prev = candles[j - 1];
-
             let isOutsideBar = curr.high > prev.high && curr.low < prev.low;
             let brokeHigh = curr.high > prev.high;
 
-            // STEP 1: पुलबैक शुरू (हरी कैंडल ने लाल का High तोड़ा)
             if (!inPullback && brokeHigh && !isOutsideBar) {
                 inPullback = true;
-                targetBreakLevel = prev.low; // कन्फर्म करने के लिए इस Low का टूटना ज़रूरी है
-                tempExtreme = { price: curr.high, time: curr.timestamp }; // चोटी (Peak)
+                targetBreakLevel = prev.low;
+                tempExtreme = { price: curr.high, time: curr.timestamp };
             }
-            // STEP 2: पुलबैक के अंदर
             else if (inPullback) {
-                // अगर मार्केट और ऊपर जाता है, तो चोटी को अपडेट करो
                 if (curr.high > tempExtreme.price) {
                     tempExtreme = { price: curr.high, time: curr.timestamp };
                 }
-                
-                // STEP 3: पुलबैक कन्फर्म (मार्केट गिरकर Target Low तोड़ दे)
                 if (curr.low < targetBreakLevel) {
-                    validPullbacks.push(tempExtreme); // पक्का पुलबैक मिल गया! इसे लिस्ट में डालो
-                    inPullback = false; // अगले पुलबैक के लिए रिसेट
+                    validPullbacks.push({
+                        price: tempExtreme.price,
+                        time: tempExtreme.time,
+                        confirmLL: targetBreakLevel // 🎯 E-OF के बॉटम के लिए
+                    });
+                    inPullback = false;
                 }
             }
         }
-    } 
-    // 📈 2. BULLISH STRUCTURE: उठते हुए मार्केट में गढ्ढे (Higher Lows) ढूँढना
+    }
     else if (trendType === "BULLISH") {
         for (let j = startIndex + 1; j <= endIndex; j++) {
             let curr = candles[j];
             let prev = candles[j - 1];
-
             let isOutsideBar = curr.high > prev.high && curr.low < prev.low;
             let brokeLow = curr.low < prev.low;
 
-            // STEP 1: पुलबैक शुरू (लाल कैंडल ने हरी का Low तोड़ा)
             if (!inPullback && brokeLow && !isOutsideBar) {
                 inPullback = true;
-                targetBreakLevel = prev.high; // कन्फर्म करने के लिए इस High का टूटना ज़रूरी है
-                tempExtreme = { price: curr.low, time: curr.timestamp }; // गढ्ढा (Dip)
+                targetBreakLevel = prev.high;
+                tempExtreme = { price: curr.low, time: curr.timestamp };
             }
-            // STEP 2: पुलबैक के अंदर
             else if (inPullback) {
-                // अगर मार्केट और नीचे गिरता है, तो गढ्ढे को अपडेट करो
                 if (curr.low < tempExtreme.price) {
                     tempExtreme = { price: curr.low, time: curr.timestamp };
                 }
-                
-                // STEP 3: पुलबैक कन्फर्म (मार्केट उठकर Target High तोड़ दे)
                 if (curr.high > targetBreakLevel) {
-                    validPullbacks.push(tempExtreme); // पक्का पुलबैक मिल गया! इसे लिस्ट में डालो
-                    inPullback = false; // अगले पुलबैक के लिए रिसेट
+                    validPullbacks.push({
+                        price: tempExtreme.price,
+                        time: tempExtreme.time,
+                        confirmHH: targetBreakLevel // 🎯 E-OF के टॉप के लिए
+                    });
+                    inPullback = false;
                 }
             }
         }
     }
-
-    // 🔥 द मास्टरस्ट्रोक: सबसे ताज़ा (Nearest) IDM चुनो
-    // हमारे पास सारे पुलबैक्स आ गए हैं। जो सबसे आख़िरी पुलबैक होगा (CHoCH के सबसे करीब), वही IDM बनेगा!
-    if (validPullbacks.length > 0) {
-        return validPullbacks[validPullbacks.length - 1];
-    }
-    
-    return null; // अगर कोई पुलबैक नहीं मिला
+    return validPullbacks; // 🔥 पूरा लिस्ट रिटर्न करेगा
 };
+
 
 const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
 
@@ -2180,13 +2964,91 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
     let lockedSwingHigh = null;
     let absoluteLowest = { price: candles[0].low, time: candles[0].timestamp };
 
-    let bearishPullbacks = []; 
+    let bearishPullbacks = [];
     let tempPullbackTracker_Bearish = null;
 
     // 🔥 Liquidity Sweep (X) Variables
     let refX_BOS_Bearish = null;
     let majorIdm_Bearish = { price: -Infinity, time: null };
     let refX_CHoCH_Bearish = null;
+
+
+    // 🔥 COUNTER STRUCTURE (D2S) VARIABLES FOR BULLISH TREND
+    let isDobTapped_D2S = false;
+    let tappingCandle_D2S = null;
+    let isDobFailed_D2S = false;
+    let refLL_D2S = null;
+    let tempLH_D2S = null;
+    let confirmedLH_D2S = null;
+    let idm_D2S_Taken = false;
+
+
+    // Phase 2 ke variables (Advance preparation)
+    let swingLH_D2S = null;
+    let pullbacks_D2S = [];
+
+    // 🔥 NEW: COUNTER STRUCTURE (S2D) PHASE 2 & 3 VARIABLES
+    let validHH_S2D = null;
+    let tempSwingLow_S2D = null;
+    let activeDob_S2D = null;
+    let activeDof_S2D = null;
+    let activeEob_S2D = null;  // 🎯 PHASE 3 
+    let activeEof_S2D = null;  // 🎯 PHASE 3 
+    let refX_S2D = null;
+
+
+    // 🔥 NEW: COUNTER STRUCTURE (D2S) PHASE 2 & 3 VARIABLES
+    let validLL_D2S = null;
+    let tempSwingHigh_D2S = null;
+    let activeDob_D2S = null;
+    let activeDof_D2S = null;
+    let activeEob_D2S = null;
+    let activeEof_D2S = null;
+    let refX_D2S = null;
+
+    // ==========================================
+    // 🧹 THE GHOST KILLER & MAGIC ERASER
+    // ==========================================
+    const wipeCounterStructure = () => {
+        // D2S मेमोरी (Phase 1, 2 & 3)
+        isDobTapped_D2S = false; tappingCandle_D2S = null; isDobFailed_D2S = false;
+        refLL_D2S = null; tempLH_D2S = null; confirmedLH_D2S = null; idm_D2S_Taken = false;
+        swingLH_D2S = null; pullbacks_D2S = [];
+        validLL_D2S = null; tempSwingHigh_D2S = null;
+        activeDob_D2S = null; activeDof_D2S = null;
+        activeEob_D2S = null; activeEof_D2S = null;
+        refX_D2S = null;
+
+        // S2D मेमोरी (Phase 1, 2 & 3)
+        isDobTapped_S2D = false; tappingCandle_S2D = null; isDobFailed_S2D = false;
+        refHH_S2D = null; tempHL_S2D = null; confirmedHL_S2D = null; idm_S2D_Taken = false;
+        validHH_S2D = null; tempSwingLow_S2D = null; 
+        activeDob_S2D = null; activeDof_S2D = null; 
+        activeEob_S2D = null; activeEof_S2D = null; 
+        refX_S2D = null;
+
+        // 🔥 THE MAGIC ERASER: पुराने सारे D2S और S2D काउंटर ज़ोन्स/लाइनों को हटाओ!
+        signals = signals.filter(sig => 
+            sig.type !== "IDM(D2S)" && sig.type !== "IDM(S2D)" && 
+            sig.type !== "BOS(C)" && sig.type !== "X(C)" &&
+            sig.displayName !== "D-S2D(OF)" && sig.displayName !== "D-S2D(OB)" &&
+            sig.displayName !== "E-S2D(OF)" && sig.displayName !== "E-S2D(OB)" &&
+            sig.displayName !== "D-D2S(OF)" && sig.displayName !== "D-D2S(OB)" &&
+            sig.displayName !== "E-D2S(OF)" && sig.displayName !== "E-D2S(OB)"
+        );
+    };
+
+    // 🔥 NEW: COUNTER STRUCTURE (S2D) VARIABLES FOR BEARISH TREND
+    let isDobTapped_S2D = false;
+    let tappingCandle_S2D = null;
+    let isDobFailed_S2D = false;
+    let refHH_S2D = null;
+    let tempHL_S2D = null;
+    let confirmedHL_S2D = null;
+    let idm_S2D_Taken = false;
+
+
+
 
     // ==========================================
     // 📈 BULLISH STATE VARIABLES
@@ -2213,7 +3075,7 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
 
     let current_bullish_structure = [];
     let previous_bullish_structure = [];
-    
+
 
     for (let i = 1; i < candles.length; i++) {
         const curr = candles[i];
@@ -2224,6 +3086,8 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
         // अब नया हाई/लो अपडेट करें
         if (curr.low < absoluteLowest.price) absoluteLowest = { price: curr.low, time: curr.timestamp };
         if (curr.high > absoluteHighest.price) absoluteHighest = { price: curr.high, time: curr.timestamp };
+
+       
 
         let isInsideBar = curr.high <= refCandle.high && curr.low >= refCandle.low;
         let isOutsideBar = curr.high > refCandle.high && curr.low < refCandle.low;
@@ -2242,12 +3106,13 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
             if (startingTrend === "AUTO" && lockedSwingHigh === null && curr.close > prevAbsoluteHighest) {
                 trend = 1;
                 isIdmTaken = false;
+                wipeCounterStructure();
                 validLL = null; refLL = null; tempSwingHigh = null; confirmedLH = null;
-                
+
                 bearishPullbacks = []; // 🎯 Added
                 tempPullbackTracker_Bearish = null; // 🎯 Added
 
-                absoluteLowest = { price: curr.low, time: curr.timestamp }; 
+                absoluteLowest = { price: curr.low, time: curr.timestamp };
                 refCandle = curr;
                 continue;
             }
@@ -2272,18 +3137,19 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
 
                         trend = 1;
                         isIdmTaken = false;
+                        wipeCounterStructure();
                         lockedSwingLow = { ...absoluteLowest };
-                        
+
                         validLL = null; refLL = null; tempSwingHigh = null; lockedSwingHigh = null;
                         refX_CHoCH_Bearish = null; refX_BOS_Bearish = null;
-                        bearishPullbacks = []; tempPullbackTracker_Bearish = null; 
-                        
+                        bearishPullbacks = []; tempPullbackTracker_Bearish = null;
+
                         refHH = null; tempHL = null; bullishPullbacks = []; tempPullbackTracker = null;
 
                         // 🔥 RETRO-SCANNER INJECTION: CHoCH के पहले वाले Bullish पुलबैक्स ढूँढो
                         let startIdx = candles.findIndex(c => c.timestamp === lockedSwingLow.time);
-                        let retroIDM = scanRetroactivePullbacks(startIdx, i, candles, "BULLISH");
-                        confirmedHL = retroIDM; 
+                        let retroPBs = scanRetroactivePullbacks(startIdx, i, candles, "BULLISH");
+                        confirmedHL = retroPBs.length > 0 ? retroPBs[retroPBs.length - 1] : null;
 
                         absoluteHighest = { price: curr.high, time: curr.timestamp };
                         refCandle = curr;
@@ -2297,19 +3163,19 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
             // ==========================================================
             // 🔥 BULLETPROOF PULLBACK TRACKER (Bearish Engulfing Fix)
             // ==========================================================
-            if (brokeHigh && !isOutsideBar && refLL === null) { 
+            if (brokeHigh && !isOutsideBar && refLL === null) {
                 refLL = { price: refCandle.low, time: refCandle.timestamp };
                 tempLH = { price: curr.high, time: curr.timestamp };
-                
+
                 tempPullbackTracker_Bearish = {
                     id: bearishPullbacks.length + 1,
                     confirmLL: refCandle.low,
-                    confirmLLCandleIndex: i - 1, 
+                    confirmLLCandleIndex: i - 1,
                     validLH: curr.high,
-                    validLHCandleIndex: i, 
+                    validLHCandleIndex: i,
                     startTime: refCandle.timestamp
                 };
-            } else if (refLL !== null) { 
+            } else if (refLL !== null) {
                 if (curr.high > tempLH.price) {
                     tempLH = { price: curr.high, time: curr.timestamp };
                     if (tempPullbackTracker_Bearish) {
@@ -2317,21 +3183,21 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
                         tempPullbackTracker_Bearish.validLHCandleIndex = i;
                     }
                 }
-                
-                if (curr.low <= refLL.price) { 
+
+                if (curr.low <= refLL.price) {
                     // ❌ Fake Engulfing Pullback (Discard)
                     if (curr.timestamp === tempLH.time) {
-                        refLL = null; 
-                        tempPullbackTracker_Bearish = null; 
+                        refLL = null;
+                        tempPullbackTracker_Bearish = null;
                     } else {
                         // ✅ Valid Pullback (Confirm)
-                        confirmedLH = tempLH; 
-                        refLL = null; 
-                        
+                        confirmedLH = tempLH;
+                        refLL = null;
+
                         if (tempPullbackTracker_Bearish) {
                             tempPullbackTracker_Bearish.breakCandleIndex = i;
-                            bearishPullbacks.push({...tempPullbackTracker_Bearish});
-                            tempPullbackTracker_Bearish = null; 
+                            bearishPullbacks.push({ ...tempPullbackTracker_Bearish });
+                            tempPullbackTracker_Bearish = null;
                         }
                     }
                 }
@@ -2352,13 +3218,20 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
                 const swingLHIndex = candles.findIndex(c => c.timestamp === rootTime);
                 const refLLIndex = candles.findIndex(c => c.timestamp === validLL.time);
 
+                // 🎯 THE E-OF SIZE FIX: स्कैनर से पहला पुलबैक निकालो
+                let rootConfirmLL = validLL.price;
+                let wavePullbacks = scanRetroactivePullbacks(swingLHIndex, refLLIndex, candles, "BEARISH");
+                if (wavePullbacks.length > 0) {
+                    rootConfirmLL = wavePullbacks[0].confirmLL; // पहला पुलबैक का Low
+                }
+
                 const rootExtreme = {
                     id: "ROOT_SWING_LH",
                     validLH: rootPrice,
                     validLHCandleIndex: swingLHIndex,
-                    confirmLL: validLL.price,
+                    confirmLL: rootConfirmLL, // <--- परफेक्ट साइज़
                     confirmLLCandleIndex: refLLIndex,
-                    breakCandleIndex: refLLIndex, 
+                    breakCandleIndex: refLLIndex,
                     startTime: rootTime
                 };
 
@@ -2373,14 +3246,14 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
                 // 🔥 2. THE MASTER STATE MANAGEMENT
                 signals.forEach(sig => {
                     if (["E-OB", "D-OB", "E-OF", "D-OF"].includes(sig.type)) {
-                        
+
                         // अगर पहले से Demand/Supply नाम नहीं हुआ है, तभी चेक करो
                         if (!sig.displayName || (!sig.displayName.includes("Demand") && !sig.displayName.includes("Supply"))) {
                             sig.isActive = false; // पुराने ज़ोन डीएक्टिवेट करें
-                            
+
                             let isMitigated = false;
                             let startIdx = candles.findIndex(c => c.timestamp === sig.startTime);
-                            
+
                             if (startIdx !== -1) {
                                 for (let j = startIdx + 3; j <= i; j++) {
                                     // बुलिश ज़ोन के लिए चेकिंग
@@ -2427,8 +3300,8 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
                     let mitTimeDOB = findMitigationTime_Bearish(poiZones.dob.bottom, i, candles);
                     signals.push({ type: "D-OB", displayName: "D-OB", trend: "BEARISH", priceTop: poiZones.dob.top, priceBottom: poiZones.dob.bottom, startTime: poiZones.dob.startTime, fvgTop: poiZones.dob.fvgTop, fvgBottom: poiZones.dob.fvgBottom, endTime: mitTimeDOB, isActive: true });
                 }
-                
-                bearishPullbacks = []; 
+
+                bearishPullbacks = [];
                 tempPullbackTracker_Bearish = null;
                 confirmedLH = null;
             }
@@ -2437,7 +3310,7 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
             if (isIdmTaken && curr.high > tempSwingHigh.price) {
                 tempSwingHigh = { price: curr.high, time: curr.timestamp };
                 bearishPullbacks = []; // 🎯 Added
-                refLL = null; 
+                refLL = null;
                 tempPullbackTracker_Bearish = null; // 🎯 Added
             }
 
@@ -2449,8 +3322,8 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
                     if (curr.close < breakLevel) { // 🚀 Full Body Break (Valid BOS)
                         signals.push({
                             type: "BOS", trend: "BEARISH",
-                            price: validLL.price, 
-                            startTime: validLL.time, 
+                            price: validLL.price,
+                            startTime: validLL.time,
                             endTime: curr.timestamp
                         });
 
@@ -2461,15 +3334,16 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
 
                         lockedSwingHigh = { ...tempSwingHigh };
                         isIdmTaken = false;
+                        wipeCounterStructure();
                         validLL = null; refLL = null; refX_BOS_Bearish = null;
-                        
+
                         // 🔥 RETRO-SCANNER INJECTION: BOS के पहले वाले पुलबैक्स ढूँढो
                         let startIdx = candles.findIndex(c => c.timestamp === lockedSwingHigh.time);
-                        let retroIDM = scanRetroactivePullbacks(startIdx, i, candles, "BEARISH");
-                        confirmedLH = retroIDM; 
+                        let retroPBs = scanRetroactivePullbacks(startIdx, i, candles, "BEARISH");
+                        confirmedLH = retroPBs.length > 0 ? retroPBs[retroPBs.length - 1] : null;
                         
-                        bearishPullbacks = []; 
-                        tempPullbackTracker_Bearish = null; 
+                        bearishPullbacks = [];
+                        tempPullbackTracker_Bearish = null;
                         absoluteLowest = { price: curr.low, time: curr.timestamp };
 
                     } else { // 🧹 Sweep (Ref X)
@@ -2488,7 +3362,237 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
                     }
                 }
             }
+            // =========================================================================
+            // 🔥 PHASE 1: COUNTER STRUCTURE (S2D) LOGIC STARTS HERE 🔥
+            // =========================================================================
+
+            // 🛑 THE CHoCH/BOS AUTO-CLEANER (Chanchal Bhai's Rule)
+            let currentWaveStart_S2D = lockedSwingHigh ? lockedSwingHigh.time : absoluteHighest.time;
+
+            if ( (confirmedHL_S2D && confirmedHL_S2D.time < currentWaveStart_S2D) || 
+                 (refHH_S2D && refHH_S2D.time < currentWaveStart_S2D) ) {
+                isDobTapped_S2D = false; tappingCandle_S2D = null; isDobFailed_S2D = false;
+                refHH_S2D = null; tempHL_S2D = null; confirmedHL_S2D = null; idm_S2D_Taken = false;
+            }
+            
+            // 🎯 1. Active D-OB (Supply Zone) को ढूँढना
+            let activeDobZone_Bearish = null;
+            if (isIdmTaken) {
+                for (let s = signals.length - 1; s >= 0; s--) {
+                    if (signals[s].type === "D-OB" && signals[s].trend === "BEARISH" && signals[s].isActive !== false) {
+                        if (signals[s].startTime >= currentWaveStart_S2D) { 
+                            activeDobZone_Bearish = signals[s];
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (activeDobZone_Bearish) {
+                // 🎯 2. TAPPING CHECK 
+                if (!isDobTapped_S2D && curr.high >= activeDobZone_Bearish.priceBottom) {
+                    isDobTapped_S2D = true;
+                    tappingCandle_S2D = curr;
+                }
+
+                // 🎯 3. D-OB FAILURE CHECK 
+                if (isDobTapped_S2D && !isDobFailed_S2D) {
+                    let isOutsideBar_S2D = curr.high > tappingCandle_S2D.high && curr.low < tappingCandle_S2D.low;
+                    if (!isOutsideBar_S2D) {
+                        if (curr.high > tappingCandle_S2D.high || tappingCandle_S2D.close > activeDobZone_Bearish.priceTop) {
+                            isDobFailed_S2D = true;
+                            refHH_S2D = { price: curr.high, time: curr.timestamp };
+                        }
+                    }
+                }
+            }
+
+            // 🎯 4. IDM(S2D) PULLBACK TRACKING 
+            if (isDobFailed_S2D && !idm_S2D_Taken) {
+                let brokeLow = curr.low < refCandle.low; 
+
+                if (brokeLow && !isOutsideBar && refHH_S2D !== null && tempHL_S2D === null) {
+                    tempHL_S2D = { price: curr.low, time: curr.timestamp };
+                } 
+                else if (refHH_S2D !== null) {
+                    if (tempHL_S2D !== null && curr.low < tempHL_S2D.price) {
+                        tempHL_S2D = { price: curr.low, time: curr.timestamp };
+                    }
+                    if (tempHL_S2D === null && curr.high > refHH_S2D.price) {
+                        refHH_S2D = { price: curr.high, time: curr.timestamp };
+                    }
+                    if (tempHL_S2D !== null && curr.high >= refHH_S2D.price) {
+                        if (curr.timestamp === tempHL_S2D.time) {
+                            refHH_S2D = null; 
+                            tempHL_S2D = null; 
+                        } else {
+                            confirmedHL_S2D = tempHL_S2D;
+                            refHH_S2D = { price: curr.high, time: curr.timestamp }; 
+                            tempHL_S2D = null; 
+                        }
+                    }
+                }
+
+                // 🎯 5. IDM(S2D) HIT & ZONE GENERATION!
+                if (confirmedHL_S2D !== null && curr.low <= confirmedHL_S2D.price) {
+                    
+                    let isGhost = false;
+                    for(let k = signals.length - 1; k >= 0; k--) {
+                        let sig = signals[k];
+                        if(sig.type === "CHoCH" || sig.type === "BOS") {
+                            if(sig.endTime > confirmedHL_S2D.time) { isGhost = true; break; }
+                        }
+                    }
+
+                    if (!isGhost) {
+                        idm_S2D_Taken = true;
+                        // 🔥 Phase 2 की शुरुआत: Top और Bottom लॉक करो!
+                        validHH_S2D = { price: refHH_S2D.price, time: refHH_S2D.time };
+                        tempSwingLow_S2D = { price: curr.low, time: curr.timestamp };
+
+                        signals.push({ 
+                            type: "IDM(S2D)", trend: "BULLISH_COUNTER", 
+                            price: confirmedHL_S2D.price, startTime: confirmedHL_S2D.time, 
+                            endTime: curr.timestamp, sweptSide: "LOW", position: "bottom"    
+                        });
+
+                        // =======================================================
+                        // 🔥 THE BUG FIX: S2D का सही Bottom (Start Index) ढूँढना!
+                        // =======================================================
+                        let tempStartIdx = candles.findIndex(c => c.timestamp === currentWaveStart_S2D);
+                        let endIdx_S2D = candles.findIndex(c => c.timestamp === validHH_S2D.time);
+                        
+                        let startIdx_S2D = tempStartIdx;
+                        if (tempStartIdx !== -1 && endIdx_S2D !== -1) {
+                            let minLow = candles[tempStartIdx].low;
+                            for (let k = tempStartIdx; k <= endIdx_S2D; k++) {
+                                if (candles[k].low < minLow) {
+                                    minLow = candles[k].low;
+                                    startIdx_S2D = k;
+                                }
+                            }
+                        }
+                        
+                        let s2dPullbacks = scanRetroactivePullbacks(startIdx_S2D, endIdx_S2D, candles, "BULLISH");
+
+                        // 🔥 ROOT EXTREME FIX FOR S2D (ताकि D-OB सही से मिले)
+                        if (startIdx_S2D !== -1 && endIdx_S2D !== -1) {
+                            let rootConfirmHH = s2dPullbacks.length > 0 ? s2dPullbacks[0].confirmHH : validHH_S2D.price;
+                            s2dPullbacks.unshift({
+                                id: "ROOT_SWING_HL",
+                                validHL: candles[startIdx_S2D].low,
+                                validHLCandleIndex: startIdx_S2D,
+                                confirmHH: rootConfirmHH,
+                                confirmHHCandleIndex: endIdx_S2D,
+                                breakCandleIndex: endIdx_S2D, 
+                                startTime: candles[startIdx_S2D].timestamp
+                            });
+                        }
+
+                        let poiZones_S2D = findSMCZones(candles, s2dPullbacks, i);
+                        // =======================================================
+                        
+                        if (poiZones_S2D.dof) {
+                            let mitTimeDof = findMitigationTime(poiZones_S2D.dof.top, i, candles);
+                            activeDof_S2D = { type: "D-OF", displayName: "D-S2D(OF)", trend: "BULLISH", priceTop: poiZones_S2D.dof.top, priceBottom: poiZones_S2D.dof.bottom, startTime: poiZones_S2D.dof.startTime, endTime: mitTimeDof, isActive: true };
+                            signals.push(activeDof_S2D);
+                        }
+                        if (poiZones_S2D.dob) {
+                            let mitTimeDob = findMitigationTime(poiZones_S2D.dob.top, i, candles);
+                            activeDob_S2D = { type: "D-OB", displayName: "D-S2D(OB)", trend: "BULLISH", priceTop: poiZones_S2D.dob.top, priceBottom: poiZones_S2D.dob.bottom, startTime: poiZones_S2D.dob.startTime, fvgTop: poiZones_S2D.dob.fvgTop, fvgBottom: poiZones_S2D.dob.fvgBottom, endTime: mitTimeDob, isActive: true };
+                            signals.push(activeDob_S2D);
+                        }
+                        
+                        // --- 🔥 PHASE 3: EXTREME ZONES (S2D) ---
+                        if (poiZones_S2D.eof) {
+                            let mitTimeEof = findMitigationTime(poiZones_S2D.eof.top, i, candles);
+                            activeEof_S2D = { 
+                                type: "E-OF", 
+                                displayName: "E-S2D(OF)", // 🎯 यही नाम फ्रंटएंड पर छपेगा
+                                trend: "BULLISH", 
+                                priceTop: poiZones_S2D.eof.top, 
+                                priceBottom: poiZones_S2D.eof.bottom, 
+                                startTime: poiZones_S2D.eof.startTime, 
+                                endTime: mitTimeEof, 
+                                isActive: true 
+                            };
+                            signals.push(activeEof_S2D);
+                        }
+                        if (poiZones_S2D.eob) {
+                            let mitTimeEob = findMitigationTime(poiZones_S2D.eob.top, i, candles);
+                            activeEob_S2D = { 
+                                type: "E-OB", 
+                                displayName: "E-S2D(OB)", // 🎯 यही नाम फ्रंटएंड पर छपेगा
+                                trend: "BULLISH", 
+                                priceTop: poiZones_S2D.eob.top, 
+                                priceBottom: poiZones_S2D.eob.bottom, 
+                                startTime: poiZones_S2D.eob.startTime, 
+                                fvgTop: poiZones_S2D.eob.fvgTop, 
+                                fvgBottom: poiZones_S2D.eob.fvgBottom, 
+                                endTime: mitTimeEob, 
+                                isActive: true 
+                            };
+                            signals.push(activeEob_S2D);
+                        }
+                    }
+                    
+                    refHH_S2D = null; tempHL_S2D = null; confirmedHL_S2D = null;
+                }
+            }
+            // =========================================================================
+            // 🔥 PHASE 1: COUNTER STRUCTURE ENDS HERE 🔥
+            // =========================================================================
+            // 🎯 6. PHASE 2 & 3: BOS(C) LOGIC FOR S2D
+            if (idm_S2D_Taken && validHH_S2D !== null) {
+                // Dip ट्रैक करो
+                if (curr.low < tempSwingLow_S2D.price) {
+                    tempSwingLow_S2D = { price: curr.low, time: curr.timestamp };
+                }
+                
+                let breakLevel_S2D = refX_S2D ? refX_S2D.price : validHH_S2D.price;
+                
+                if (curr.high > breakLevel_S2D) {
+                    if (curr.close > breakLevel_S2D) { // 🚀 Full Body Break (BOS-C)
+                        
+                        // 🔥 चेक करो कि क्या ब्रेक करने से पहले किसी भी ज़ोन (Decisional या Extreme) को टैप किया था?
+                        let isTapped = false;
+                        if ((activeDob_S2D && tempSwingLow_S2D.price <= activeDob_S2D.priceTop) || 
+                            (activeDof_S2D && tempSwingLow_S2D.price <= activeDof_S2D.priceTop) ||
+                            (activeEob_S2D && tempSwingLow_S2D.price <= activeEob_S2D.priceTop) ||
+                            (activeEof_S2D && tempSwingLow_S2D.price <= activeEof_S2D.priceTop)) {
+                            isTapped = true;
+                        }
+                        
+                        if (isTapped) {
+                            signals.push({ type: "BOS(C)", trend: "BULLISH", price: validHH_S2D.price, startTime: validHH_S2D.time, endTime: curr.timestamp });
+                            if (refX_S2D) {
+                                signals.push({ type: "X(C)", sweptSide: "HIGH", trend: "BULLISH", price: validHH_S2D.price, startTime: validHH_S2D.time, endTime: refX_S2D.time });
+                            }
+                        } else {
+                            // 🧹 बिना टैप किये ब्रेक किया: चार्ट से पुराने सारे D और E ज़ोन मिटा दो!
+                            signals = signals.filter(s => 
+                                s !== activeDob_S2D && s !== activeDof_S2D && 
+                                s !== activeEob_S2D && s !== activeEof_S2D
+                            );
+                            signals.push({ type: "BOS(C)", trend: "BULLISH", price: validHH_S2D.price, startTime: validHH_S2D.time, endTime: curr.timestamp });
+                        }
+                        
+                        // 🔥 S2D का ट्रेंड चालू रहेगा! अगले पुलबैक के लिए रीसेट करो
+                        idm_S2D_Taken = false;
+                        refHH_S2D = { price: curr.high, time: curr.timestamp };
+                        validHH_S2D = null; tempSwingLow_S2D = null; 
+                        activeDob_S2D = null; activeDof_S2D = null; 
+                        activeEob_S2D = null; activeEof_S2D = null; 
+                        refX_S2D = null;
+                        
+                    } else { 
+                        // 🧹 Sweep हुआ (X-C)
+                        refX_S2D = { price: curr.high, time: curr.timestamp };
+                    }
+                }
+            }
         }
+
 
         // ==========================================
         // 📈 BULLISH STRUCTURE LOGIC (1)
@@ -2500,6 +3604,7 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
             if (startingTrend === "AUTO" && lockedSwingLow === null && curr.close < prevAbsoluteLowest) {
                 trend = -1;
                 isIdmTaken = false;
+                wipeCounterStructure();
                 validHH = null; refHH = null; tempSwingLow = null; confirmedHL = null;
 
                 bullishPullbacks = [];
@@ -2522,15 +3627,16 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
                     if (curr.close < breakLevel) { // 🚀 Full Body Break
                         signals.push({
                             type: "CHoCH", trend: "BEARISH",
-                            price: lockedSwingLow.price,     
-                            startTime: lockedSwingLow.time,  
+                            price: lockedSwingLow.price,
+                            startTime: lockedSwingLow.time,
                             endTime: curr.timestamp
                         });
 
                         trend = -1;
                         isIdmTaken = false;
+                        wipeCounterStructure();
                         lockedSwingHigh = { ...absoluteHighest };
-                        
+
                         validHH = null; refHH = null; tempSwingLow = null; lockedSwingLow = null;
                         refX_CHoCH_Bullish = null; refX_BOS_Bullish = null;
                         bullishPullbacks = []; tempPullbackTracker = null;
@@ -2539,8 +3645,8 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
 
                         // 🔥 RETRO-SCANNER INJECTION: CHoCH के पहले वाले Bearish पुलबैक्स ढूँढो
                         let startIdx = candles.findIndex(c => c.timestamp === lockedSwingHigh.time);
-                        let retroIDM = scanRetroactivePullbacks(startIdx, i, candles, "BEARISH");
-                        confirmedLH = retroIDM; 
+                        let retroPBs = scanRetroactivePullbacks(startIdx, i, candles, "BEARISH");
+                        confirmedLH = retroPBs.length > 0 ? retroPBs[retroPBs.length - 1] : null;
 
                         absoluteLowest = { price: curr.low, time: curr.timestamp };
                         refCandle = curr;
@@ -2554,19 +3660,19 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
             // ==========================================================
             // 🔥 BULLETPROOF PULLBACK TRACKER (The Smart Engulfing Fix)
             // ==========================================================
-            if (brokeLow && !isOutsideBar && refHH === null) { 
+            if (brokeLow && !isOutsideBar && refHH === null) {
                 refHH = { price: refCandle.high, time: refCandle.timestamp };
                 tempHL = { price: curr.low, time: curr.timestamp };
-                
+
                 tempPullbackTracker = {
                     id: bullishPullbacks.length + 1,
                     confirmHH: refCandle.high,
-                    confirmHHCandleIndex: i - 1, 
+                    confirmHHCandleIndex: i - 1,
                     validHL: curr.low,
-                    validHLCandleIndex: i, 
+                    validHLCandleIndex: i,
                     startTime: refCandle.timestamp
                 };
-            } else if (refHH !== null) { 
+            } else if (refHH !== null) {
                 if (curr.low < tempHL.price) {
                     tempHL = { price: curr.low, time: curr.timestamp };
                     if (tempPullbackTracker) {
@@ -2574,8 +3680,8 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
                         tempPullbackTracker.validHLCandleIndex = i;
                     }
                 }
-                
-                if (curr.high >= refHH.price) { 
+
+                if (curr.high >= refHH.price) {
                     // ==================================================
                     // 🔥 THE SMART ENGULFING FIX (1-Candle Sweep Filter)
                     // ==================================================
@@ -2584,20 +3690,20 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
                     // (यानी curr.timestamp === tempHL.time), तो इसका मतलब है कि 
                     // यह एक 'राक्षस कैंडल' है जिसने बॉटम और टॉप दोनों एक साथ खा लिए।
                     // इसे फेक पुलबैक मानकर डिलीट कर देंगे!
-                    
+
                     if (curr.timestamp === tempHL.time) {
                         // ❌ Fake Engulfing Pullback (Discard)
-                        refHH = null; 
-                        tempPullbackTracker = null; 
+                        refHH = null;
+                        tempPullbackTracker = null;
                     } else {
                         // ✅ Valid Pullback (Confirm)
-                        confirmedHL = tempHL; 
-                        refHH = null; 
-                        
+                        confirmedHL = tempHL;
+                        refHH = null;
+
                         if (tempPullbackTracker) {
                             tempPullbackTracker.breakCandleIndex = i;
-                            bullishPullbacks.push({...tempPullbackTracker});
-                            tempPullbackTracker = null; 
+                            bullishPullbacks.push({ ...tempPullbackTracker });
+                            tempPullbackTracker = null;
                         }
                     }
                 }
@@ -2612,28 +3718,32 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
 
                 // ==========================================================
                 // 🔥 THE ROOT EXTREME FIX (Null Crash Fix)
-                // ==========================================================
-                
-                // 1. सेफ़्टी चेक: अगर पहली लहर (First Wave) है और lockedSwingLow अभी null है, 
-                // तो इंजन बॉटम के लिए absoluteLowest का यूज़ करेगा!
+                // ==========================================================   
                 const rootTime = lockedSwingLow ? lockedSwingLow.time : absoluteLowest.time;
                 const rootPrice = lockedSwingLow ? lockedSwingLow.price : absoluteLowest.price;
 
                 const swingHLIndex = candles.findIndex(c => c.timestamp === rootTime);
                 const refHHIndex = candles.findIndex(c => c.timestamp === validHH.time);
 
+                // 🎯 THE E-OF SIZE FIX: स्कैनर से पहला पुलबैक निकालो
+                let rootConfirmHH = validHH.price;
+                let wavePullbacks = scanRetroactivePullbacks(swingHLIndex, refHHIndex, candles, "BULLISH");
+                if (wavePullbacks.length > 0) {
+                    rootConfirmHH = wavePullbacks[0].confirmHH; // पहला पुलबैक का High
+                }
+
                 const rootExtreme = {
                     id: "ROOT_SWING_HL",
                     validHL: rootPrice,
                     validHLCandleIndex: swingHLIndex,
-                    confirmHH: validHH.price,
+                    confirmHH: rootConfirmHH, // <--- परफेक्ट साइज़
                     confirmHHCandleIndex: refHHIndex,
-                    breakCandleIndex: refHHIndex, 
+                    breakCandleIndex: refHHIndex,
                     startTime: rootTime
                 };
 
                 const validPullbacksForSMC = bullishPullbacks.filter(pb =>
-                    pb.validHL !== confirmedHL.price 
+                    pb.validHL !== confirmedHL.price
                 );
 
                 if (swingHLIndex !== -1 && refHHIndex !== -1) {
@@ -2645,18 +3755,18 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
                 // ==========================================================
                 // 🔥 THE VISUAL FIX
                 // ==========================================================
-                
+
                 // 1. जब नया IDM कन्फर्म होता है, तो 'signals' एरे में मौजूद पिछले सारे ज़ोन्स 'पुराने' बन जाते हैं।
                 signals.forEach(sig => {
                     if (["E-OB", "D-OB", "E-OF", "D-OF"].includes(sig.type)) {
-                        
+
                         // अगर पहले से Demand/Supply नाम नहीं हुआ है, तभी चेक करो
                         if (!sig.displayName || (!sig.displayName.includes("Demand") && !sig.displayName.includes("Supply"))) {
                             sig.isActive = false; // पुराने ज़ोन डीएक्टिवेट करें
-                            
+
                             let isMitigated = false;
                             let startIdx = candles.findIndex(c => c.timestamp === sig.startTime);
-                            
+
                             if (startIdx !== -1) {
                                 for (let j = startIdx + 3; j <= i; j++) {
                                     // बुलिश ज़ोन के लिए चेकिंग
@@ -2691,7 +3801,7 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
                     let mitTimeEOF = findMitigationTime(poiZones.eof.top, i, candles);
                     signals.push({ type: "E-OF", displayName: "E-OF", trend: "BULLISH", priceTop: poiZones.eof.top, priceBottom: poiZones.eof.bottom, startTime: poiZones.eof.startTime, endTime: mitTimeEOF, isActive: true });
                 }
-                
+
                 if (poiZones.eob) {
                     let mitTimeEOB = findMitigationTime(poiZones.eob.top, i, candles);
                     signals.push({ type: "E-OB", displayName: "E-OB", trend: "BULLISH", priceTop: poiZones.eob.top, priceBottom: poiZones.eob.bottom, startTime: poiZones.eob.startTime, fvgTop: poiZones.eob.fvgTop, fvgBottom: poiZones.eob.fvgBottom, endTime: mitTimeEOB, isActive: true });
@@ -2701,13 +3811,13 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
                     let mitTimeDOF = findMitigationTime(poiZones.dof.top, i, candles);
                     signals.push({ type: "D-OF", displayName: "D-OF", trend: "BULLISH", priceTop: poiZones.dof.top, priceBottom: poiZones.dof.bottom, startTime: poiZones.dof.startTime, endTime: mitTimeDOF, isActive: true });
                 }
-                
+
                 if (poiZones.dob) {
                     let mitTimeDOB = findMitigationTime(poiZones.dob.top, i, candles);
                     signals.push({ type: "D-OB", displayName: "D-OB", trend: "BULLISH", priceTop: poiZones.dob.top, priceBottom: poiZones.dob.bottom, startTime: poiZones.dob.startTime, fvgTop: poiZones.dob.fvgTop, fvgBottom: poiZones.dob.fvgBottom, endTime: mitTimeDOB, isActive: true });
                 }
-                
-                bullishPullbacks = []; 
+
+                bullishPullbacks = [];
                 tempPullbackTracker = null;
                 confirmedHL = null;
             }
@@ -2730,8 +3840,8 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
                         // 🔥 VISUAL FIX: लाइन हमेशा ओरिजिनल 'validHH' से ही ड्रा होगी!
                         signals.push({
                             type: "BOS", trend: "BULLISH",
-                            price: validHH.price,       
-                            startTime: validHH.time,    
+                            price: validHH.price,
+                            startTime: validHH.time,
                             endTime: curr.timestamp
                         });
 
@@ -2742,17 +3852,18 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
 
                         lockedSwingLow = { ...tempSwingLow };
                         isIdmTaken = false;
+                        wipeCounterStructure();
                         validHH = null; refHH = null; refX_BOS_Bullish = null;
-                        
+
                         // 🔥 RETRO-SCANNER INJECTION: BOS के पहले वाले Bullish पुलबैक्स ढूँढो
                         let startIdx = candles.findIndex(c => c.timestamp === lockedSwingLow.time);
-                        let retroIDM = scanRetroactivePullbacks(startIdx, i, candles, "BULLISH");
-                        confirmedHL = retroIDM; 
+                        let retroPBs = scanRetroactivePullbacks(startIdx, i, candles, "BULLISH");
+                        confirmedHL = retroPBs.length > 0 ? retroPBs[retroPBs.length - 1] : null;
 
-                        bullishPullbacks = []; 
+                        bullishPullbacks = [];
                         tempPullbackTracker = null;
                         absoluteHighest = { price: curr.high, time: curr.timestamp };
-                        
+
                     } else { // 🧹 Sweep (Ref X)
                         refX_BOS_Bullish = { price: curr.high, time: curr.timestamp, majorIdmTarget: { ...majorIdm_Bullish } };
                     }
@@ -2767,6 +3878,223 @@ const identifyMechanicalStructure = (candles, startingTrend = "AUTO") => {
                         validHH = { price: refX_BOS_Bullish.price, time: refX_BOS_Bullish.time };
                         refX_BOS_Bullish = null;
                         majorIdm_Bullish = { price: curr.low, time: curr.timestamp };
+                    }
+                }
+            }
+
+            // =========================================================================
+            // 🔥 PHASE 1: COUNTER STRUCTURE (D2S) LOGIC STARTS HERE 🔥
+            // =========================================================================
+
+           // 🛑 THE CHoCH/BOS AUTO-CLEANER (Chanchal Bhai's Rule)
+            // अगर पुराना D2S ट्रैकर (LL/LH) मेन स्ट्रक्चर (CHoCH/BOS) से पहले का है, तो उसे तुरंत क्लियर कर दो!
+            let currentWaveStart_D2S = lockedSwingLow ? lockedSwingLow.time : absoluteLowest.time;
+            
+            if ( (confirmedLH_D2S && confirmedLH_D2S.time < currentWaveStart_D2S) || 
+                 (refLL_D2S && refLL_D2S.time < currentWaveStart_D2S) ) {
+                isDobTapped_D2S = false; tappingCandle_D2S = null; isDobFailed_D2S = false;
+                refLL_D2S = null; tempLH_D2S = null; confirmedLH_D2S = null; idm_D2S_Taken = false;
+            }
+
+            // 🎯 1. Active D-OB Zone को ढूँढना (Ghost Fix Applied)
+            let activeDobZone = null;
+            if (isIdmTaken) {
+                for (let s = signals.length - 1; s >= 0; s--) {
+                    if (signals[s].type === "D-OB" && signals[s].trend === "BULLISH" && signals[s].isActive !== false) {
+                        // सिर्फ करेंट वेव का D-OB उठाओ
+                        if (signals[s].startTime >= currentWaveStart_D2S) {
+                            activeDobZone = signals[s];
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (activeDobZone) {
+                // 🎯 2. TAPPING CHECK 
+                if (!isDobTapped_D2S && curr.low <= activeDobZone.priceTop) {
+                    isDobTapped_D2S = true;
+                    tappingCandle_D2S = curr;
+                }
+
+                // 🎯 3. D-OB FAILURE CHECK
+                if (isDobTapped_D2S && !isDobFailed_D2S) {
+                    let isOutsideBar = curr.high > tappingCandle_D2S.high && curr.low < tappingCandle_D2S.low;
+                    if (!isOutsideBar) {
+                        if (curr.low < tappingCandle_D2S.low || tappingCandle_D2S.close < activeDobZone.priceBottom) {
+                            isDobFailed_D2S = true;
+                            refLL_D2S = { price: curr.low, time: curr.timestamp };
+                        }
+                    }
+                }
+            }
+
+            // 🎯 4. IDM(D2S) PULLBACK TRACKING 
+            if (isDobFailed_D2S && !idm_D2S_Taken) {
+                let brokeHigh = curr.high > refCandle.high; 
+
+                if (brokeHigh && !isOutsideBar && refLL_D2S !== null && tempLH_D2S === null) {
+                    tempLH_D2S = { price: curr.high, time: curr.timestamp };
+                } 
+                else if (refLL_D2S !== null) {
+                    if (tempLH_D2S !== null && curr.high > tempLH_D2S.price) {
+                        tempLH_D2S = { price: curr.high, time: curr.timestamp };
+                    }
+                    if (tempLH_D2S === null && curr.low < refLL_D2S.price) {
+                        refLL_D2S = { price: curr.low, time: curr.timestamp };
+                    }
+                    if (tempLH_D2S !== null && curr.low <= refLL_D2S.price) {
+                        if (curr.timestamp === tempLH_D2S.time) {
+                            refLL_D2S = null; 
+                            tempLH_D2S = null; 
+                        } else {
+                            confirmedLH_D2S = tempLH_D2S;
+                            refLL_D2S = { price: curr.low, time: curr.timestamp }; 
+                            tempLH_D2S = null; 
+                        }
+                    }
+                }
+
+                // 🎯 5. IDM(D2S) HIT & ZONE GENERATION!
+                if (confirmedLH_D2S !== null && curr.high >= confirmedLH_D2S.price) {
+                    
+                    let isGhost = false;
+                    for(let k = signals.length - 1; k >= 0; k--) {
+                        let sig = signals[k];
+                        if(sig.type === "CHoCH" || sig.type === "BOS") {
+                            if(sig.endTime > confirmedLH_D2S.time) { isGhost = true; break; }
+                        }
+                    }
+
+                    if (!isGhost) {
+                        idm_D2S_Taken = true;
+                        
+                        // 🔥 Phase 2 & 3 की शुरुआत: Top और Bottom लॉक करो!
+                        validLL_D2S = { price: refLL_D2S.price, time: refLL_D2S.time };
+                        tempSwingHigh_D2S = { price: curr.high, time: curr.timestamp }; // पीक ट्रैक करने के लिए
+
+                        signals.push({ 
+                            type: "IDM(D2S)", trend: "BEARISH_COUNTER", 
+                            price: confirmedLH_D2S.price, startTime: confirmedLH_D2S.time, 
+                            endTime: curr.timestamp, sweptSide: "HIGH", position: "aboveBar" 
+                        });
+
+                        // =======================================================
+                        // 🔥 THE BUG FIX: D2S का सही Top (Start Index) ढूँढना!
+                        // =======================================================
+                        let tempStartIdx = candles.findIndex(c => c.timestamp === currentWaveStart_D2S);
+                        let endIdx_D2S = candles.findIndex(c => c.timestamp === validLL_D2S.time);
+                        
+                        let startIdx_D2S = tempStartIdx;
+                        if (tempStartIdx !== -1 && endIdx_D2S !== -1) {
+                            let maxHigh = candles[tempStartIdx].high;
+                            for (let k = tempStartIdx; k <= endIdx_D2S; k++) {
+                                if (candles[k].high > maxHigh) {
+                                    maxHigh = candles[k].high;
+                                    startIdx_D2S = k;
+                                }
+                            }
+                        }
+                        
+                        let d2sPullbacks = scanRetroactivePullbacks(startIdx_D2S, endIdx_D2S, candles, "BEARISH");
+
+                        // 🔥 ROOT EXTREME FIX FOR D2S (Bearish)
+                        if (startIdx_D2S !== -1 && endIdx_D2S !== -1) {
+                            let rootConfirmLL = d2sPullbacks.length > 0 ? d2sPullbacks[0].confirmLL : validLL_D2S.price;
+                            d2sPullbacks.unshift({
+                                id: "ROOT_SWING_LH",
+                                validLH: candles[startIdx_D2S].high,
+                                validLHCandleIndex: startIdx_D2S,
+                                confirmLL: rootConfirmLL, // <--- परफेक्ट साइज़
+                                confirmLLCandleIndex: endIdx_D2S,
+                                breakCandleIndex: endIdx_D2S, 
+                                startTime: candles[startIdx_D2S].timestamp
+                            });
+                        }
+
+                        let poiZones_D2S = findSMCZones_Bearish(candles, d2sPullbacks, i);
+                        // =======================================================
+                        
+                        // --- DECISIONAL ZONES (D2S) ---
+                        if (poiZones_D2S.dof) {
+                            let mitTimeDof = findMitigationTime_Bearish(poiZones_D2S.dof.bottom, i, candles);
+                            activeDof_D2S = { type: "D-OF", displayName: "D-D2S(OF)", trend: "BEARISH", priceTop: poiZones_D2S.dof.top, priceBottom: poiZones_D2S.dof.bottom, startTime: poiZones_D2S.dof.startTime, endTime: mitTimeDof, isActive: true };
+                            signals.push(activeDof_D2S);
+                        }
+                        if (poiZones_D2S.dob) {
+                            let mitTimeDob = findMitigationTime_Bearish(poiZones_D2S.dob.bottom, i, candles);
+                            activeDob_D2S = { type: "D-OB", displayName: "D-D2S(OB)", trend: "BEARISH", priceTop: poiZones_D2S.dob.top, priceBottom: poiZones_D2S.dob.bottom, startTime: poiZones_D2S.dob.startTime, fvgTop: poiZones_D2S.dob.fvgTop, fvgBottom: poiZones_D2S.dob.fvgBottom, endTime: mitTimeDob, isActive: true };
+                            signals.push(activeDob_D2S);
+                        }
+
+                        // --- 🔥 PHASE 3: EXTREME ZONES (D2S) ---
+                        if (poiZones_D2S.eof) {
+                            let mitTimeEof = findMitigationTime_Bearish(poiZones_D2S.eof.bottom, i, candles);
+                            activeEof_D2S = { type: "E-OF", displayName: "E-D2S(OF)", trend: "BEARISH", priceTop: poiZones_D2S.eof.top, priceBottom: poiZones_D2S.eof.bottom, startTime: poiZones_D2S.eof.startTime, endTime: mitTimeEof, isActive: true };
+                            signals.push(activeEof_D2S);
+                        }
+                        if (poiZones_D2S.eob) {
+                            let mitTimeEob = findMitigationTime_Bearish(poiZones_D2S.eob.bottom, i, candles);
+                            activeEob_D2S = { type: "E-OB", displayName: "E-D2S(OB)", trend: "BEARISH", priceTop: poiZones_D2S.eob.top, priceBottom: poiZones_D2S.eob.bottom, startTime: poiZones_D2S.eob.startTime, fvgTop: poiZones_D2S.eob.fvgTop, fvgBottom: poiZones_D2S.eob.fvgBottom, endTime: mitTimeEob, isActive: true };
+                            signals.push(activeEob_D2S);
+                        }
+                    }
+                    
+                    refLL_D2S = null; tempLH_D2S = null; confirmedLH_D2S = null;
+                }
+            }
+            // =========================================================================
+            // 🔥 PHASE 1: COUNTER STRUCTURE ENDS HERE 🔥
+            // =========================================================================
+
+
+            // 🎯 6. PHASE 2 & 3: BOS(C) LOGIC FOR D2S (Counter Bearish)
+            if (idm_D2S_Taken && validLL_D2S !== null) {
+                // Peak (High) ट्रैक करो
+                if (curr.high > tempSwingHigh_D2S.price) {
+                    tempSwingHigh_D2S = { price: curr.high, time: curr.timestamp };
+                }
+                
+                let breakLevel_D2S = refX_D2S ? refX_D2S.price : validLL_D2S.price;
+                
+                if (curr.low < breakLevel_D2S) {
+                    if (curr.close < breakLevel_D2S) { // 🚀 Full Body Break (BOS-C)
+                        
+                        // 🔥 चेक करो कि क्या ब्रेक करने से पहले किसी ज़ोन को टैप किया था?
+                        // Bearish Counter Trend है, तो प्राइस ऊपर जाकर Supply Zone के 'Bottom' को टैप करेगा!
+                        let isTapped = false;
+                        if ((activeDob_D2S && tempSwingHigh_D2S.price >= activeDob_D2S.priceBottom) || 
+                            (activeDof_D2S && tempSwingHigh_D2S.price >= activeDof_D2S.priceBottom) ||
+                            (activeEob_D2S && tempSwingHigh_D2S.price >= activeEob_D2S.priceBottom) ||
+                            (activeEof_D2S && tempSwingHigh_D2S.price >= activeEof_D2S.priceBottom)) {
+                            isTapped = true;
+                        }
+                        
+                        if (isTapped) {
+                            signals.push({ type: "BOS(C)", trend: "BEARISH", price: validLL_D2S.price, startTime: validLL_D2S.time, endTime: curr.timestamp });
+                            if (refX_D2S) {
+                                signals.push({ type: "X(C)", sweptSide: "LOW", trend: "BEARISH", price: validLL_D2S.price, startTime: validLL_D2S.time, endTime: refX_D2S.time });
+                            }
+                        } else {
+                            // 🧹 बिना टैप किये ब्रेक किया: चार्ट से पुराने सारे D2S ज़ोन मिटा दो!
+                            signals = signals.filter(s => 
+                                s !== activeDob_D2S && s !== activeDof_D2S && 
+                                s !== activeEob_D2S && s !== activeEof_D2S
+                            );
+                            signals.push({ type: "BOS(C)", trend: "BEARISH", price: validLL_D2S.price, startTime: validLL_D2S.time, endTime: curr.timestamp });
+                        }
+                        
+                        // 🔥 D2S का ट्रेंड चालू रहेगा! अगले पुलबैक के लिए रीसेट करो
+                        idm_D2S_Taken = false;
+                        refLL_D2S = { price: curr.low, time: curr.timestamp };
+                        validLL_D2S = null; tempSwingHigh_D2S = null; 
+                        activeDob_D2S = null; activeDof_D2S = null; 
+                        activeEob_D2S = null; activeEof_D2S = null; 
+                        refX_D2S = null;
+                        
+                    } else { 
+                        // 🧹 Sweep हुआ (X-C)
+                        refX_D2S = { price: curr.low, time: curr.timestamp };
                     }
                 }
             }
@@ -2850,42 +4178,8 @@ const findMitigationTime_Bearish = (zoneBottomPrice, startIndex, candles) => {
         }
     }
     // अगर किसी ने टच नहीं किया (Unmitigated), तो चार्ट के अंत तक बॉक्स खींच दो
-    return candles[candles.length - 1].timestamp; 
+    return candles[candles.length - 1].timestamp;
 };
-
-
-/**
- * 🎯 Helper: Check if Order Flow (Pullback) is Mitigated
- */
-// const isOfMitigated = (pb, candles, currentIndex) => {
-//     // ब्रेकआउट कैंडल के बाद से IDM तक चेक करेंगे
-//     const startIdx = pb.breakCandleIndex + 1;
-//     for (let j = startIdx; j <= currentIndex; j++) {
-//         if (j >= candles.length) break;
-//         // बुलिश में: अगर कोई कैंडल OF के टॉप (confirmHH) को नीचे की तरफ टच कर दे
-//         if (candles[j].low <= pb.confirmHH) {
-//             return true; // OF मिटिगेट हो गया!
-//         }
-//     }
-//     return false; // OF अभी भी फ्रेश है!
-// };
-
-
-// /**
-//  * 🎯 Helper: Check if Bearish Order Flow (Pullback) is Mitigated
-//  */
-// const isOfMitigated_Bearish = (pb, candles, currentIndex) => {
-//     // ब्रेकआउट कैंडल के बाद से IDM तक चेक करेंगे
-//     const startIdx = pb.breakCandleIndex + 1;
-//     for (let j = startIdx; j <= currentIndex; j++) {
-//         if (j >= candles.length) break;
-//         // 🎯 Bearish में: अगर कोई कैंडल ऊपर उठकर OF के बॉटम (confirmLL) को टच कर दे
-//         if (candles[j].high >= pb.confirmLL) {
-//             return true; // OF मिटिगेट हो गया!
-//         }
-//     }
-//     return false; // OF अभी भी फ्रेश है!
-// };
 
 
 /**
@@ -2898,8 +4192,8 @@ const isOfMitigated = (pb, candles, currentIndex) => {
 
         // 🎯 SMC Rule: बुलिश OF का टॉप (confirmHH) है। 
         // प्राइस जैसे ही नीचे गिरकर इसे टच करेगा, ज़ोन मिटिगेट!
-        if (candles[j].low <= pb.confirmHH) { 
-            return true; 
+        if (candles[j].low <= pb.confirmHH) {
+            return true;
         }
     }
     return false; // टच नहीं हुआ, मतलब फ्रेश है!
@@ -2912,11 +4206,11 @@ const isOfMitigated_Bearish = (pb, candles, currentIndex) => {
     const startIdx = pb.breakCandleIndex + 1;
     for (let j = startIdx; j <= currentIndex; j++) {
         if (j >= candles.length) break;
-        
+
         // 🎯 SMC Rule: बेयरिश OF का बॉटम (confirmLL) है।
         // प्राइस जैसे ही ऊपर उठकर इसे टच करेगा, ज़ोन मिटिगेट!
-        if (candles[j].high >= pb.confirmLL) { 
-            return true; 
+        if (candles[j].high >= pb.confirmLL) {
+            return true;
         }
     }
     return false; // टच नहीं हुआ, मतलब फ्रेश है!
@@ -2926,12 +4220,12 @@ const isOfMitigated_Bearish = (pb, candles, currentIndex) => {
  * 🎯 E-OB / D-OB ढूँढने का "Swing HL to Ref HH" एडवांस लॉजिक
  */
 const findValidOrderBlock = (pullback, candles, currentIndex) => {
-    
+
     // 1. Start: "Swing HL" वाली कैंडल को ही exactly 1st कैंडल मानेंगे (No -1 logic)
-    const startIdx = pullback.validHLCandleIndex; 
-    
+    const startIdx = pullback.validHLCandleIndex;
+
     // 2. Limitation: FVG चेक करते हुए सिर्फ "Ref HH" (Breakout Candle) तक ही जाएंगे
-    const endIdx = pullback.breakCandleIndex; 
+    const endIdx = pullback.breakCandleIndex;
 
     // 1-1 कैंडल ऊपर बढ़ते जाएंगे
     for (let i = startIdx; i <= endIdx; i++) {
@@ -2942,7 +4236,7 @@ const findValidOrderBlock = (pullback, candles, currentIndex) => {
 
         // 3. FVG Check: क्या इस 1st कैंडल और 3rd कैंडल के बीच FVG (Imbalance) है?
         if (firstCandle.high < thirdCandle.low) {
-            
+
             // Mitigation चेक (क्या भविष्य में ये कैंडल टच हुई है?)
             let isMitigated = false;
             for (let j = i + 3; j <= currentIndex; j++) {
@@ -2976,10 +4270,10 @@ const findValidOrderBlock = (pullback, candles, currentIndex) => {
  * 🎯 E-OB / D-OB ढूँढने का BEARISH SMC रूल: "Swing High to Ref LL"
  */
 const findBearishValidOrderBlock = (pullback, candles, currentIndex) => {
-    
+
     // 1. Start: "Swing High" (Top) वाली कैंडल को 1st कैंडल मानेंगे
     const startIdx = pullback.validLHCandleIndex; // Bearish में Lower High (LH)
-    const endIdx = pullback.breakCandleIndex; 
+    const endIdx = pullback.breakCandleIndex;
 
     for (let i = startIdx; i <= endIdx; i++) {
         if (i + 2 >= candles.length) continue;
@@ -2989,13 +4283,13 @@ const findBearishValidOrderBlock = (pullback, candles, currentIndex) => {
 
         // 2. Bearish FVG Check: क्या 1st कैंडल का Low, 3rd कैंडल के High से ऊपर है? (Imbalance)
         if (firstCandle.low > thirdCandle.high) {
-            
+
             // Mitigation चेक (क्या भविष्य में मार्केट ऊपर आकर इसे टच किया है?)
             let isMitigated = false;
             for (let j = i + 3; j <= currentIndex; j++) {
                 if (j >= candles.length) break;
                 // 🎯 Bearish में कैंडल का High ज़ोन के Bottom (firstCandle.low) को टच करता है
-                if (candles[j].high >= firstCandle.low) { 
+                if (candles[j].high >= firstCandle.low) {
                     isMitigated = true;
                     break;
                 }
@@ -3006,7 +4300,7 @@ const findBearishValidOrderBlock = (pullback, candles, currentIndex) => {
                 return {
                     found: true,
                     // Bearish बॉक्स का Top (High) और Bottom (Low)
-                    price: { top: firstCandle.high, bottom: firstCandle.low }, 
+                    price: { top: firstCandle.high, bottom: firstCandle.low },
                     fvgZone: { top: firstCandle.low, bottom: thirdCandle.high },
                     startTime: firstCandle.timestamp,
                     candleIndex: i
@@ -3033,23 +4327,22 @@ const findSMCZones = (candles, pullbacksArray, currentIndex) => {
 
         if (obResult.found) {
             const mitigatedOF = isOfMitigated(pb, candles, currentIndex);
-            smcZones.eof = { type: "E-OF", top: pb.confirmHH, bottom: pb.validHL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb };
-            
-            // यहाँ 'obResult.startTime' का यूज़ करना बहुत ज़रूरी है
-            smcZones.eob = { 
-                type: "E-OB", 
-                top: obResult.price.high, 
-                bottom: obResult.price.low, 
-                startTime: obResult.startTime, // बॉक्स अब यहीं से शुरू होगा
-                fvgTop: obResult.fvgZone.top, 
-                fvgBottom: obResult.fvgZone.bottom 
+
+            // 🔥 THE FIX: अगर यह हमारा फेक 'ROOT' पुलबैक है, तो इसका विशालकाय E-OF ड्रा मत करो!
+            if (pb.id !== "ROOT_SWING_HL") {
+                smcZones.eof = { type: "E-OF", top: pb.confirmHH, bottom: pb.validHL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb };
+            }
+
+            smcZones.eob = {
+                type: "E-OB", top: obResult.price.high, bottom: obResult.price.low,
+                startTime: obResult.startTime, fvgTop: obResult.fvgZone.top, fvgBottom: obResult.fvgZone.bottom
             };
-            break; 
+            break;
         }
     }
 
     // ==============================================================
-    // 🔥 2. DECISIONAL ZONES (D-OF / D-OB) - UPDATED DYNAMIC LOGIC
+    // 🔥 2. DECISIONAL ZONES (D-OF / D-OB)
     // ==============================================================
     for (let i = pullbacksArray.length - 1; i >= 0; i--) {
         const pb = pullbacksArray[i];
@@ -3058,21 +4351,20 @@ const findSMCZones = (candles, pullbacksArray, currentIndex) => {
         const obResult = findValidOrderBlock(pb, candles, currentIndex);
 
         if (obResult.found) {
-            // 🎯 THE OVERLAP GUARD: अगर D-OB का टाइम E-OB से टकरा रहा है, तो इसे स्किप कर दो!
-            if (smcZones.eob && smcZones.eob.startTime === obResult.startTime) {
-                continue; 
-            }
+            if (smcZones.eob && smcZones.eob.startTime === obResult.startTime) continue;
 
             const mitigatedOF = isOfMitigated(pb, candles, currentIndex);
-            
-            smcZones.dof = { 
-                type: "D-OF", top: pb.confirmHH, bottom: pb.validHL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb 
-            };
 
-            smcZones.dob = { 
-                type: "D-OB", top: obResult.price.high, bottom: obResult.price.low, startTime: obResult.startTime, fvgTop: obResult.fvgZone.top, fvgBottom: obResult.fvgZone.bottom, data: pb
+            // 🔥 THE FIX: अगर यह फेक 'ROOT' पुलबैक है, तो इसका विशालकाय D-OF ड्रा मत करो!
+            if (pb.id !== "ROOT_SWING_HL") {
+                smcZones.dof = { type: "D-OF", top: pb.confirmHH, bottom: pb.validHL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb };
+            }
+
+            smcZones.dob = {
+                type: "D-OB", top: obResult.price.high, bottom: obResult.price.low,
+                startTime: obResult.startTime, fvgTop: obResult.fvgZone.top, fvgBottom: obResult.fvgZone.bottom, data: pb
             };
-            break; 
+            break;
         }
     }
     return smcZones;
@@ -3086,33 +4378,23 @@ const findSMCZones_Bearish = (candles, pullbacksArray, currentIndex) => {
     // ==============================================================
     // 🔥 1. EXTREME ZONES (E-OF / E-OB) - Bearish
     // ==============================================================
-    // यहाँ हम लूप लगा रहे हैं ताकि अगर पहला लेग फेल हो जाए, तो इंजन अगले लेग को चेक करे
     for (let i = 0; i < pullbacksArray.length; i++) {
         const pb = pullbacksArray[i];
         const obResult = findBearishValidOrderBlock(pb, candles, currentIndex);
 
         if (obResult.found) {
-            // 🎯 असली जादू यहाँ है: अब हम चेक कर रहे हैं कि OF मिटिगेट हुआ है या नहीं!
             const mitigatedOF = isOfMitigated_Bearish(pb, candles, currentIndex);
-            
-            smcZones.eof = { 
-                type: "E-OF", 
-                top: pb.validLH,       // Bearish pullback top (Supply)
-                bottom: pb.confirmLL,  // Bearish pullback bottom (Break point)
-                startTime: pb.startTime, 
-                isMitigated: mitigatedOF, // 🚀 अब यह डायनामिक है!
-                data: pb 
+
+            // 🔥 THE FIX: 'ROOT_SWING_LH' के लिए OF ड्रा नहीं होगा
+            if (pb.id !== "ROOT_SWING_LH") {
+                smcZones.eof = { type: "E-OF", top: pb.validLH, bottom: pb.confirmLL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb };
+            }
+
+            smcZones.eob = {
+                type: "E-OB", top: obResult.price.top, bottom: obResult.price.bottom,
+                startTime: obResult.startTime, fvgTop: obResult.fvgZone.top, fvgBottom: obResult.fvgZone.bottom
             };
-            
-            smcZones.eob = { 
-                type: "E-OB", 
-                top: obResult.price.top, 
-                bottom: obResult.price.bottom, 
-                startTime: obResult.startTime, 
-                fvgTop: obResult.fvgZone.top, 
-                fvgBottom: obResult.fvgZone.bottom 
-            };
-            break; 
+            break;
         }
     }
 
@@ -3121,7 +4403,34 @@ const findSMCZones_Bearish = (candles, pullbacksArray, currentIndex) => {
     // ==============================================================
     for (let i = pullbacksArray.length - 1; i >= 0; i--) {
         const pb = pullbacksArray[i];
-        
+        if (smcZones.eof && smcZones.eof.data.id === pb.id) break;
+
+        const obResult = findBearishValidOrderBlock(pb, candles, currentIndex);
+
+        if (obResult.found) {
+            if (smcZones.eob && smcZones.eob.startTime === obResult.startTime) continue;
+
+            const mitigatedOF = isOfMitigated_Bearish(pb, candles, currentIndex);
+
+            // 🔥 THE FIX: 'ROOT_SWING_LH' के लिए OF ड्रा नहीं होगा
+            if (pb.id !== "ROOT_SWING_LH") {
+                smcZones.dof = { type: "D-OF", top: pb.validLH, bottom: pb.confirmLL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb };
+            }
+
+            smcZones.dob = {
+                type: "D-OB", top: obResult.price.top, bottom: obResult.price.bottom,
+                startTime: obResult.startTime, fvgTop: obResult.fvgZone.top, fvgBottom: obResult.fvgZone.bottom, data: pb
+            };
+            break;
+        }
+    }
+
+    // ==============================================================
+    // 🔥 2. DECISIONAL ZONES (D-OF / D-OB) - BEARISH
+    // ==============================================================
+    for (let i = pullbacksArray.length - 1; i >= 0; i--) {
+        const pb = pullbacksArray[i];
+
         if (smcZones.eof && smcZones.eof.data.id === pb.id) break;
 
         const obResult = findBearishValidOrderBlock(pb, candles, currentIndex);
@@ -3129,22 +4438,22 @@ const findSMCZones_Bearish = (candles, pullbacksArray, currentIndex) => {
         if (obResult.found) {
             // 🎯 THE OVERLAP GUARD: अगर D-OB का टाइम E-OB से टकरा रहा है, तो इसे स्किप कर दो!
             if (smcZones.eob && smcZones.eob.startTime === obResult.startTime) {
-                continue; 
+                continue;
             }
 
             const mitigatedOF = isOfMitigated_Bearish(pb, candles, currentIndex);
-            
-            smcZones.dof = { 
-                type: "D-OF", top: pb.validLH, bottom: pb.confirmLL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb 
+
+            smcZones.dof = {
+                type: "D-OF", top: pb.validLH, bottom: pb.confirmLL, startTime: pb.startTime, isMitigated: mitigatedOF, data: pb
             };
 
-            smcZones.dob = { 
+            smcZones.dob = {
                 type: "D-OB", top: obResult.price.top, bottom: obResult.price.bottom, startTime: obResult.startTime, fvgTop: obResult.fvgZone.top, fvgBottom: obResult.fvgZone.bottom, data: pb
             };
-            break; 
+            break;
         }
     }
-    
+
     return smcZones;
 };
 
@@ -3200,3 +4509,4 @@ const checkPriceActionSignal = (htfCandles, ltfCandles, setupType, startingTrend
 };
 
 module.exports = { identifyMechanicalStructure, checkPriceActionSignal };
+
