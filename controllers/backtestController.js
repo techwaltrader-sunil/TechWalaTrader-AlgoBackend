@@ -2687,11 +2687,11 @@ const runBacktestSimulator = async (req, res) => {
             const paSettings = strategy.data?.priceActionSettings || {};
             const setupType = paSettings.setupType || "BOS (Break of Structure)";
             const userChosenTrend = paSettings.startingTrend || "AUTO"; 
-            const counterDepth = Number(paSettings.counterStructureDepth) || 0; // 🔥 NAYA: Depth Extract 
+            const counterDepth = Number(paSettings.counterStructureDepth) || 0; 
+            const structureMode = paSettings.structureMode || "MECHANICAL"; // 🔥 NAYA
 
-            // 🔥 FIX: checkPriceActionSignal को counterDepth भी भेजें
-            const paSignal = checkPriceActionSignal(recentHtfSlice, ltfSlice, setupType, userChosenTrend, counterDepth);
-            
+            // 🔥 FIX: checkPriceActionSignal को structureMode भी भेजें
+            const paSignal = checkPriceActionSignal(recentHtfSlice, ltfSlice, setupType, userChosenTrend, counterDepth, structureMode);
             priceActionLongSignal = paSignal.long;
             priceActionShortSignal = paSignal.short;
             
@@ -3977,10 +3977,11 @@ const runBacktestSimulator = async (req, res) => {
         if (strategy.type === "Price Action Based" || strategy.data?.type === "Price Action Based") {
             const paSettings = strategy.data?.priceActionSettings || strategy.priceActionSettings || {};
             const userChosenTrend = paSettings.startingTrend || "AUTO";
-            const counterDepth = Number(paSettings.counterStructureDepth) || 0; // 🔥 NAYA: Depth Extract
+            const counterDepth = Number(paSettings.counterStructureDepth) || 0; 
+            const structureMode = paSettings.structureMode || "MECHANICAL"; // 🔥 NAYA
             
             // चार्ट पर दिखाने के लिए पूरे 1 महीने के HTF (Manager) सिग्नल्स जनरेट करें
-            finalSmcSignals = identifyMechanicalStructure(cachedHtfData, userChosenTrend, counterDepth); // 🔥 यहाँ Depth पास कर दें!
+            finalSmcSignals = identifyMechanicalStructure(cachedHtfData, userChosenTrend, counterDepth, structureMode); // 🔥 structureMode पास करें
         }
 
         const backtestResult = {
