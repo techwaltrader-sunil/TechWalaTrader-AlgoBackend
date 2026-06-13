@@ -4234,7 +4234,12 @@ const runBacktestSimulator = async (req, res) => {
         if (period === 'Custom' && start && end) {
             startDate = new Date(start);
             endDate = new Date(end);
-            endDate.setHours(23, 59, 59, 999);
+            
+            // 🔥 THE FIX: अगर 'end' स्ट्रिंग में 'T' मौजूद है, तो इसका मतलब टाइम भी भेजा गया है।
+            // ऐसी स्थिति में setHours को स्किप करो ताकि यूज़र का चुना हुआ टाइम (जैसे 11:30 AM) सुरक्षित रहे।
+            if (typeof end === 'string' && !end.includes('T')) {
+                endDate.setHours(23, 59, 59, 999);
+            }
         }
         else if (period === '1M') startDate.setMonth(startDate.getMonth() - 1);
         else if (period === '3M') startDate.setMonth(startDate.getMonth() - 3);
