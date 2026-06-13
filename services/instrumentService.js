@@ -686,6 +686,8 @@ const getOptionSecurityId = (baseSymbol, spotPrice, strikeCriteria, strikeType, 
     if (targetBase === "NIFTY BANK") targetBase = "BANKNIFTY";
     else if (targetBase === "NIFTY FIN SERVICE") targetBase = "FINNIFTY";
     else if (targetBase === "NIFTY MID SELECT") targetBase = "MIDCPNIFTY";
+    else if (targetBase === "BSE SENSEX") targetBase = "SENSEX";   // 🔥 Sensex map
+    else if (targetBase === "BSE BANKEX") targetBase = "BANKEX";   // 🔥 Bankex map
 
     const suffix = ['CE', 'CALL'].includes(String(optionType).toUpperCase()) ? 'CE' : 'PE';
 
@@ -721,9 +723,11 @@ const getOptionSecurityId = (baseSymbol, spotPrice, strikeCriteria, strikeType, 
 
     const finalMatch = matches.find(m => m.expiry.startsWith(selectedExpiry)) || matches[0];
 
+    const isBSE = targetBase === "SENSEX" || targetBase === "BANKEX" || targetBase === "BSE SENSEX" || targetBase === "BSE BANKEX";
+
     return {
         id: finalMatch.id,
-        exchange: "NSE_FNO", 
+        exchange: isBSE ? "BSE_FNO" : "NSE_FNO",
         tradingSymbol: finalMatch.customSymbol || finalMatch.tradingSymbol,
         expiry: finalMatch.expiry.split(' ')[0],
         optionType: suffix === 'CE' ? 'CALL' : 'PUT',

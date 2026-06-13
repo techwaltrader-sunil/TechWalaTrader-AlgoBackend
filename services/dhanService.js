@@ -173,8 +173,12 @@ const fetchExpiredOptionData = async (clientId, apiSecret, spotSecurityId, strik
             if (Number(spotSecurityId) !== 13 || reqExpiry.toUpperCase() === "MONTHLY") { expFlag = "MONTH"; expCode = 1; }
             else if (reqExpiry.toUpperCase() === "NEXT WEEKLY" || reqExpiry.toUpperCase() === "NEXT WEEK") { expFlag = "WEEK"; expCode = 2; }
 
+            const targetExch = (Number(spotSecurityId) === 51 || Number(spotSecurityId) === 69) ? "BSE_FNO" : "NSE_FNO";
+
             const payload = {
-                exchangeSegment: "NSE_FNO", interval: String(interval), securityId: Number(spotSecurityId),
+                exchangeSegment: targetExch, 
+                interval: String(interval), 
+                securityId: Number(spotSecurityId),
                 instrument: "OPTIDX", expiryFlag: expFlag, expiryCode: expCode, strike: String(strike),
                 drvOptionType: optionType === "CE" ? "CALL" : "PUT", requiredData: ["open", "high", "low", "close", "volume"],
                 fromDate: fromDate, toDate: toDate
