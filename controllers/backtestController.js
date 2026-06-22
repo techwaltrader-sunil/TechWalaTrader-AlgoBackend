@@ -25,6 +25,8 @@ const { getNearestExpiryString } = require('../engine/utils/expiryCalculator'); 
 
 const { identifyMechanicalStructure, checkPriceActionSignal } = require('../engine/scanners/priceActionScanner.js');
 
+const SMCEntryEngine = require('../engine/scanners/SMCEntryEngine.js');
+
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 
@@ -546,6 +548,37 @@ const runBacktestSimulator = async (req, res) => {
 
 
         // =========================================================
+        // 🧠 INITIALIZE BACKTEST SNIPER ENGINE
+        // =========================================================
+        let backtestSniper = null;
+        if (strategy.type === "Price Action Based" || strategy.data?.type === "Price Action Based") {
+            const paConfig = strategy.data?.config || strategy.config || {};
+            
+            let userSlValue = strategyLegs[0]?.slValue || paConfig.maxSlPoints || 20;
+            let sniperMaxSl = Number(userSlValue);
+
+            // 🔥 THE FIX: DB से यूज़र का Exact Setup और Triggers निकालो
+            const userSmcSetup = strategyLegs[0]?.smcSetup || {};
+            const dbTriggers = userSmcSetup.entryTriggers || paConfig.entryTriggers || ['DIRECT ENTRY', 'POI ENTRY', 'SCOB ENTRY'];
+            
+            // 🛡️ Name Normalizer: UI से "ENTRY on POI 50%" आता है, लेकिन इंजन "POI 50% ENTRY" समझता है
+            const normalizedTriggers = dbTriggers.map(t => {
+                if(t === "ENTRY on POI 50%") return "POI 50% ENTRY";
+                if(t === "ENTRY on SCOB 50%") return "SCOB 50% ENTRY";
+                return t;
+            });
+
+            backtestSniper = new SMCEntryEngine({
+                maxSlPoints: sniperMaxSl, 
+                entryTriggers: normalizedTriggers, // 🔥 अब स्नाइपर सिर्फ यूज़र के भेजे रूल्स मानेगा!
+                htf: htfTimeframe + ' min',
+                ltf: ltfTimeframe + ' min'
+            });
+            console.log(`🔫 Sniper Engine Loaded! Max SL: ${sniperMaxSl} | User Triggers: ${normalizedTriggers.join(', ')}`);
+        }
+
+
+        // =========================================================
         // ⏱️ THE MAIN CANDLE LOOP
         // =========================================================
         console.log(`\n🔍 [DEBUG] Strategy: ${strategy.name} | Legs Count: ${strategyLegs.length} | Entry Time: ${sTime} | Symbol: ${upperSymbol}\n`);
@@ -648,53 +681,78 @@ const runBacktestSimulator = async (req, res) => {
 
        // 🔥 NAYA PRICE ACTION LOGIC (MULTI-TIMEFRAME SYNC)
         let priceActionLongSignal = false;
-        let priceActionShortSignal = false;// 🔥 NAYA PRICE ACTION LOGIC (MULTI-TIMEFRAME SYNC)
+        let priceActionShortSignal = false;
+        let sniperTriggerName = "Price Action"; 
+        let currentCandleSniperSignal = null; // 🔥 SL सेव करने के लिए
 
         if (strategy.type === "Price Action Based" || strategy.data?.type === "Price Action Based") {
-            
-            // 1. LTF Slice (Entry के लिए 1-मिनट डेटा)
             const ltfSlice = cachedData.slice(Math.max(0, i - 50), i + 1);
-            
-            // 🕒 THE MASTER FIX: 1-मिनट वाली कैंडल का असली समय (milliseconds)
             const currentLtfTimeMs = new Date(cachedData[i].timestamp).getTime();
-            
-            // 2. HTF Slice (Trend के लिए) - BULLETPROOF TIME SYNC
             const periodMs = parseInt(htfTimeframe) * 60 * 1000;
-            
-            // 🔥 जादू यहाँ है: hCandle.blockTime पहले से milliseconds है!
-            // hCandle.blockTime + periodMs का मतलब है कैंडल के 'Close' होने का समय
             const htfSlice = cachedHtfData.filter(hCandle => (hCandle.blockTime + periodMs) <= currentLtfTimeMs);
-            
             const recentHtfSlice = htfSlice.slice(-1000);
 
             const paSettings = strategy.data?.priceActionSettings || {};
-            const setupType = paSettings.setupType || "BOS (Break of Structure)";
-            const userChosenTrend = paSettings.startingTrend || "AUTO"; 
-            const counterDepth = Number(paSettings.counterStructureDepth) || 0; 
-            const structureMode = paSettings.structureMode || "MECHANICAL"; 
-            
-            // 🔥 THE NEW ADDITION: UI से Strict Decisional और Strict Counter की वैल्यू निकालें
             const strictDecisional = paSettings.strictDecisional === true; 
-            
-            // 🔥 THE LOGIC SYNC: अगर Main Strict है, तो Counter भी हमेशा Strict (True) ही रहेगा! (Ghost State Bug Killed)
             const strictCounter = strictDecisional ? true : (paSettings.strictCounter !== false);
 
-            const majorOnly = paSettings.majorOnly === true;
-
-            
-
-            // 🔥 FIX: checkPriceActionSignal को strictDecisional (7th) और strictCounter (8th) पैरामीटर भेजें
-            const paSignal = checkPriceActionSignal(
-                recentHtfSlice, ltfSlice, setupType, userChosenTrend, counterDepth, 
-                structureMode, strictDecisional, strictCounter, 
-                showD2S_DOB, showD2S_DOF, showD2S_EOB, showD2S_EOF
+            const signals = identifyMechanicalStructure(
+                recentHtfSlice, paSettings.startingTrend || "AUTO", Number(paSettings.counterStructureDepth) || 0, 
+                paSettings.structureMode || "MECHANICAL", strictDecisional, strictCounter, 
+                paSettings.majorOnly === true, showD2S_DOB, showD2S_DOF, showD2S_EOB, showD2S_EOF
             );
-            priceActionLongSignal = paSignal.long;
-            priceActionShortSignal = paSignal.short;
             
-            // DEBUG लॉग
-            if(i % 100 === 0) {
-                console.log(`🔎 SMC Sync | Time: ${dateStr} ${h}:${m} | HTF Candles: ${recentHtfSlice.length} | L=${priceActionLongSignal} S=${priceActionShortSignal} | StrictD-OB: ${strictDecisional} | StrictCounter: ${strictCounter}`);
+            let currentTrend = "BULLISH";
+            if (signals.length > 0) {
+                 const lastMajor = signals.slice().reverse().find(s => s.type === "CHoCH" || s.type === "BOS");
+                 if (lastMajor) currentTrend = lastMajor.trend;
+            }
+
+            // 🔥 NAYA PRICE ACTION LOGIC (MULTI-TIMEFRAME SYNC)
+            let activeSetupZone = null;
+            let zoneTrend = currentTrend; 
+            
+            // 🔥 THE GATEKEEPER FIX: यूज़र ने DB में जो Setup (D-OB) चुना है, उसे निकालो
+            const userSmcSetup = strategyLegs[0]?.smcSetup || {};
+            const allowedSetup = userSmcSetup.setup; // e.g., "D-OB"
+
+            const activeZones = signals.filter(sig => {
+                if (!sig.isActive) return false;
+                
+                // 🚫 Strict Block: अगर यूज़र ने "D-OB" चुना है, तो "E-OB" या बाकी सबको रिजेक्ट कर दो!
+                // (अगर allowedSetup मौजूद है, और सिग्नल का टाइप उससे मैच नहीं करता, तो हटा दो)
+                if (allowedSetup && sig.type !== allowedSetup) return false; 
+                
+                return ["E-OB", "D-OB", "E-OF", "D-OF"].includes(sig.type);
+            });
+            
+            if (activeZones.length > 0) {
+                const nearestZone = activeZones[activeZones.length - 1]; 
+                
+                // 🔥 लाल ज़ोन/हरे ज़ोन का असली ट्रेंड निकालें
+                if (nearestZone.trend) zoneTrend = nearestZone.trend;
+                else if (nearestZone.isBullish !== undefined) zoneTrend = nearestZone.isBullish ? "BULLISH" : "BEARISH";
+                else {
+                    const currentClose = ltfSlice[ltfSlice.length - 1].close;
+                    zoneTrend = (nearestZone.priceBottom > currentClose) ? "BEARISH" : "BULLISH";
+                }
+
+                activeSetupZone = { top: nearestZone.priceTop, bottom: nearestZone.priceBottom, type: nearestZone.type, trend: zoneTrend };
+            }
+
+            const currentCandle = ltfSlice[ltfSlice.length - 1];
+
+            if (backtestSniper) {
+                const sniperSignal = backtestSniper.processLiveMarket(currentCandle.close, currentCandle, activeSetupZone, zoneTrend);
+
+                if (sniperSignal && (sniperSignal.action === 'BUY' || sniperSignal.action === 'SELL')) {
+                    currentCandleSniperSignal = sniperSignal; // 🔥 सिग्नल सेव कर लिया
+                    if (sniperSignal.trendType === "LONG" || sniperSignal.trendType === "BULLISH") priceActionLongSignal = true;
+                    if (sniperSignal.trendType === "SHORT" || sniperSignal.trendType === "BEARISH") priceActionShortSignal = true;
+                    
+                    sniperTriggerName = `${sniperSignal.type} [${activeSetupZone.type}]`; 
+                    console.log(`🎯 [BACKTEST SNIPER] Triggered via: ${sniperTriggerName} at ₹${sniperSignal.entryPrice} | Date: ${dateStr} | Time: ${h}:${m}`);
+                }
             }
         }
 
@@ -1051,17 +1109,45 @@ const runBacktestSimulator = async (req, res) => {
                                 if (tpValue > 0 && spotClosePrice >= entrySpot + reqSpotMoveTp) spotTriggeredTp = true;
                             }
                         }
+
+                        // 🔥 THE SMC SPOT SL OVERRIDE (Super Accurate Risk Management) 🔥
+                        if (trade.spotSlPrice && trade.spotSlPrice > 0) {
+                            
+                            // A. पुराने Delta वाले SL को रीसेट कर दो (क्योंकि SMC में Delta SL काम का नहीं है)
+                            spotTriggeredSl = false; 
+
+                            // B. अपना नया SMC Spot Chart वाला SL लगाओ
+                            if (optType === "CE" && spotClosePrice <= trade.spotSlPrice) {
+                                spotTriggeredSl = true; // CALL के लिए: Spot अगर SL लाइन से नीचे गिरा
+                            }
+                            if (optType === "PE" && spotClosePrice >= trade.spotSlPrice) {
+                                spotTriggeredSl = true; // PUT के लिए: Spot अगर SL लाइन से ऊपर गया
+                            }
+                        }
                     }
 
                     // 🔥 THE FIX: Added isLegTrailed condition
-                    if ((!isSlMovedToCost && slValue > 0) || isSlMovedToCost || isLegTrailed) {
-                        if (spotTriggeredSl || (trade.transaction === "BUY" && trade.currentLow <= slPrice) || (trade.transaction === "SELL" && trade.currentHigh >= slPrice)) {
-                            trade.markedForExit = true;
-                            // 🔥 Naya naam taki logs aur UI me saaf pata chale ki Trail SL hit hua hai
-                            trade.exitReason = isSlMovedToCost ? "SL_MOVED_TO_COST" : (isLegTrailed ? "LEG_TRAIL_SL" : "STOPLOSS");
-                            trade.exitPrice = slPrice;
-                            triggerReasonForExitAll = trade.exitReason;
+                    // 🔥 THE ULTIMATE PNL & SL FIX 🔥
+                    let isNormalSlHit = false;
+                    
+                    // अगर UI में SL 0 से ज्यादा है या फिर Trailing/Cost SL एक्टिव है, तभी Premium का Low/High चेक करो!
+                    if (slValue > 0 || isSlMovedToCost || isLegTrailed) {
+                        if (trade.transaction === "BUY" && trade.currentLow <= slPrice) isNormalSlHit = true;
+                        if (trade.transaction === "SELL" && trade.currentHigh >= slPrice) isNormalSlHit = true;
+                    }
+
+                    if (spotTriggeredSl || isNormalSlHit) {
+                        trade.markedForExit = true;
+                        trade.exitReason = isSlMovedToCost ? "SL_MOVED_TO_COST" : (isLegTrailed ? "LEG_TRAIL_SL" : "STOPLOSS");
+                        
+                        // 🔥 THE 0.00 PnL KILLER: अगर SMC का Spot SL हिट हुआ है, तो एग्जिट प्राइस में कैंडल का रियल क्लोज़ भाव डालो!
+                        if (spotTriggeredSl && !isSlMovedToCost && !isLegTrailed) {
+                            trade.exitPrice = trade.currentPrice; // ✅ FIX: currentPrice use karna hai
+                        } else {
+                            trade.exitPrice = slPrice; 
                         }
+                        
+                        triggerReasonForExitAll = trade.exitReason;
                     }
 
                     if (tpValue > 0 && !trade.markedForExit) {
@@ -1517,7 +1603,7 @@ const runBacktestSimulator = async (req, res) => {
                     if (pnl > 0) { winTrades++; if (pnl > maxProfitTrade) maxProfitTrade = pnl; }
                     else { lossTrades++; if (pnl < maxLossTrade) maxLossTrade = pnl; }
 
-                    console.log(`🎯 [${completedTrade.exitType}] Date: ${dateStr} | Symbol: ${trade.symbol} | Exit: ${trade.exitPrice.toFixed(2)} | PnL: ${pnl.toFixed(2)}`);
+                    console.log(`🎯 [${completedTrade.exitType}] Date: ${dateStr} | Time: ${h}:${m} | Symbol: ${trade.symbol} | Exit: ${trade.exitPrice.toFixed(2)} | PnL: ${pnl.toFixed(2)}`);
                 });
 
                 openTrades = remainingTrades;
@@ -1613,7 +1699,8 @@ const runBacktestSimulator = async (req, res) => {
                                     console.log(`⚠️ Exact exit fetch failed for ${trade.symbol}, using fallback.`);
                                 }
                             }
-                            // =========================================================================
+    
+
 
                             const pnl = calcTradePnL(trade.entryPrice, exitP, trade.quantity, trade.transaction);
 
@@ -1722,6 +1809,11 @@ const runBacktestSimulator = async (req, res) => {
                     } else {
                         shouldAttemptEntry = true;
                         activeSignalType = finalLongSignal ? "LONG" : "SHORT";
+
+                        // 🔥 THE LINK: स्नाइपर का नाम यहाँ पास कर दो!
+                        if (strategy.type === "Price Action Based" || strategy.data?.type === "Price Action Based") {
+                            currentEntryReason = sniperTriggerName; 
+                        }
                     }
                 }
 
@@ -1875,7 +1967,8 @@ const runBacktestSimulator = async (req, res) => {
                             lastKnownPremium: finalEntryPrice,
                             markedForExit: false,
                             currentTrailedSL: null,
-                            entryReason: currentEntryReason // 🔥 NAYA TAG (Ise Jodna Hai)
+                            spotSlPrice: currentCandleSniperSignal ? currentCandleSniperSignal.spotSlPrice : 0, // 🔥 SPOT SL SAVE HO GAYA
+                            entryReason: currentEntryReason
                         });
                         tempLtps.push(finalEntryPrice);
                     }
