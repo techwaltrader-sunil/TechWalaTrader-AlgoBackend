@@ -27,7 +27,7 @@
 //         while (expiryDate.getDay() !== targetDay) {
 //             expiryDate.setDate(expiryDate.getDate() + 1);
 //         }
-        
+
 //         if (upperReqExpiry === "NEXT WEEKLY" || upperReqExpiry === "NEXT WEEK") {
 //             expiryDate.setDate(expiryDate.getDate() + 7);
 //         }
@@ -35,7 +35,7 @@
 //         // 🎯 RULE 2: All Other Indices OR NIFTY Monthly -> Last Tuesday of the Month
 //         const lastDayOfMonth = new Date(expiryDate.getFullYear(), expiryDate.getMonth() + 1, 0);
 //         expiryDate = new Date(lastDayOfMonth);
-        
+
 //         // पीछे जाकर उस महीने का आख़िरी मंगलवार ढूँढें
 //         while (expiryDate.getDay() !== targetDay) {
 //             expiryDate.setDate(expiryDate.getDate() - 1);
@@ -60,7 +60,7 @@
 //     const formattedDate = `${String(expiryDate.getDate()).padStart(2, '0')}${expiryDate.toLocaleString('en-US', { month: 'short' }).toUpperCase()}${String(expiryDate.getFullYear()).slice(-2)}`;
 //     const today = new Date(); 
 //     today.setHours(0, 0, 0, 0);
-    
+
 //     const expDateForCheck = new Date(expiryDate); 
 //     expDateForCheck.setHours(0, 0, 0, 0);
 
@@ -88,8 +88,8 @@ const { isTradingHoliday } = require('./holidaysCalendar'); // Holiday wali file
 // 🔥 1. WEEKLY EXPIRY RULES (Time Machine) 🔥
 const WEEKLY_EXPIRY_RULES = {
     "NIFTY": [
-        { start: "2000-01-01", end: "2026-02-28", dayOfWeek: 4 }, // Pehle Thursday (4) tha
-        { start: "2026-03-01", end: "2099-12-31", dayOfWeek: 2 }  // Ab Tuesday (2) ho gaya hai
+        { start: "2000-01-01", end: "2025-08-31", dayOfWeek: 4 }, // 31 Aug 2025 tak Thursday (4)
+        { start: "2025-09-01", end: "2099-12-31", dayOfWeek: 2 }  // 1 Sep 2025 se Tuesday (2)
     ],
     "BANKNIFTY": [
         { start: "2000-01-01", end: "2023-09-02", dayOfWeek: 4 }, // Pehle Thursday tha
@@ -119,7 +119,7 @@ function getWeeklyTargetDay(symbol, dateStr) {
     if (cleanSymbol === "NIFTY MID SELECT") cleanSymbol = "MIDCPNIFTY";
     if (cleanSymbol === "BSE SENSEX") cleanSymbol = "SENSEX";
 
-    const rules = WEEKLY_EXPIRY_RULES[cleanSymbol] || WEEKLY_EXPIRY_RULES["NIFTY"]; 
+    const rules = WEEKLY_EXPIRY_RULES[cleanSymbol] || WEEKLY_EXPIRY_RULES["NIFTY"];
     const currentDate = new Date(dateStr);
 
     for (let rule of rules) {
@@ -151,7 +151,7 @@ const getNearestExpiryString = (tradeDateStr, symbolStr, reqExpiry = "WEEKLY") =
     let expiryDate = new Date(d);
 
     let upperReqExpiry = reqExpiry.toUpperCase();
-    
+
     // ====================================================================
     // 🛡️ THE SEBI AUTO-CORRECTOR (Safety Net)
     // Agar user ne galti se discontinued index ka WEEKLY select kar liya hai, 
@@ -161,7 +161,7 @@ const getNearestExpiryString = (tradeDateStr, symbolStr, reqExpiry = "WEEKLY") =
         let checkSym = symbolStr.toUpperCase().replace(' 50', '').replace(' BANK', '').trim();
         if (checkSym === "NIFTY FINANCIAL SERVICES") checkSym = "FINNIFTY";
         if (checkSym === "NIFTY MID SELECT") checkSym = "MIDCPNIFTY";
-        
+
         if (checkSym === "BANKNIFTY" && d > new Date("2024-11-13")) upperReqExpiry = "MONTHLY";
         if (checkSym === "FINNIFTY" && d > new Date("2024-11-19")) upperReqExpiry = "MONTHLY";
         if (checkSym === "MIDCPNIFTY" && d > new Date("2024-11-18")) upperReqExpiry = "MONTHLY";
@@ -171,10 +171,10 @@ const getNearestExpiryString = (tradeDateStr, symbolStr, reqExpiry = "WEEKLY") =
         // 🎯 RULE 1: WEEKLY LOGIC (Only runs if legally active)
         const targetDay = getWeeklyTargetDay(symbolStr, tradeDateStr);
         let daysToTarget = targetDay - expiryDate.getDay();
-        
+
         if (daysToTarget < 0) daysToTarget += 7;
         expiryDate.setDate(expiryDate.getDate() + daysToTarget);
-        
+
         if (upperReqExpiry === "NEXT WEEKLY" || upperReqExpiry === "NEXT WEEK") {
             expiryDate.setDate(expiryDate.getDate() + 7);
         }
@@ -183,7 +183,7 @@ const getNearestExpiryString = (tradeDateStr, symbolStr, reqExpiry = "WEEKLY") =
         const targetDay = getMonthlyTargetDay(symbolStr, tradeDateStr);
         const lastDayOfMonth = new Date(expiryDate.getFullYear(), expiryDate.getMonth() + 1, 0);
         expiryDate = new Date(lastDayOfMonth);
-        
+
         while (expiryDate.getDay() !== targetDay) {
             expiryDate.setDate(expiryDate.getDate() - 1);
         }
@@ -203,12 +203,27 @@ const getNearestExpiryString = (tradeDateStr, symbolStr, reqExpiry = "WEEKLY") =
     }
 
     const formattedDate = `${String(expiryDate.getDate()).padStart(2, '0')}${expiryDate.toLocaleString('en-US', { month: 'short' }).toUpperCase()}${String(expiryDate.getFullYear()).slice(-2)}`;
-    const today = new Date(); 
+    const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     return `${(expiryDate < today) ? "EXP" : "Upcoming EXP"} ${formattedDate}`;
+};
+
+
+// 🔥 NEW: Direct Boolean Checker for Margin Calculator & Gamma Blast Rules
+const isThisExpiryDay = (tradeDateStr, symbolStr, reqExpiry = "WEEKLY") => {
+    // Current date ko format karo (DDMMMYY)
+    const d = new Date(tradeDateStr);
+    const formattedCurrentDate = `${String(d.getDate()).padStart(2, '0')}${d.toLocaleString('en-US', { month: 'short' }).toUpperCase()}${String(d.getFullYear()).slice(-2)}`;
+
+    // Apne hi master function se expiry string nikalo
+    const expiryStringOutput = getNearestExpiryString(tradeDateStr, symbolStr, reqExpiry);
+
+    // Agar output string me aaj ki date shamil hai, matlab aaj hi Expiry (0 DTE) hai!
+    return expiryStringOutput.includes(formattedCurrentDate);
 };
 
 module.exports = {
     getNearestExpiryString,
+    isThisExpiryDay,
 };
