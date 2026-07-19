@@ -3583,10 +3583,30 @@ const runBacktestSimulator = async (req, res) => {
         let currentDayTracker = "";
         let newDaysToCache = [];
 
-        const calculateATM = (spotPrice, symbolStr) => {
-            if (symbolStr.includes("BANK")) return Math.round(spotPrice / 100) * 100;
-            return Math.round(spotPrice / 50) * 50;
+
+         // 🔥 CENTRALIZED STRIKE STEP SIZE MANAGER
+        const getStrikeStepSize = (symbol) => {
+            if (!symbol) return 50; // Fallback default
+            
+            const upperSymbol = symbol.toUpperCase();
+            
+            if (upperSymbol.includes("SENSEX") || upperSymbol.includes("BANKEX")) return 100;
+            if (upperSymbol.includes("BANKNIFTY")) return 100; // NIFTY BANK
+            if (upperSymbol.includes("FINNIFTY")) return 50;   // NIFTY FIN SERVICE
+            if (upperSymbol.includes("MIDCPNIFTY")) return 25;   // NIFTY MID SELECT
+            
+            return 50; // Default for NIFTY 50
         };
+
+        // 🔥 UPDATED ATM CALCULATOR (Using Centralized Step Manager)
+        const calculateATM = (spotPrice, symbolStr) => {
+            // 1. Centralized function se pehle correct step size nikalo (e.g., 25, 50, ya 100)
+            const step = getStrikeStepSize(symbolStr);
+            
+            // 2. Us step size ke hisaab se round-off kar do
+            return Math.round(spotPrice / step) * step;
+        };
+
 
         const calcTradePnL = (entryP, exitP, qty, action) => {
             if (action === "BUY") return (exitP - entryP) * qty;
@@ -3949,9 +3969,11 @@ const runBacktestSimulator = async (req, res) => {
                     
                     const atmStrike = calculateATM(spotClosePrice, upperSymbol);
                     
-                    let stepSize = 50;
-                    if (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) stepSize = 100;
-                    else if (upperSymbol.includes("MID")) stepSize = 25;
+                    // let stepSize = 50;
+                    // if (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) stepSize = 100;
+                    // else if (upperSymbol.includes("MID")) stepSize = 25;
+
+                    const stepSize = getStrikeStepSize(upperSymbol);
 
                     // 🔥 THE PREMIUM DIVISOR (Current 4, dynamic later)
                     const premiumDivisor = 4; 
@@ -4298,9 +4320,11 @@ const runBacktestSimulator = async (req, res) => {
                         let finalRealPnL = 0;
                         const currentAtmExit = calculateATM(spotClosePrice, upperSymbol);
                         
-                        let stepSize = 50;
-                        if (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) stepSize = 100;
-                        else if (upperSymbol.includes("MID")) stepSize = 25;
+                        // let stepSize = 50;
+                        // if (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) stepSize = 100;
+                        // else if (upperSymbol.includes("MID")) stepSize = 25;
+
+                        const stepSize = getStrikeStepSize(upperSymbol);
 
                         for (let idx = 0; idx < ratioEngine.activeLegs.length; idx++) {
                             let leg = ratioEngine.activeLegs[idx];
@@ -4507,7 +4531,10 @@ const runBacktestSimulator = async (req, res) => {
                             async () => {
                                 console.log(`\n📡 [API CALL] Cross-verifying REAL MTM from Broker...`);
                                 let tempRealPnL = 0;
-                                let stepSize = upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX") ? 100 : (upperSymbol.includes("MID") ? 25 : 50);
+
+                                // let stepSize = upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX") ? 100 : (upperSymbol.includes("MID") ? 25 : 50);
+                                let stepSize = getStrikeStepSize(upperSymbol);
+
                                 const currentAtmCheck = calculateATM(spotClosePrice, upperSymbol);
 
                                 for (let idx = 0; idx < ratioEngine.activeLegs.length; idx++) {
@@ -5250,7 +5277,9 @@ const runBacktestSimulator = async (req, res) => {
                                     fromDate: dateStr, toDate: dateStr
                                 };
 
-                                const stepSize = (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) ? 100 : 50;
+                                // const stepSize = (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) ? 100 : 50;
+
+                                const stepSize = getStrikeStepSize(upperSymbol);
 
                                 let dhanActualAtm = null;
 
@@ -5424,11 +5453,24 @@ const runBacktestSimulator = async (req, res) => {
                                 if (!trade.exitPrice) {
                                     const currentAtmAtFallback = calculateATM(spotClosePrice, upperSymbol);
 
-                                    let stepSize = 50; let decayFactor = 1.10; let baseMultiplier = 0.0125;
+                                    // let stepSize = 50; let decayFactor = 1.10; let baseMultiplier = 0.0125;
+                                    // if (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) {
+                                    //     stepSize = 100; decayFactor = 1.15; baseMultiplier = 0.013;
+                                    // } else if (upperSymbol.includes("MID")) {
+                                    //     stepSize = 25; decayFactor = 1.08; baseMultiplier = 0.012;
+                                    // }
+
+                                    // 🔥 NAYA FIX: Centralized function se Step Size liya gaya
+                                    const stepSize = getStrikeStepSize(upperSymbol); 
+                                    
+                                    // Baki ke default Fallback Multipliers (decay aur base) waise hi rahenge
+                                    let decayFactor = 1.10; 
+                                    let baseMultiplier = 0.0125;
+                                    
                                     if (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) {
-                                        stepSize = 100; decayFactor = 1.15; baseMultiplier = 0.013;
+                                        decayFactor = 1.15; baseMultiplier = 0.013;
                                     } else if (upperSymbol.includes("MID")) {
-                                        stepSize = 25; decayFactor = 1.08; baseMultiplier = 0.012;
+                                        decayFactor = 1.08; baseMultiplier = 0.012;
                                     }
 
                                     const stepDiff = Math.round(Math.abs(fixedStrike - currentAtmAtFallback) / stepSize);
@@ -5593,7 +5635,11 @@ const runBacktestSimulator = async (req, res) => {
                                     else if (reqExpiry.toUpperCase() === "NEXT WEEKLY" || reqExpiry.toUpperCase() === "NEXT WEEK") { expCode = 2; }
 
                                     const fixedStrike = Number(trade.optionConfig.strike);
-                                    const stepSize = (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) ? 100 : 50;
+
+                                    // const stepSize = (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) ? 100 : 50;
+
+                                    const stepSize = getStrikeStepSize(upperSymbol);
+
                                     const referenceAtm = calculateATM(spotClosePrice, upperSymbol);
 
                                     // Calculate ITM/OTM steps based on current Spot ATM
