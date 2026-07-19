@@ -1177,6 +1177,28 @@
 
 //                         // 🔥 6. THEORETICAL PRICE FORMULA
 //                         let theoreticalPrice = leg.entryPrice + (spotChange * avgDelta) - thetaDecay;
+                        
+//                         // -------------------------------------------------------------
+//                         // 🌪️ THE SMART IV CRUSH SIMULATOR (Sunil Bhai's Concept)
+//                         // -------------------------------------------------------------
+//                         let intrinsicForCrush = leg.type === 'CE' ? Math.max(0, spotClosePrice - leg.strike) : Math.max(0, leg.strike - spotClosePrice);
+//                         let currentExtrinsic = Math.max(0, theoreticalPrice - intrinsicForCrush); 
+//                         let ivCrushFactor = 1.0;
+
+//                         // Agar time 2:30 PM (870 minutes) ke baad ka hai, to premium crush hona shuru hoga
+//                         if (timeInMinutes >= 870) {
+//                             let crushDuration = timeInMinutes - 870; // 0 se 60 minutes tak (3:30 baje tak)
+//                             let crushRatio = Math.min(1, crushDuration / 60); 
+
+//                             // Expiry ke din 95% hawa niklegi, normal din 55-60% hawa niklegi
+//                             let maxCrushLimit = intradayDte === 0 ? 0.95 : 0.55; 
+//                             ivCrushFactor = 1.0 - (crushRatio * maxCrushLimit);
+//                         }
+
+//                         // Extrinsic ko crush karke wapas Intrinsic me jod do
+//                         let crushedExtrinsic = currentExtrinsic * ivCrushFactor;
+//                         theoreticalPrice = intrinsicForCrush + crushedExtrinsic;
+//                         // -------------------------------------------------------------
 
 //                         // 🔥 7. THE INTRINSIC FLOOR (Option kabhi apni asli value se sasta nahi ho sakta)
 //                         let intrinsic = leg.type === 'CE' 
@@ -1256,18 +1278,24 @@
 //                                 if (realExitPrice !== null) break; // Perfect strike found!
 //                             }
 
-//                             // 🔥 3. DYNAMIC THEORETICAL MATH (Jab API completely fail ho jaye)                          
-//                             if (realExitPrice === null) {
-//                                 // A. The Intrinsic Floor (Kabhi negative nahi hoga)
-//                                 let intrinsic = leg.type === 'CE' 
-//                                     ? Math.max(0, spotClosePrice - leg.strike) 
-//                                     : Math.max(0, leg.strike - spotClosePrice);
+//                             // 🔥 3. DTE & EXPIRY CALCULATION (Global Scope for this loop)
+//                             const reqExp = riskSettings?.expiryType || "WEEKLY";
+//                             const expiryStrRaw = getNearestExpiryString(dateStr, upperSymbol, reqExp);
+//                             const expDateStr = expiryStrRaw.split(' ').pop(); 
+//                             const expDay = parseInt(expDateStr.substring(0, 2));
+//                             const expMonthStr = expDateStr.substring(2, 5);
+//                             const expYear = parseInt("20" + expDateStr.substring(5, 7));
+//                             const monthMap = { "JAN":0, "FEB":1, "MAR":2, "APR":3, "MAY":4, "JUN":5, "JUL":6, "AUG":7, "SEP":8, "OCT":9, "NOV":10, "DEC":11 };
+                            
+//                             const expDateObj = new Date(expYear, monthMap[expMonthStr], expDay);
+//                             const tradeDateObj = new Date(dateStr);
+//                             const dte = Math.max(0, Math.ceil((expDateObj.getTime() - tradeDateObj.getTime()) / (1000 * 3600 * 24)));
+//                             const isExpiryDay = (dte === 0);
 
-//                                 // B. Base & Spot calculations
+//                             if (realExitPrice === null) {
+//                                 let intrinsic = leg.type === 'CE' ? Math.max(0, spotClosePrice - leg.strike) : Math.max(0, leg.strike - spotClosePrice);
 //                                 const baseSpot = ratioEngine.entrySpotPrice || ratioEngine.activeLegs[0].strike;
 //                                 const spotChange = spotClosePrice - baseSpot;
-                                
-//                                 // C. The Average Gamma-Delta Logic
 //                                 const GAMMA_SCALE = upperSymbol.includes("BANK") ? 1500 : 800;
                                 
 //                                 let entryDelta = leg.type === 'CE' ? 0.50 + ((baseSpot - leg.strike) / GAMMA_SCALE) : -0.50 + ((baseSpot - leg.strike) / GAMMA_SCALE);
@@ -1278,20 +1306,6 @@
 
 //                                 let avgDelta = (entryDelta + currentDelta) / 2;
 
-//                                 // D. DTE (Days To Expiry) & Theta Calculation
-//                                 const reqExp = riskSettings?.expiryType || "WEEKLY";
-//                                 const expiryStrRaw = getNearestExpiryString(dateStr, upperSymbol, reqExp);
-//                                 const expDateStr = expiryStrRaw.split(' ').pop(); 
-//                                 const expDay = parseInt(expDateStr.substring(0, 2));
-//                                 const expMonthStr = expDateStr.substring(2, 5);
-//                                 const expYear = parseInt("20" + expDateStr.substring(5, 7));
-//                                 const monthMap = { "JAN":0, "FEB":1, "MAR":2, "APR":3, "MAY":4, "JUN":5, "JUL":6, "AUG":7, "SEP":8, "OCT":9, "NOV":10, "DEC":11 };
-                                
-//                                 const expDateObj = new Date(expYear, monthMap[expMonthStr], expDay);
-//                                 const tradeDateObj = new Date(dateStr);
-//                                 let dte = Math.max(0, Math.ceil((expDateObj.getTime() - tradeDateObj.getTime()) / (1000 * 3600 * 24)));
-
-//                                 // E. Non-Linear Daily Theta Curve (Weekend adjusted)
 //                                 let dailyThetaPct = 0.08; 
 //                                 if (dte === 0) dailyThetaPct = 0.85;      
 //                                 else if (dte === 1) dailyThetaPct = 0.50; 
@@ -1301,56 +1315,86 @@
 //                                 else if (dte === 5) dailyThetaPct = 0.15; 
 //                                 else if (dte === 6) dailyThetaPct = 0.10;
 
-//                                 // F. Intraday Decay Factor (Kitna time market me nikla)
-//                                 const activeStartMin = ratioEngine.tradeStartTime || 567; // default 9:27
+//                                 const activeStartMin = ratioEngine.tradeStartTime || 567;
 //                                 const exitMin = parseInt(exitTimeStr.split(':')[0]) * 60 + parseInt(exitTimeStr.split(':')[1]);
 //                                 const minutesPassed = Math.max(0, exitMin - activeStartMin);
 //                                 const intradayDecayFactor = Math.min(1, minutesPassed / 375);
 
 //                                 let thetaDecay = leg.entryPrice * dailyThetaPct * intradayDecayFactor;
-                                
-//                                 // G. Final Theoretical Price
 //                                 let theoreticalPrice = leg.entryPrice + (spotChange * avgDelta) - thetaDecay;
 
-//                                 // 🔥 H. THE MASTER GUARD (Dynamic Distance-Aware Floor)
-//                                 // Stockmock ke hisaab se deep OTM premium jaldi galta hai.
-//                                 // Isliye flat ₹15 rakhna galat tha. Hum DTE aur Strike Distance dono ko mila kar floor banayenge.
-                                
-//                                 // 1. Option kitna OTM (Out of The Money) hai? 
-//                                 let distanceOtm = leg.type === 'CE' 
-//                                     ? Math.max(0, leg.strike - spotClosePrice) 
-//                                     : Math.max(0, spotClosePrice - leg.strike);
-                                
-//                                 // 2. Base minimum value DTE ke hisaab se (e.g., 4 DTE = ₹20)
+//                                 // -------------------------------------------------------------
+//                                 // 🌪️ THE SMART IV CRUSH SIMULATOR (EOD Exit)
+//                                 // -------------------------------------------------------------
+//                                 let intrinsicForCrush = leg.type === 'CE' ? Math.max(0, spotClosePrice - leg.strike) : Math.max(0, leg.strike - spotClosePrice);
+//                                 let currentExtrinsic = Math.max(0, theoreticalPrice - intrinsicForCrush); 
+//                                 let ivCrushFactor = 1.0;
+
+//                                 if (exitMin >= 870) { // 2:30 PM ke baad (870 minutes)
+//                                     let crushDuration = exitMin - 870; 
+//                                     let crushRatio = Math.min(1, crushDuration / 60); 
+//                                     let maxCrushLimit = dte === 0 ? 0.95 : 0.55; 
+//                                     ivCrushFactor = 1.0 - (crushRatio * maxCrushLimit);
+//                                 }
+
+//                                 let crushedExtrinsic = currentExtrinsic * ivCrushFactor;
+//                                 theoreticalPrice = intrinsicForCrush + crushedExtrinsic;
+//                                 // -------------------------------------------------------------
+
+//                                 let distanceOtm = leg.type === 'CE' ? Math.max(0, leg.strike - spotClosePrice) : Math.max(0, spotClosePrice - leg.strike);
 //                                 let baseMin = dte > 0 ? (dte * 5.0) : 0.05; 
-                                
-//                                 // 3. Distance Penalty (Har 120 point door jane par premium divide hoga)
 //                                 let distancePenalty = Math.max(1, distanceOtm / 120);
-                                
-//                                 // 4. Final Dynamic Floor Calculation
 //                                 let minTimeValue = Math.max(0.05, baseMin / distancePenalty);
 
-//                                 // Price ko lock kar do (Intrinsic, Theoretical ya Dynamic Floor me se jo sabse bada ho)
 //                                 realExitPrice = Math.max(minTimeValue, Math.max(intrinsic, theoreticalPrice));
-
 //                                 console.log(`⚠️ API Completely Failed for Leg ${idx+1}. Using Dynamic Math -> P: ₹${realExitPrice.toFixed(2)} (DTE: ${dte}, Theta: ${dailyThetaPct*100}%)`);
 //                             }
 
-                            
-
-//                             // 🔥 THE SMART VWAP-AWARE INTRINSIC GUARD
+//                             // 🔥 5. THE SMART VWAP-AWARE INTRINSIC & FREAK TICK GUARD
 //                             const intrinsicValue = leg.type === 'CE' ? Math.max(0, spotClosePrice - leg.strike) : Math.max(0, leg.strike - spotClosePrice);
+//                             const gap = intrinsicValue - realExitPrice;
                             
-//                             if (realExitPrice < intrinsicValue) {
-//                                 const gap = intrinsicValue - realExitPrice;
+//                             // Expiry day volatile market me Spot aur VWAP ka gap 100+ points tak ja sakta hai.
+//                             const maxVwapGap = isExpiryDay ? 120 : 60; 
+
+//                             // PRIORITY 1: VWAP GUARD
+//                             if (realExitPrice < intrinsicValue && gap > maxVwapGap) {
+//                                 console.log(`🛡️ Intrinsic Guard: Correcting huge API gap! API ₹${realExitPrice.toFixed(2)} -> True Value ₹${intrinsicValue.toFixed(2)}`);
+//                                 realExitPrice = intrinsicValue; 
+//                             }
+//                             // PRIORITY 2: FREAK TICK GUARD (Expiry & OTM Aware)
+//                             // else {
+//                             //     // 🔥 BUG FIX: entryPrice ki jagah ab hum live theoretical price (mockLTPs) use karenge!
+//                             //     // Kyoki subah ki entry se lekar abhi tak market bahut move ho chuka hota hai.
+//                             //     const mockFallback = mockLTPs[leg.inst?.id] || leg.entryPrice; 
+//                             //     const priceDiff = Math.abs(realExitPrice - mockFallback);
+//                             //     const isVWAPSettlement = (realExitPrice < intrinsicValue && gap <= maxVwapGap);
+//                             //     const tolerance = isExpiryDay ? (mockFallback * 0.95) : (mockFallback * 0.5);
                                 
-//                                 // NSE me Futures aur Spot ka difference (ya Expiry day VWAP discount) max 50-60 points hota hai.
-//                                 // Agar gap 60 points se chhota hai, to yeh API ki galti nahi, balki 'Expected Settlement' ka asar hai.
-//                                 if (gap > 60) {
-//                                     console.log(`🛡️ Intrinsic Guard: Correcting huge API gap! API ₹${realExitPrice.toFixed(2)} -> True Value ₹${intrinsicValue.toFixed(2)}`);
-//                                     realExitPrice = intrinsicValue; 
+//                             //     // 🔥 THE OTM ZERO FIX: Expiry ke din OTM option ka 0.05 ho jana natural hai.
+//                             //     const isExpiryOTM = (isExpiryDay && intrinsicValue === 0 && realExitPrice <= 5);
+                                
+//                             //     // 🔥 NORMAL DAY OTM FIX: Agar DTE > 0 hai aur PE/CE deep OTM hokar naturally gal gaye hain (e.g. 166 -> 25)
+//                             //     const isNormalOtmDecay = (intrinsicValue === 0 && realExitPrice < 40 && mockFallback < 60);
+                                
+//                             //     if (!isVWAPSettlement && !isExpiryOTM && !isNormalOtmDecay && priceDiff > 20 && priceDiff > tolerance) {
+//                             //         console.log(`🛡️ Freak Tick Blocked on ${leg.strike} ${leg.type}! API gave ₹${realExitPrice.toFixed(2)} | Using Safe Mock: ₹${mockFallback.toFixed(2)}`);
+//                             //         realExitPrice = mockFallback;
+//                             //     }
+//                             // }
+
+//                             else {
+//                                 const mockFallback = mockLTPs[leg.inst?.id] || leg.entryPrice; 
+                                
+//                                 // 🔥 SUNIL BHAI'S LOGIC: Trust the API!
+//                                 // Downside (Premium girna) IV Crush hota hai (e.g. 88 -> 38), isliye downside ko block NAHI karna hai.
+//                                 // Sirf Extreme Upside Spike (Agar API 3 guna aur 40+ point zyada price de de) ko Freak Tick manenge.
+//                                 if (realExitPrice > (mockFallback * 3) && (realExitPrice - mockFallback) > 40) {
+//                                     console.log(`🛡️ Extreme Freak Tick Blocked on ${leg.strike} ${leg.type}! API gave ₹${realExitPrice.toFixed(2)} | Using Safe Mock: ₹${mockFallback.toFixed(2)}`);
+//                                     realExitPrice = mockFallback;
 //                                 }
 //                             }
+
 //                             realExitPrice = Math.max(0.05, realExitPrice);
 
 //                             // 🔥 THE DYNAMIC LOT SIZE FIX
@@ -1443,30 +1487,61 @@
 //                                         if (checkPrice !== null) break; // Asli price mil gaya to aage ke labels check karna band!
 //                                     }
                                     
+//                                     // 🔥 DTE & EXPIRY CALCULATION FOR SMART GUARDS
+//                                     const reqExpiry = autoCorrectExpiryType(upperSymbol, dateStr, strategyLegs[0]?.expiry || "WEEKLY");
+//                                     const expiryStrRaw = getNearestExpiryString(dateStr, upperSymbol, reqExpiry);
+//                                     const expDateStr = expiryStrRaw.split(' ').pop(); 
+//                                     const expDay = parseInt(expDateStr.substring(0, 2));
+//                                     const expMonthStr = expDateStr.substring(2, 5);
+//                                     const expYear = parseInt("20" + expDateStr.substring(5, 7));
+//                                     const monthMap = { "JAN":0, "FEB":1, "MAR":2, "APR":3, "MAY":4, "JUN":5, "JUL":6, "AUG":7, "SEP":8, "OCT":9, "NOV":10, "DEC":11 };
+                                    
+//                                     const expDateObj = new Date(expYear, monthMap[expMonthStr], expDay);
+//                                     const tradeDateObj = new Date(dateStr);
+//                                     const dte = Math.max(0, Math.ceil((expDateObj.getTime() - tradeDateObj.getTime()) / (1000 * 3600 * 24)));
+//                                     const isExpiryDay = (dte === 0);
+
 //                                     // 🔥 THE SPIKE GUARD (Fallback if API gives wrong/no data)
 //                                     let mockPrice = mockLTPs[leg.inst?.id] || leg.entryPrice;
                                     
 //                                     if (checkPrice !== null) {
-//                                         // Agar API ka price Mock Price se 50% AUR kam se kam 20 points alag hai -> It's a Freak Tick!
-//                                         const priceDiff = Math.abs(checkPrice - mockPrice);
-//                                         if (priceDiff > 20 && priceDiff > (mockPrice * 0.5)) {
-//                                             console.log(`🛡️ Freak Tick Blocked on ${leg.strike} ${leg.type}! API gave ₹${checkPrice.toFixed(2)} | Using Safe Mock: ₹${mockPrice.toFixed(2)}`);
-//                                             checkPrice = mockPrice; // Fallback to safe realistic price
-//                                         } else {
-//                                             // 🔥 THE SMART VWAP-AWARE INTRINSIC GUARD
-//                                             const intrinsic = leg.type === 'CE' ? Math.max(0, spotClosePrice - leg.strike) : Math.max(0, leg.strike - spotClosePrice);
+//                                         const intrinsic = leg.type === 'CE' ? Math.max(0, spotClosePrice - leg.strike) : Math.max(0, leg.strike - spotClosePrice);
+//                                         const gap = intrinsic - checkPrice;
+                                        
+//                                         // Expiry day volatile market me Spot aur VWAP ka gap 100+ points tak ja sakta hai.
+//                                         const maxVwapGap = isExpiryDay ? 120 : 60; 
+                                        
+//                                         // 🔥 PRIORITY 1: THE SMART VWAP-AWARE INTRINSIC GUARD
+//                                         if (checkPrice < intrinsic && gap > maxVwapGap) {
+//                                             console.log(`🛡️ Intrinsic Guard: Correcting huge API gap! API ₹${checkPrice.toFixed(2)} -> True Value ₹${intrinsic.toFixed(2)}`);
+//                                             checkPrice = intrinsic; 
+//                                         } 
+//                                         // 🔥 PRIORITY 2: FREAK TICK GUARD (Expiry & OTM Aware)
+//                                         // else {
+//                                         //     const priceDiff = Math.abs(checkPrice - mockPrice);
+//                                         //     const isVWAPSettlement = (checkPrice < intrinsic && gap <= maxVwapGap);
+//                                         //     const tolerance = isExpiryDay ? (mockPrice * 0.95) : (mockPrice * 0.5); 
                                             
-//                                             if (checkPrice < intrinsic) {
-//                                                 const gap = intrinsic - checkPrice;
-                                                
-//                                                 // NSE me Futures aur Spot ka difference (ya Expiry day VWAP discount) max 50-60 points hota hai.
-//                                                 // Agar gap 60 points se chhota hai, to yeh API ki galti nahi, balki 'Expected Settlement' ka asar hai.
-//                                                 if (gap > 60) {
-//                                                     console.log(`🛡️ Intrinsic Guard: Correcting huge API gap! API ₹${checkPrice.toFixed(2)} -> True Value ₹${intrinsic.toFixed(2)}`);
-//                                                     checkPrice = intrinsic; 
-//                                                 }
+//                                         //     // 🔥 THE OTM ZERO FIX: Expiry ke din OTM option ka 0.05 ho jana natural hai.
+//                                         //     const isExpiryOTM = (isExpiryDay && intrinsic === 0 && checkPrice <= 5);
+                                            
+//                                         //     if (!isVWAPSettlement && !isExpiryOTM && priceDiff > 20 && priceDiff > tolerance) {
+//                                         //         console.log(`🛡️ Freak Tick Blocked on ${leg.strike} ${leg.type}! API gave ₹${checkPrice.toFixed(2)} | Using Safe Mock: ₹${mockPrice.toFixed(2)}`);
+//                                         //         checkPrice = mockPrice;
+//                                         //     }
+//                                         // }
+
+//                                         // 🔥 PRIORITY 2: FREAK TICK GUARD (Trust API Mode)
+//                                         else {
+//                                             // 🔥 SUNIL BHAI'S LOGIC: Trust the API!
+//                                             // Downside (Premium girna) IV Crush hai, isse chup-chap pass hone do.
+//                                             // Sirf Extreme Upside Spike ko Freak Tick manenge.
+//                                             if (checkPrice > (mockPrice * 3) && (checkPrice - mockPrice) > 40) {
+//                                                 console.log(`🛡️ Extreme Freak Tick Blocked on ${leg.strike} ${leg.type}! API gave ₹${checkPrice.toFixed(2)} | Using Safe Mock: ₹${mockPrice.toFixed(2)}`);
+//                                                 checkPrice = mockPrice;
 //                                             }
 //                                         }
+                                        
 //                                         checkPrice = Math.max(0.05, checkPrice);
 //                                     } else {
 //                                         // Agar API complete fail ho jaye
@@ -2965,7 +3040,6 @@
 
 
 
-
 const mongoose = require('mongoose');
 const crypto = require('crypto');
 const Strategy = require('../models/Strategy');
@@ -3830,6 +3904,45 @@ const runBacktestSimulator = async (req, res) => {
             if (isRatioSpreadStrategy && ratioEngine) {
                 const spotClosePrice = parseFloat(candle.close);
                 const currentTimeStr = `${h}:${m}`;
+
+
+                // -------------------------------------------------------------
+                // 🚨 STEP 1 & 2: THE DYNAMIC VELOCITY GUARD (UI Controlled)
+                // -------------------------------------------------------------
+                // 1. Initialize memory variables
+                ratioEngine.spotHistory = ratioEngine.spotHistory || [];
+                ratioEngine.isPanicApiMode = ratioEngine.isPanicApiMode || false;
+
+                // Sirf tabhi history banao jab trade ON ho (WAITING me nahi)
+                if (ratioEngine.status === 'ACTIVE' || ratioEngine.status === 'RECOVERY_MODE') {
+                    
+                    // 🔥 NAYA FIX: Fetching from NEW Object Folder 'gammaBlastSettings'
+                    const gbSettings = riskSettings?.gammaBlastSettings || {};
+                    const vWindow = Number(gbSettings.velocityWindow) || 15; // Default: 15 mins
+                    
+                    const defaultPoints = upperSymbol.includes("BANK") ? 250 : (upperSymbol.includes("SENSEX") ? 250 : 100);
+                    const vPoints = Number(gbSettings.velocityPoints) || defaultPoints;
+
+                    // Current Spot ko history me daalo
+                    ratioEngine.spotHistory.push(spotClosePrice);
+
+                    // 🔥 NAYA FIX: History array ko static 15 ki jagah dynamic 'vWindow' tak hi rakho
+                    if (ratioEngine.spotHistory.length > vWindow) {
+                        ratioEngine.spotHistory.shift(); 
+                    }
+
+                    // Trigger Panic Mode agar dynamic time me dynamic threshold cross ho jaye
+                    if (ratioEngine.spotHistory.length === vWindow) {
+                        let oldSpot = ratioEngine.spotHistory[0];
+                        let spotMove = Math.abs(spotClosePrice - oldSpot);
+
+                        if (spotMove >= vPoints && !ratioEngine.isPanicApiMode) {
+                            ratioEngine.isPanicApiMode = true;
+                            console.log(`\n🚨 [GAMMA BLAST ALERT] Time: ${currentTimeStr} | High Velocity! Spot moved ${spotMove.toFixed(2)} pts in ${vWindow} mins. Shifting to Panic API Mode!`);
+                        }
+                    }
+                }
+                // -------------------------------------------------------------
                 
                 // 1. ENTRY LOGIC (REAL DHAN API PREMIUMS)
                 if (ratioEngine.status === 'WAITING_FOR_ENTRY' && timeInMinutes >= currentStartMin && !dailyBreakdownMap[dateStr].hasTradedTimeBased) {
@@ -4330,26 +4443,7 @@ const runBacktestSimulator = async (req, res) => {
                                 console.log(`🛡️ Intrinsic Guard: Correcting huge API gap! API ₹${realExitPrice.toFixed(2)} -> True Value ₹${intrinsicValue.toFixed(2)}`);
                                 realExitPrice = intrinsicValue; 
                             }
-                            // PRIORITY 2: FREAK TICK GUARD (Expiry & OTM Aware)
-                            // else {
-                            //     // 🔥 BUG FIX: entryPrice ki jagah ab hum live theoretical price (mockLTPs) use karenge!
-                            //     // Kyoki subah ki entry se lekar abhi tak market bahut move ho chuka hota hai.
-                            //     const mockFallback = mockLTPs[leg.inst?.id] || leg.entryPrice; 
-                            //     const priceDiff = Math.abs(realExitPrice - mockFallback);
-                            //     const isVWAPSettlement = (realExitPrice < intrinsicValue && gap <= maxVwapGap);
-                            //     const tolerance = isExpiryDay ? (mockFallback * 0.95) : (mockFallback * 0.5);
-                                
-                            //     // 🔥 THE OTM ZERO FIX: Expiry ke din OTM option ka 0.05 ho jana natural hai.
-                            //     const isExpiryOTM = (isExpiryDay && intrinsicValue === 0 && realExitPrice <= 5);
-                                
-                            //     // 🔥 NORMAL DAY OTM FIX: Agar DTE > 0 hai aur PE/CE deep OTM hokar naturally gal gaye hain (e.g. 166 -> 25)
-                            //     const isNormalOtmDecay = (intrinsicValue === 0 && realExitPrice < 40 && mockFallback < 60);
-                                
-                            //     if (!isVWAPSettlement && !isExpiryOTM && !isNormalOtmDecay && priceDiff > 20 && priceDiff > tolerance) {
-                            //         console.log(`🛡️ Freak Tick Blocked on ${leg.strike} ${leg.type}! API gave ₹${realExitPrice.toFixed(2)} | Using Safe Mock: ₹${mockFallback.toFixed(2)}`);
-                            //         realExitPrice = mockFallback;
-                            //     }
-                            // }
+                          
 
                             else {
                                 const mockFallback = mockLTPs[leg.inst?.id] || leg.entryPrice; 
@@ -4402,6 +4496,9 @@ const runBacktestSimulator = async (req, res) => {
                         ratioEngine.status = 'COMPLETED'; 
                     } else {
                         // (D) Normal intra-day evaluation
+                        // 👇 1. YAHAN EK LINE JODE: Main file ka Panic status Risk Manager ko bheje
+                        if (ratioEngine.riskManager) ratioEngine.riskManager.isPanicApiMode = ratioEngine.isPanicApiMode;
+
                         // 🔥 CROSS-VERIFICATION INJECTION: 'await' lagaya aur ek arrow function pass kiya jo asali MTM layega
                         const decision = await ratioEngine.evaluateTick(
                             currentTimeStr, 
@@ -4484,20 +4581,6 @@ const runBacktestSimulator = async (req, res) => {
                                             console.log(`🛡️ Intrinsic Guard: Correcting huge API gap! API ₹${checkPrice.toFixed(2)} -> True Value ₹${intrinsic.toFixed(2)}`);
                                             checkPrice = intrinsic; 
                                         } 
-                                        // 🔥 PRIORITY 2: FREAK TICK GUARD (Expiry & OTM Aware)
-                                        // else {
-                                        //     const priceDiff = Math.abs(checkPrice - mockPrice);
-                                        //     const isVWAPSettlement = (checkPrice < intrinsic && gap <= maxVwapGap);
-                                        //     const tolerance = isExpiryDay ? (mockPrice * 0.95) : (mockPrice * 0.5); 
-                                            
-                                        //     // 🔥 THE OTM ZERO FIX: Expiry ke din OTM option ka 0.05 ho jana natural hai.
-                                        //     const isExpiryOTM = (isExpiryDay && intrinsic === 0 && checkPrice <= 5);
-                                            
-                                        //     if (!isVWAPSettlement && !isExpiryOTM && priceDiff > 20 && priceDiff > tolerance) {
-                                        //         console.log(`🛡️ Freak Tick Blocked on ${leg.strike} ${leg.type}! API gave ₹${checkPrice.toFixed(2)} | Using Safe Mock: ₹${mockPrice.toFixed(2)}`);
-                                        //         checkPrice = mockPrice;
-                                        //     }
-                                        // }
 
                                         // 🔥 PRIORITY 2: FREAK TICK GUARD (Trust API Mode)
                                         else {
@@ -4523,9 +4606,29 @@ const runBacktestSimulator = async (req, res) => {
                             }
                         );
 
+                        // // 👇 2. YAHAN EK LINE JODE: Agar Risk manager ne Panic mode OFF kar diya ho (Cool-down), to main file me bhi OFF kar do
+                        // if (decision && decision.isPanicApiMode !== undefined) {
+                        //     ratioEngine.isPanicApiMode = decision.isPanicApiMode;
+                        // }
 
-                        // 🔥 NAYA FIX: EARLY BREACH PE REAL API PRICE MANGO!
-                        if (decision && decision.action === 'FETCH_REAL_PRICES_FOR_RECOVERY') {
+                        // 🌉 THE SYNC BRIDGE (FOOLPROOF DIRECT READ) 🔥
+                        // Naya Fix: Hum 'decision' object ka wait nahi karenge, direct Risk Manager ka brain padhenge!
+                        if (ratioEngine.riskManager) {
+                            
+                            // Agar Main file me Panic ON tha, aur Risk Manager ne usko andar OFF (false) kar diya hai...
+                            if (ratioEngine.isPanicApiMode === true && ratioEngine.riskManager.isPanicApiMode === false) {
+                                // Toh Radar ki purani memory clear kar do! 
+                                ratioEngine.spotHistory = []; 
+                                console.log(`🧹 [RADAR RESET] Time: ${currentTimeStr} | Engine memory cleared for next fresh setup.`);
+                            }
+                            
+                            // Main file aur Risk Manager ka status hamesha ek-saman (Sync) rakho
+                            ratioEngine.isPanicApiMode = ratioEngine.riskManager.isPanicApiMode;
+                        }
+
+
+                        // 🔥 NAYA FIX: EARLY BREACH PE REAL API PRICE MANGO! (Added SL_HIT & GAMMA Fallback)
+                        if (decision && (decision.action === 'FETCH_REAL_PRICES_FOR_RECOVERY' || decision.action === 'SL_HIT' || decision.reason === 'GAMMA_BLAST_VELOCITY_BREACH')) {
                             
                             // 1. Dhan API se asli price laao (e.g., -₹5288)
                             const realPnL = await executeRealExit(decision.reason, currentTimeStr);
@@ -4629,21 +4732,24 @@ const runBacktestSimulator = async (req, res) => {
                                 ratioEngine.status = 'RECOVERY_MODE';
                             }
                             
-                            else if (recoveryDecision && recoveryDecision.action === 'EXIT_ALL') {
-                                // 🔥 SMART SYMBOL (BULLETPROOF): Status 'COMPLETED' ho chuka hai, 
-                                // isliye hum sidha activeLegs ka 'tag' check karenge!
+                            // 🛑 THE MISSING LOCK (KILL SWITCH): Agar recovery nahi hui, fail ho gayi, ya disable hai!
+                            else {
+                                console.log(`\n🎯 [FORCE EXIT] Time: ${currentTimeStr} | Trade closed completely. Recovery skipped/disabled.`);
+                                
                                 const isRecoveryTrade = ratioEngine.activeLegs.some(leg => leg.tag === 'RECOVERY');
                                 const finalTradeSymbol = isRecoveryTrade ? "RECOVERY_TRADE" : "RATIO_SPREAD_MAIN";
                                                             
                                 dailyBreakdownMap[dateStr].tradesList.push({
                                     symbol: finalTradeSymbol,
                                     pnl: realPnL,
-                                    exitType: recoveryDecision.reason,
+                                    exitType: decision.reason || "GAMMA_VELOCITY_CUT",
                                     exitTime: `${dateStr} ${currentTimeStr}:00`
                                 });
                                 dailyBreakdownMap[dateStr].pnl += realPnL;
                                 dailyBreakdownMap[dateStr].trades += 1;
-                                ratioEngine.status = 'COMPLETED';
+                                
+                                // 🔥 ENGINE KO BAND KARO (Infinite Loop Fix)
+                                ratioEngine.status = 'COMPLETED'; 
                             }
                         }
 
