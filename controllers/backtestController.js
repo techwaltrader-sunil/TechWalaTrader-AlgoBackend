@@ -4057,7 +4057,7 @@ const runBacktestSimulator = async (req, res) => {
                         // 🟦 OLD LOGIC: SYMMETRIC SCANNER (Fixed Steps)
                         // -------------------------------------------------------------
                         console.log(`🤿 Scanning Option Chain to find the PERFECT Symmetric OTM...`);
-                        let minCombinedError = Infinity; // 🔥 yahan se let bestStep hata diya gaya
+                        let minCombinedError = Infinity; 
 
                         for(let step = 1; step <= 10; step++) {
                             const expectedCeStrike = atmStrike + (step * stepSize);
@@ -4088,9 +4088,9 @@ const runBacktestSimulator = async (req, res) => {
                     } else {
 
                         // -------------------------------------------------------------
-                        // 🟪 NEW LOGIC: ASYMMETRIC SCANNER (Premium Matched & Delta Neutral)
+                        // 🟪/🟩 DYNAMIC SCANNER (Premium Matched - ASYMMETRIC & ADAPTIVE_SKEW)
                         // -------------------------------------------------------------
-                        console.log(`🤿 Scanning Option Chain in 🔥 ASYMMETRIC Mode to find exact Premium matches...`);
+                        console.log(`🤿 Scanning Option Chain in 🔥 ${executionMode} Mode to find exact Premium matches...`);
                         
                         let bestCeStep = 0; let minCeError = Infinity;
                         let bestPeStep = 0; let minPeError = Infinity;
@@ -4132,27 +4132,88 @@ const runBacktestSimulator = async (req, res) => {
                         // 3. 🛡️ SAFE LOGGING 
                         const safeCeStrike = finalOtmCe ? finalOtmCe.strike : "N/A (API Fail)";
                         const safePeStrike = finalOtmPe ? finalOtmPe.strike : "N/A (API Fail)";
-                        console.log(`✅ [LOCK IN] Asymmetric Match -> CE: Step ${bestCeStep} (${safeCeStrike}) | PE: Step ${bestPeStep} (${safePeStrike})`);
+                        console.log(`✅ [PREMIUM MATCHED] Initial Match -> CE: Step ${bestCeStep} (${safeCeStrike}) | PE: Step ${bestPeStep} (${safePeStrike})`);
 
-                        // 4. 🧠 THE GENIUS MATH (With Fallback)
+                        // 4. 🧠 THE GENIUS MATH (With Fallback & Modes)
                         let fallbackStep = upperSymbol.includes("BANK") ? 6 : 5;
                         let activeCeStep = finalOtmCe ? bestCeStep : fallbackStep;
                         let activePeStep = finalOtmPe ? bestPeStep : fallbackStep;
 
-                        let calculatedCeLots = activeCeStep + 1;
-                        let calculatedPeLots = activePeStep + 1;
+                        if (executionMode === 'ASYMMETRIC') {
+                            // -------------------------------------------------------------
+                            // 🟪 ASYMMETRIC LOGIC (Delta Neutral Sizing)
+                            // -------------------------------------------------------------
+                            let calculatedCeLots = activeCeStep + 1;
+                            let calculatedPeLots = activePeStep + 1;
 
-                        // 🔥 BUG FIX: Yahan bestStep set kar diya taki niche ka code (Boundary Limits) crash na ho!
-                        bestStep = Math.max(activeCeStep, activePeStep); 
+                            ceSellLots = Math.min(calculatedCeLots, maxAsymmetricLots);
+                            peSellLots = Math.min(calculatedPeLots, maxAsymmetricLots);
+                            bestStep = Math.max(activeCeStep, activePeStep); 
 
-                        // 5. 🛡️ THE EVENT-DAY SAFETY GUARD
-                        ceSellLots = Math.min(calculatedCeLots, maxAsymmetricLots);
-                        peSellLots = Math.min(calculatedPeLots, maxAsymmetricLots);
-                        
-                        if (calculatedCeLots > maxAsymmetricLots || calculatedPeLots > maxAsymmetricLots) {
-                             console.log(`⚠️ Extreme IV Guard Activated! CE Lots: ${calculatedCeLots} -> ${ceSellLots}, PE Lots: ${calculatedPeLots} -> ${peSellLots} (Capped at ${maxAsymmetricLots})`);
-                        } else {
-                             console.log(`⚖️ Dynamic Delta Lots Assigned -> CE Sell: ${ceSellLots} Lots, PE Sell: ${peSellLots} Lots.`);
+                            if (calculatedCeLots > maxAsymmetricLots || calculatedPeLots > maxAsymmetricLots) {
+                                 console.log(`⚠️ Extreme IV Guard Activated! CE Lots: ${calculatedCeLots} -> ${ceSellLots}, PE Lots: ${calculatedPeLots} -> ${peSellLots} (Capped at ${maxAsymmetricLots})`);
+                            } else {
+                                 console.log(`⚖️ Dynamic Delta Lots Assigned -> CE Sell: ${ceSellLots} Lots, PE Sell: ${peSellLots} Lots.`);
+                            }
+                        } 
+                        else if (executionMode === 'ADAPTIVE_SKEW') {
+                            // -------------------------------------------------------------
+                            // 🟩 ADAPTIVE SKEW MODE (Sunil Bhai's Masterpiece Logic)
+                            // -------------------------------------------------------------
+                            let stepDiff = Math.abs(activeCeStep - activePeStep);
+                            let originalCeStep = activeCeStep;
+                            let originalPeStep = activePeStep;
+
+                            if (stepDiff === 0) {
+                                // Rule 5: Equal Steps
+                                ceSellLots = 4; peSellLots = 4;
+                                console.log(`⚖️ Adaptive [Rule 5]: Zero Skew detected (Both Step ${activeCeStep}). Firing equal 4-4 lots.`);
+                            } 
+                            else if (stepDiff === 1) {
+                                // Rule 1, 2 & 3: Minor Skew (1 step gap)
+                                if (activeCeStep < activePeStep) {
+                                    ceSellLots = 3; peSellLots = 4;
+                                } else {
+                                    ceSellLots = 4; peSellLots = 3;
+                                }
+                                console.log(`🛡️ Adaptive [Minor Skew]: Closer leg assigned 3 lots to protect Break-Even. Assigned -> CE: ${ceSellLots}, PE: ${peSellLots}.`);
+                            } 
+                            else if (stepDiff >= 2) {
+                                // Rule 4: Dangerous Skew (Shift closer leg by +1 for Safety)
+                                if (activeCeStep < activePeStep) {
+                                    activeCeStep += 1; // Shift CE further OTM
+                                    ceSellLots = 3; peSellLots = 4;
+                                    console.log(`🚨 Adaptive [Major Skew]: Dangerous CE proximity! Shifting CE Step ${originalCeStep} -> ${activeCeStep} for safety.`);
+                                    
+                                    // Fetch the newly shifted premium
+                                    const shiftedStrike = atmStrike + (activeCeStep * stepSize);
+                                    const newCeData = await getVerifiedPremium("CE", shiftedStrike);
+                                    if(newCeData) finalOtmCe = newCeData;
+                                    
+                                } else {
+                                    activePeStep += 1; // Shift PE further OTM
+                                    ceSellLots = 4; peSellLots = 3;
+                                    console.log(`🚨 Adaptive [Major Skew]: Dangerous PE proximity! Shifting PE Step ${originalPeStep} -> ${activePeStep} for safety.`);
+                                    
+                                    // Fetch the newly shifted premium
+                                    const shiftedStrike = atmStrike - (activePeStep * stepSize);
+                                    const newPeData = await getVerifiedPremium("PE", shiftedStrike);
+                                    if(newPeData) finalOtmPe = newPeData;
+                                }
+                                console.log(`🛡️ Adaptive Shift Applied -> CE: ${ceSellLots} Lots, PE: ${peSellLots} Lots.`);
+                            }
+
+                            // 🛡️ THE EVENT-DAY SAFETY GUARD (Bouncer check)
+                            let finalCeLots = Math.min(ceSellLots, maxAsymmetricLots);
+                            let finalPeLots = Math.min(peSellLots, maxAsymmetricLots);
+
+                            if (ceSellLots > maxAsymmetricLots || peSellLots > maxAsymmetricLots) {
+                                 console.log(`⚠️ Adaptive Guard Activated! Capping Lots to ${maxAsymmetricLots} to prevent extreme margin block.`);
+                                 ceSellLots = finalCeLots;
+                                 peSellLots = finalPeLots;
+                            }
+                            
+                            bestStep = Math.max(activeCeStep, activePeStep); // Lock the furthest step for max margin estimation
                         }
                     }
 
@@ -4462,22 +4523,26 @@ const runBacktestSimulator = async (req, res) => {
                             // Expiry day volatile market me Spot aur VWAP ka gap 100+ points tak ja sakta hai.
                             const maxVwapGap = isExpiryDay ? 120 : 60; 
 
-                            // PRIORITY 1: VWAP GUARD
-                            if (realExitPrice < intrinsicValue && gap > maxVwapGap) {
+                            // 🔥 UI se Toggle ki value read karein (Default: false rakhein taki API par trust kare)
+                            const enableIntrinsicGuard = riskSettings?.enableIntrinsicGuard === true;
+                            const enableFreakTickGuard = riskSettings?.enableFreakTickGuard === true; // 🔥 NAYA FIX: Freak Tick Toggle
+
+                            // PRIORITY 1: VWAP GUARD (Now UI Controlled)
+                            if (enableIntrinsicGuard && realExitPrice < intrinsicValue && gap > maxVwapGap) {
                                 console.log(`🛡️ Intrinsic Guard: Correcting huge API gap! API ₹${realExitPrice.toFixed(2)} -> True Value ₹${intrinsicValue.toFixed(2)}`);
                                 realExitPrice = intrinsicValue; 
-                            }
-                          
-
+                            } 
                             else {
                                 const mockFallback = mockLTPs[leg.inst?.id] || leg.entryPrice; 
                                 
-                                // 🔥 SUNIL BHAI'S LOGIC: Trust the API!
+                                // 🔥 SUNIL BHAI'S LOGIC: Trust the API! (Now UI Controlled)
                                 // Downside (Premium girna) IV Crush hota hai (e.g. 88 -> 38), isliye downside ko block NAHI karna hai.
                                 // Sirf Extreme Upside Spike (Agar API 3 guna aur 40+ point zyada price de de) ko Freak Tick manenge.
-                                if (realExitPrice > (mockFallback * 3) && (realExitPrice - mockFallback) > 40) {
-                                    console.log(`🛡️ Extreme Freak Tick Blocked on ${leg.strike} ${leg.type}! API gave ₹${realExitPrice.toFixed(2)} | Using Safe Mock: ₹${mockFallback.toFixed(2)}`);
-                                    realExitPrice = mockFallback;
+                                if (enableFreakTickGuard) { // 🔥 NAYA FIX: Sirf jab ON ho tabhi block karega
+                                    if (realExitPrice > (mockFallback * 3) && (realExitPrice - mockFallback) > 40) {
+                                        console.log(`🛡️ Extreme Freak Tick Blocked on ${leg.strike} ${leg.type}! API gave ₹${realExitPrice.toFixed(2)} | Using Safe Mock: ₹${mockFallback.toFixed(2)}`);
+                                        realExitPrice = mockFallback;
+                                    }
                                 }
                             }
 
@@ -4602,9 +4667,12 @@ const runBacktestSimulator = async (req, res) => {
                                         
                                         // Expiry day volatile market me Spot aur VWAP ka gap 100+ points tak ja sakta hai.
                                         const maxVwapGap = isExpiryDay ? 120 : 60; 
+
+                                        // 🔥 UI se Toggle ki value read karein
+                                        const enableIntrinsicGuard = riskSettings?.enableIntrinsicGuard === true;
                                         
-                                        // 🔥 PRIORITY 1: THE SMART VWAP-AWARE INTRINSIC GUARD
-                                        if (checkPrice < intrinsic && gap > maxVwapGap) {
+                                        // 🔥 PRIORITY 1: THE SMART VWAP-AWARE INTRINSIC GUARD (Now UI Controlled)
+                                        if (enableIntrinsicGuard && checkPrice < intrinsic && gap > maxVwapGap) {
                                             console.log(`🛡️ Intrinsic Guard: Correcting huge API gap! API ₹${checkPrice.toFixed(2)} -> True Value ₹${intrinsic.toFixed(2)}`);
                                             checkPrice = intrinsic; 
                                         } 
@@ -4632,11 +4700,6 @@ const runBacktestSimulator = async (req, res) => {
                                 return tempRealPnL;
                             }
                         );
-
-                        // // 👇 2. YAHAN EK LINE JODE: Agar Risk manager ne Panic mode OFF kar diya ho (Cool-down), to main file me bhi OFF kar do
-                        // if (decision && decision.isPanicApiMode !== undefined) {
-                        //     ratioEngine.isPanicApiMode = decision.isPanicApiMode;
-                        // }
 
                         // 🌉 THE SYNC BRIDGE (FOOLPROOF DIRECT READ) 🔥
                         // Naya Fix: Hum 'decision' object ka wait nahi karenge, direct Risk Manager ka brain padhenge!

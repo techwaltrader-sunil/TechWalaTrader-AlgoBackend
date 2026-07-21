@@ -385,8 +385,7 @@ class TimeBasedRiskManager {
                 }
             }
         }
-
-        // 💥 FINAL CHECK: NORMAL SL HIT CONDITION & VELOCITY GUARD
+// 💥 FINAL CHECK: NORMAL SL HIT CONDITION & VELOCITY GUARD
         // =========================================================
         // 🚨 STEP 3: THE API OVERRIDE (Panic Mode & Mock SL)
         // Agar Mock MTM SL hit kare YAA Panic Mode ON ho, dono case me API call hogi!
@@ -394,14 +393,12 @@ class TimeBasedRiskManager {
             
             let realMTM = currentMTM; 
             if (getRealMTM) {
-                if (this.isPanicApiMode) {
-                    console.log(`\n🚨 [VELOCITY GUARD] Panic Mode ON! Bypassing Mock MTM (₹${currentMTM.toFixed(2)}) & verifying REAL data directly...`);
-                } else {
+                // 🔥 FIX: Panic Mode ka print yahan se hata diya gaya hai. Sirf Normal SL ka print rakha hai.
+                if (!this.isPanicApiMode) {
                     console.log(`\n🔍 [VERIFICATION] Mock MTM hit SL at ₹${currentMTM.toFixed(2)}. Verifying REAL data before cutting trade...`);
                 }
                 realMTM = await getRealMTM(); // API se asli price aane tak wait karega
             }
-
 
            // -------------------------------------------------------------
             // ⚔️ STEP 4: GAMMA BLAST MASTER EXIT & COOL-DOWN
@@ -409,6 +406,10 @@ class TimeBasedRiskManager {
             let wasPanicMode = this.isPanicApiMode; // 🔥 Memory for Phantom Guard
 
             if (this.isPanicApiMode) {
+                
+                // 🎯 THE NEW FIX: API se Real MTM aane ke theek baad ek single line me sab print karo!
+                console.log(`🚨 [VELOCITY GUARD] Time: ${currentTimeStr} | Panic Mode ON! Mock MTM: ₹${currentMTM.toFixed(2)} -> 🎯 REAL MTM: ₹${realMTM.toFixed(2)}`);
+
                 const gbSettings = this.config?.riskManagement?.gammaBlastSettings || {};
                 const panicPct = Number(gbSettings.panicLimitPct) || 70; 
                 const gammaCutoff = this.currentSlLevel * (panicPct / 100);
