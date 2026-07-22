@@ -408,7 +408,7 @@ class TimeBasedRiskManager {
             if (this.isPanicApiMode) {
                 
                 // 🎯 THE NEW FIX: API se Real MTM aane ke theek baad ek single line me sab print karo!
-                console.log(`🚨 [VELOCITY GUARD] Time: ${currentTimeStr} | Panic Mode ON! Mock MTM: ₹${currentMTM.toFixed(2)} -> 🎯 REAL MTM: ₹${realMTM.toFixed(2)}`);
+                console.log(`🚨 [VELOCITY GUARD] Time: ${currentTimeStr} | Panic Mode ON! Mock MTM: ₹${currentMTM.toFixed(2)} -> 🎯 REAL MTM: ₹${realMTM.toFixed(2)}\n`);
 
                 const gbSettings = this.config?.riskManagement?.gammaBlastSettings || {};
                 const panicPct = Number(gbSettings.panicLimitPct) || 70; 

@@ -3933,6 +3933,10 @@ const runBacktestSimulator = async (req, res) => {
                 ratioEngine.spotHistory = ratioEngine.spotHistory || [];
                 ratioEngine.isPanicApiMode = ratioEngine.isPanicApiMode || false;
 
+                // 🔥 NAYA FIX: Gamma Shield Memory Variables
+                ratioEngine.isGammaShieldActive = ratioEngine.isGammaShieldActive || false;
+                ratioEngine.highestLockedProfit = ratioEngine.highestLockedProfit || 0;
+
                 // Sirf tabhi history banao jab trade ON ho (WAITING me nahi)
                 if (ratioEngine.status === 'ACTIVE' || ratioEngine.status === 'RECOVERY_MODE') {
                     
@@ -3958,7 +3962,7 @@ const runBacktestSimulator = async (req, res) => {
 
                         if (spotMove >= vPoints && !ratioEngine.isPanicApiMode) {
                             ratioEngine.isPanicApiMode = true;
-                            console.log(`\n🚨 [GAMMA BLAST ALERT] Time: ${currentTimeStr} | High Velocity! Spot moved ${spotMove.toFixed(2)} pts in ${vWindow} mins. Shifting to Panic API Mode!`);
+                            console.log(`\n🚨 [GAMMA BLAST ALERT] Time: ${currentTimeStr} | High Velocity! Spot moved ${spotMove.toFixed(2)} pts in ${vWindow} mins. Shifting to Panic API Mode!\n`);
                         }
                     }
                 }
@@ -4585,142 +4589,183 @@ const runBacktestSimulator = async (req, res) => {
                         ratioEngine.status = 'COMPLETED'; 
                     } else {
                         // (D) Normal intra-day evaluation
-                        // 👇 1. YAHAN EK LINE JODE: Main file ka Panic status Risk Manager ko bheje
-                        if (ratioEngine.riskManager) ratioEngine.riskManager.isPanicApiMode = ratioEngine.isPanicApiMode;
 
-                        // 🔥 CROSS-VERIFICATION INJECTION: 'await' lagaya aur ek arrow function pass kiya jo asali MTM layega
-                        const decision = await ratioEngine.evaluateTick(
-                            currentTimeStr, 
-                            mockLTPs, 
-                            spotClosePrice,
-                            async () => {
-                                console.log(`\n📡 [API CALL] Cross-verifying REAL MTM from Broker...`);
-                                let tempRealPnL = 0;
+                        // 🛠️ STEP 1: REAL API FETCHER KO BAAHAR NIKALO (Taki Shield bhi ise use kar sake)
+                        const fetchRealPnL = async (logMessage = "Cross-verifying") => {
+                            // 🔥 FIX: Upar wale spammy log ko hata diya gaya hai
+                            let tempRealPnL = 0;
+                            let stepSize = getStrikeStepSize(upperSymbol);
+                            const currentAtmCheck = calculateATM(spotClosePrice, upperSymbol);
 
-                                // let stepSize = upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX") ? 100 : (upperSymbol.includes("MID") ? 25 : 50);
-                                let stepSize = getStrikeStepSize(upperSymbol);
+                            for (let idx = 0; idx < ratioEngine.activeLegs.length; idx++) {
+                                let leg = ratioEngine.activeLegs[idx];
+                                let checkPrice = null;
+                                const stepDiff = Math.round((leg.strike - currentAtmCheck) / stepSize);
+                                let labelsToTry = stepDiff === 0 ? ["ATM"] : (stepDiff > 0 ? [`OTM${stepDiff}`, `ITM${stepDiff}`, `${stepDiff}`] : [`ITM${stepDiff}`, `OTM${stepDiff}`, `${stepDiff}`]);
 
-                                const currentAtmCheck = calculateATM(spotClosePrice, upperSymbol);
+                                for (let label of labelsToTry) {
+                                    await delay(250); 
+                                    try {
+                                        const axios = require('axios');
+                                        let expFlag = "WEEK"; let expCode = 1;
+                                        let reqExpiry = autoCorrectExpiryType(upperSymbol, dateStr, strategyLegs[0]?.expiry || "WEEKLY");
+                                        if (reqExpiry.toUpperCase() === "MONTHLY") { expFlag = "MONTH"; }
+                                        else if (reqExpiry.toUpperCase() === "NEXT WEEKLY" || reqExpiry.toUpperCase() === "NEXT WEEK") { expCode = 2; }
+                                        const exchSegment = (Number(spotSecurityId) === 51 || Number(spotSecurityId) === 69) ? "BSE_FNO" : "NSE_FNO";
 
-                                for (let idx = 0; idx < ratioEngine.activeLegs.length; idx++) {
-                                    let leg = ratioEngine.activeLegs[idx];
-                                    let checkPrice = null;
-                                    const stepDiff = Math.round((leg.strike - currentAtmCheck) / stepSize);
-                                    let labelsToTry = stepDiff === 0 ? ["ATM"] : (stepDiff > 0 ? [`OTM${stepDiff}`, `ITM${stepDiff}`, `${stepDiff}`] : [`ITM${stepDiff}`, `OTM${stepDiff}`, `${stepDiff}`]);
+                                        const res = await axios.post('https://api.dhan.co/v2/charts/rollingoption', {
+                                            exchangeSegment: exchSegment, interval: "1", securityId: Number(spotSecurityId), instrument: "OPTIDX",
+                                            expiryFlag: expFlag, expiryCode: expCode, drvOptionType: leg.type === "CE" ? "CALL" : "PUT",
+                                            requiredData: ["open", "strike"], fromDate: dateStr, toDate: dateStr, strike: label
+                                        }, { headers: { 'access-token': broker.apiSecret, 'client-id': broker.clientId, 'Content-Type': 'application/json' }, timeout: 4000 });
 
-                                    for (let label of labelsToTry) {
-                                        await delay(250); 
-                                        try {
-                                            const axios = require('axios');
-                                            let expFlag = "WEEK"; let expCode = 1;
-                                            let reqExpiry = autoCorrectExpiryType(upperSymbol, dateStr, strategyLegs[0]?.expiry || "WEEKLY");
-                                            if (reqExpiry.toUpperCase() === "MONTHLY") { expFlag = "MONTH"; }
-                                            else if (reqExpiry.toUpperCase() === "NEXT WEEKLY" || reqExpiry.toUpperCase() === "NEXT WEEK") { expCode = 2; }
-                                            const exchSegment = (Number(spotSecurityId) === 51 || Number(spotSecurityId) === 69) ? "BSE_FNO" : "NSE_FNO";
-
-                                            const res = await axios.post('https://api.dhan.co/v2/charts/rollingoption', {
-                                                exchangeSegment: exchSegment, interval: "1", securityId: Number(spotSecurityId), instrument: "OPTIDX",
-                                                expiryFlag: expFlag, expiryCode: expCode, drvOptionType: leg.type === "CE" ? "CALL" : "PUT",
-                                                requiredData: ["open", "strike"], fromDate: dateStr, toDate: dateStr, strike: label
-                                            }, { headers: { 'access-token': broker.apiSecret, 'client-id': broker.clientId, 'Content-Type': 'application/json' }, timeout: 4000 });
-
-                                            const optKey = leg.type === "CE" ? "ce" : "pe";
-                                            if (res.data && res.data.data && res.data.data[optKey]) {
-                                                const chart = res.data.data[optKey];
-                                                for (let k = chart.timestamp.length - 1; k >= 0; k--) {
-                                                    const optTime = new Date(chart.timestamp[k] * 1000 + (5.5 * 3600000));
-                                                    const candleTimeStr = optTime.toISOString().split('T')[1].substring(0, 5);
-                                                    
-                                                    // 🔥 THE MISSING MASTER LOCK: Strike jarur match karni chahiye!
-                                                    if (Number(chart.strike[k]) === leg.strike) {
-                                                        if (candleTimeStr <= currentTimeStr) {
-                                                            checkPrice = chart.open[k];
-                                                            break;
-                                                        }
+                                        const optKey = leg.type === "CE" ? "ce" : "pe";
+                                        if (res.data && res.data.data && res.data.data[optKey]) {
+                                            const chart = res.data.data[optKey];
+                                            for (let k = chart.timestamp.length - 1; k >= 0; k--) {
+                                                const optTime = new Date(chart.timestamp[k] * 1000 + (5.5 * 3600000));
+                                                const candleTimeStr = optTime.toISOString().split('T')[1].substring(0, 5);
+                                                
+                                                if (Number(chart.strike[k]) === leg.strike) {
+                                                    if (candleTimeStr <= currentTimeStr) {
+                                                        checkPrice = chart.open[k];
+                                                        break;
                                                     }
                                                 }
                                             }
-                                        } catch(e) {}
-                                        if (checkPrice !== null) break; // Asli price mil gaya to aage ke labels check karna band!
-                                    }
-                                    
-                                    // 🔥 DTE & EXPIRY CALCULATION FOR SMART GUARDS
-                                    const reqExpiry = autoCorrectExpiryType(upperSymbol, dateStr, strategyLegs[0]?.expiry || "WEEKLY");
-                                    const expiryStrRaw = getNearestExpiryString(dateStr, upperSymbol, reqExpiry);
-                                    const expDateStr = expiryStrRaw.split(' ').pop(); 
-                                    const expDay = parseInt(expDateStr.substring(0, 2));
-                                    const expMonthStr = expDateStr.substring(2, 5);
-                                    const expYear = parseInt("20" + expDateStr.substring(5, 7));
-                                    const monthMap = { "JAN":0, "FEB":1, "MAR":2, "APR":3, "MAY":4, "JUN":5, "JUL":6, "AUG":7, "SEP":8, "OCT":9, "NOV":10, "DEC":11 };
-                                    
-                                    const expDateObj = new Date(expYear, monthMap[expMonthStr], expDay);
-                                    const tradeDateObj = new Date(dateStr);
-                                    const dte = Math.max(0, Math.ceil((expDateObj.getTime() - tradeDateObj.getTime()) / (1000 * 3600 * 24)));
-                                    const isExpiryDay = (dte === 0);
-
-                                    // 🔥 THE SPIKE GUARD (Fallback if API gives wrong/no data)
-                                    let mockPrice = mockLTPs[leg.inst?.id] || leg.entryPrice;
-                                    
-                                    if (checkPrice !== null) {
-                                        const intrinsic = leg.type === 'CE' ? Math.max(0, spotClosePrice - leg.strike) : Math.max(0, leg.strike - spotClosePrice);
-                                        const gap = intrinsic - checkPrice;
-                                        
-                                        // Expiry day volatile market me Spot aur VWAP ka gap 100+ points tak ja sakta hai.
-                                        const maxVwapGap = isExpiryDay ? 120 : 60; 
-
-                                        // 🔥 UI se Toggle ki value read karein
-                                        const enableIntrinsicGuard = riskSettings?.enableIntrinsicGuard === true;
-                                        
-                                        // 🔥 PRIORITY 1: THE SMART VWAP-AWARE INTRINSIC GUARD (Now UI Controlled)
-                                        if (enableIntrinsicGuard && checkPrice < intrinsic && gap > maxVwapGap) {
-                                            console.log(`🛡️ Intrinsic Guard: Correcting huge API gap! API ₹${checkPrice.toFixed(2)} -> True Value ₹${intrinsic.toFixed(2)}`);
-                                            checkPrice = intrinsic; 
-                                        } 
-
-                                        // 🔥 PRIORITY 2: FREAK TICK GUARD (Trust API Mode)
-                                        else {
-                                            // 🔥 SUNIL BHAI'S LOGIC: Trust the API!
-                                            // Downside (Premium girna) IV Crush hai, isse chup-chap pass hone do.
-                                            // Sirf Extreme Upside Spike ko Freak Tick manenge.
-                                            if (checkPrice > (mockPrice * 3) && (checkPrice - mockPrice) > 40) {
-                                                console.log(`🛡️ Extreme Freak Tick Blocked on ${leg.strike} ${leg.type}! API gave ₹${checkPrice.toFixed(2)} | Using Safe Mock: ₹${mockPrice.toFixed(2)}`);
-                                                checkPrice = mockPrice;
-                                            }
                                         }
-                                        
-                                        checkPrice = Math.max(0.05, checkPrice);
-                                    } else {
-                                        // Agar API complete fail ho jaye
-                                        checkPrice = mockPrice;
+                                    } catch(e) {}
+                                    if (checkPrice !== null) break; 
+                                }
+                                
+                                const reqExpiry = autoCorrectExpiryType(upperSymbol, dateStr, strategyLegs[0]?.expiry || "WEEKLY");
+                                const expiryStrRaw = getNearestExpiryString(dateStr, upperSymbol, reqExpiry);
+                                const expDateStr = expiryStrRaw.split(' ').pop(); 
+                                const expDay = parseInt(expDateStr.substring(0, 2));
+                                const expMonthStr = expDateStr.substring(2, 5);
+                                const expYear = parseInt("20" + expDateStr.substring(5, 7));
+                                const monthMap = { "JAN":0, "FEB":1, "MAR":2, "APR":3, "MAY":4, "JUN":5, "JUL":6, "AUG":7, "SEP":8, "OCT":9, "NOV":10, "DEC":11 };
+                                
+                                const expDateObj = new Date(expYear, monthMap[expMonthStr], expDay);
+                                const tradeDateObj = new Date(dateStr);
+                                const dte = Math.max(0, Math.ceil((expDateObj.getTime() - tradeDateObj.getTime()) / (1000 * 3600 * 24)));
+                                const isExpiryDay = (dte === 0);
+
+                                let mockPrice = mockLTPs[leg.inst?.id] || leg.entryPrice;
+                                
+                                if (checkPrice !== null) {
+                                    const intrinsic = leg.type === 'CE' ? Math.max(0, spotClosePrice - leg.strike) : Math.max(0, leg.strike - spotClosePrice);
+                                    const gap = intrinsic - checkPrice;
+                                    const maxVwapGap = isExpiryDay ? 120 : 60; 
+                                    const enableIntrinsicGuard = riskSettings?.enableIntrinsicGuard === true;
+                                    const enableFreakTickGuard = riskSettings?.enableFreakTickGuard === true;
+
+                                    if (enableIntrinsicGuard && checkPrice < intrinsic && gap > maxVwapGap) {
+                                        checkPrice = intrinsic; 
+                                    } 
+                                    else {
+                                        if (enableFreakTickGuard && checkPrice > (mockPrice * 3) && (checkPrice - mockPrice) > 40) {
+                                            checkPrice = mockPrice;
+                                        }
+                                    }
+                                    checkPrice = Math.max(0.05, checkPrice);
+                                } else {
+                                    checkPrice = mockPrice;
+                                }
+
+                                const mult = leg.lots * (leg.inst?.lotSize || 65);
+                                tempRealPnL += leg.action === 'BUY' ? (checkPrice - leg.entryPrice) * mult : (leg.entryPrice - checkPrice) * mult;
+                            }
+                            
+                            // 🔥 NAYA FIX: Ab yahan ekdum clean report print hogi Time aur MTM ke sath
+                            if (logMessage.includes("Gamma Shield")) {
+                                console.log(`📡 [API CALL] ${logMessage} | Time: ${currentTimeStr} | Fetched REAL MTM: ₹${tempRealPnL.toFixed(2)}\n`);
+                            } else {
+                                console.log(`📡 [API CALL] ${logMessage} | Time: ${currentTimeStr} | Fetched REAL MTM: ₹${tempRealPnL.toFixed(2)}`);
+                            }
+                            
+                            return tempRealPnL;
+                        };
+
+                        // 🔥=========================================🔥
+                        // 🛡️ THE GAMMA HOUR PROFIT SHIELD ENGINE (100% REAL API BASED)
+                        // 🔥=========================================🔥
+                        let forceShieldExit = false;
+                        const timeShield = riskSettings?.timeShieldSettings;
+                        const enableTimeShield = riskSettings?.enableTimeShield === true;
+
+                        if (enableTimeShield && timeShield && ratioEngine.estimatedMargin) {
+                            
+                            const minProfitAmt = (ratioEngine.estimatedMargin * timeShield.minProfitPct) / 100;
+                            const dropBufferAmt = (ratioEngine.estimatedMargin * timeShield.dropBufferPct) / 100;
+
+                            if (currentTimeStr >= timeShield.startTime && currentTimeStr <= timeShield.endTime) {
+                                
+                                // 🔥 NAYA LOGIC: Mock ki jagah REAL API se har minute MTM fetch karo!
+                                let liveRealMTM = await fetchRealPnL("Gamma Shield Live Tracking");
+
+                                // 🎯 Activate Shield
+                                if (!ratioEngine.isGammaShieldActive && liveRealMTM >= minProfitAmt) {
+                                    ratioEngine.isGammaShieldActive = true;
+                                    ratioEngine.highestLockedProfit = liveRealMTM;
+                                    console.log(`\n🛡️ [GAMMA SHIELD ON] Time: ${currentTimeStr} | Target Hit! (${timeShield.minProfitPct}%) Locked REAL Profit: ₹${ratioEngine.highestLockedProfit.toFixed(2)}\n`);
+                                }
+
+                                // 🚀 Trail & Protect
+                                if (ratioEngine.isGammaShieldActive) {
+                                    if (liveRealMTM > ratioEngine.highestLockedProfit) {
+                                        ratioEngine.highestLockedProfit = liveRealMTM; // Trail UP on Real Money
                                     }
 
-                                    const mult = leg.lots * (leg.inst?.lotSize || 65);
-                                    tempRealPnL += leg.action === 'BUY' ? (checkPrice - leg.entryPrice) * mult : (leg.entryPrice - checkPrice) * mult;
+                                    const emergencyCutoffSL = ratioEngine.highestLockedProfit - dropBufferAmt;
+                                    
+                                    if (liveRealMTM <= emergencyCutoffSL) {
+                                        console.log(`\n🚨 [GAMMA SHIELD BREACH] Time: ${currentTimeStr} | REAL Profit dropped to ₹${liveRealMTM.toFixed(2)} (Below safety net ₹${emergencyCutoffSL.toFixed(2)}). Initiating Emergency Exit!`);
+                                        forceShieldExit = true;
+                                    }
                                 }
-                                return tempRealPnL;
+                            } 
+                            else if (currentTimeStr > timeShield.endTime && ratioEngine.isGammaShieldActive) {
+                                console.log(`\n🛡️ [GAMMA SHIELD DEACTIVATED] Time: ${currentTimeStr} | Market survived the Gamma Hour.`);
+                                ratioEngine.isGammaShieldActive = false; 
                             }
-                        );
+                        }
+                        // 🔥=========================================🔥
 
-                        // 🌉 THE SYNC BRIDGE (FOOLPROOF DIRECT READ) 🔥
-                        // Naya Fix: Hum 'decision' object ka wait nahi karenge, direct Risk Manager ka brain padhenge!
-                        if (ratioEngine.riskManager) {
-                            
-                            // Agar Main file me Panic ON tha, aur Risk Manager ne usko andar OFF (false) kar diya hai...
-                            if (ratioEngine.isPanicApiMode === true && ratioEngine.riskManager.isPanicApiMode === false) {
-                                // Toh Radar ki purani memory clear kar do! 
-                                ratioEngine.spotHistory = []; 
-                                console.log(`🧹 [RADAR RESET] Time: ${currentTimeStr} | Engine memory cleared for next fresh setup.`);
-                            }
-                            
-                            // Main file aur Risk Manager ka status hamesha ek-saman (Sync) rakho
-                            ratioEngine.isPanicApiMode = ratioEngine.riskManager.isPanicApiMode;
+                        // 👇 Main file ka Panic status Risk Manager ko bheje
+                        if (ratioEngine.riskManager) ratioEngine.riskManager.isPanicApiMode = ratioEngine.isPanicApiMode;
+
+                        // 🔥 CROSS-VERIFICATION INJECTION & SHIELD OVERRIDE
+                        let decision = null;
+                        
+                        if (forceShieldExit) {
+                            // API pehle hi check ho chuka hai (liveRealMTM me), isliye direct Exit command!
+                            decision = { action: 'EXIT_ALL', reason: 'GAMMA_HOUR_PROFIT_SHIELD_DROP' };
+                        } else {
+                            decision = await ratioEngine.evaluateTick(
+                                currentTimeStr, 
+                                mockLTPs, 
+                                spotClosePrice,
+                                async () => {
+                                    // Yahan wahi function normal SL ya Stoploss Verification ke liye chalega
+                                    return await fetchRealPnL("Cross-verifying");
+                                }
+                            );
                         }
 
+                        // 🌉 THE SYNC BRIDGE (FOOLPROOF DIRECT READ) 🔥
+                        if (ratioEngine.riskManager) {
+                            if (ratioEngine.isPanicApiMode === true && ratioEngine.riskManager.isPanicApiMode === false) {
+                                ratioEngine.spotHistory = []; 
+                                console.log(`🧹 [RADAR RESET] Time: ${currentTimeStr} | Engine memory cleared for next fresh setup.\n`);
+                            }
+                            ratioEngine.isPanicApiMode = ratioEngine.riskManager.isPanicApiMode;
+                        }
 
                         // 🔥 NAYA FIX: EARLY BREACH PE REAL API PRICE MANGO! (Added SL_HIT & GAMMA Fallback)
                         if (decision && (decision.action === 'FETCH_REAL_PRICES_FOR_RECOVERY' || decision.action === 'SL_HIT' || decision.reason === 'GAMMA_BLAST_VELOCITY_BREACH')) {
                             
-                            // 1. Dhan API se asli price laao (e.g., -₹5288)
+                            // 1. Dhan API se asli price laao
                             const realPnL = await executeRealExit(decision.reason, currentTimeStr);
                             
                             // 2. Real PnL wapas Engine ko do recovery ka faisla lene ke liye!
@@ -4730,38 +4775,30 @@ const runBacktestSimulator = async (req, res) => {
                                 console.log(`\n🚑 [RECOVERY TRIGGERED] Switching to Firefighting Mode at ${currentTimeStr} | Spot: ₹${spotClosePrice}`);
                                 console.log(`   📉 Realized Loss booked: ₹${realPnL.toFixed(2)}`);
                                 
-                                // 🔥 NAYA FIX: MULTI-RECOVERY COUNTER (The Foolproof Way)
                                 if (!ratioEngine.customRecoveryCount) ratioEngine.customRecoveryCount = 0;
-                                ratioEngine.customRecoveryCount += 1; // 1 = First Recovery, 2 = Second Recovery
+                                ratioEngine.customRecoveryCount += 1; 
                                 
                                 const isSequentialRecovery = (ratioEngine.customRecoveryCount > 1);
 
-                                // 1. Pehle ka trade DB me save karo
                                 const exitingTradeSymbol = isSequentialRecovery ? "RECOVERY_TRADE" : "RATIO_SPREAD_MAIN";
                                 dailyBreakdownMap[dateStr].tradesList.push({
                                     symbol: exitingTradeSymbol,
                                     pnl: realPnL,
-                                    // exitType: "STOPLOSS_TO_RECOVERY",
                                     exitType: decision.reason || "SWITCHED TO RECOVERY",
                                     exitTime: `${dateStr} ${currentTimeStr}:00`
                                 });
                                 dailyBreakdownMap[dateStr].pnl += realPnL;
                                 dailyBreakdownMap[dateStr].trades += 1;
 
-                                // 🔥 2. MULTI-RECOVERY BUDGET RULE
                                 const remainingLossCap = ratioEngine.maxLossLimit - Math.abs(ratioEngine.realizedLoss);
-                                // Agar pehli baar hai, to 50% use karo. Agar doosri baar hai, to bacha hua pura (100%) paisa laga do!
                                 const recoveryRiskBudget = isSequentialRecovery ? remainingLossCap : (remainingLossCap * 0.5);
                                 
-                                // 🔥 3. TREND DIRECTION RULE
                                 let recoveryType = "PE";
                                 if (isSequentialRecovery) {
-                                    // Sirf dusri (2nd) recovery me disha palatni hai!
                                     const oldType = ratioEngine.activeLegs[0]?.type || "PE";
                                     recoveryType = (oldType === "PE") ? "CE" : "PE";
                                     console.log(`   🔄 C2C/SL Hit! Reversing direction to catch trend. Previous was ${oldType}, now Selling ${recoveryType}.`);
                                 } else {
-                                    // Pehli recovery me engine ne trend se jo disha (PE ya CE) nikali hai, wahi use karo
                                     recoveryType = ratioEngine.activeLegs[0]?.type || "PE"; 
                                 }
 
@@ -4796,33 +4833,24 @@ const runBacktestSimulator = async (req, res) => {
                                     }
                                 } catch(e) { }
 
-                                // 🔥 SMART POSITION SIZING (UI wale Buffer ke hisaab se)
                                 const realLotSize = Number(instrumentData.lotSize) || Number(strategyLegs[0]?.quantity) || 65;
-
-                                // 1. UI se aane wala Stop Loss Buffer points (Agar UI se nahi aaya to default 15 points)
                                 const slBufferPoints = ratioEngine.config.riskManagement?.recoverySettings?.slBufferPoints || 15;
-
-                                // 2. Dynamic Lots calculation
                                 let dynamicLots = Math.floor(recoveryRiskBudget / (slBufferPoints * realLotSize));
 
-                                // 3. Rules: Kam se kam 1 lot lenge, aur maximum 4 lots lenge (Ise bhi UI se dynamic kar sakte hain baad me)
                                 if (dynamicLots < 1) dynamicLots = 1; 
                                 if (dynamicLots > 4) dynamicLots = 4;
 
                                 currentStartMin = timeInMinutes; 
                                 ratioEngine.tradeStartTime = timeInMinutes;
-                                ratioEngine.entrySpotPrice = spotClosePrice; // Recovery trade ka time lock
+                                ratioEngine.entrySpotPrice = spotClosePrice; 
 
                                 ratioEngine.activeLegs = [
                                     { strike: recoveryAtmStrike, type: recoveryType, action: 'SELL', entryPrice: recoveryEntryPrice, lots: dynamicLots, tag: 'RECOVERY', inst: { id: `${recoveryType}_RECOVERY`, lotSize: realLotSize } }
                                 ];
                                 
                                 console.log(`   🔥 [RECOVERY ENTRY] Sold ${dynamicLots} Lot(s) ${recoveryType} @ Strike ${recoveryAtmStrike} | Premium: ₹${recoveryEntryPrice.toFixed(2)} | Risk Allocated: -₹${recoveryRiskBudget.toFixed(2)}`);
-                                
                                 ratioEngine.status = 'RECOVERY_MODE';
                             }
-                            
-                            // 🛑 THE MISSING LOCK (KILL SWITCH): Agar recovery nahi hui, fail ho gayi, ya disable hai!
                             else {
                                 console.log(`\n🎯 [FORCE EXIT] Time: ${currentTimeStr} | Trade closed completely. Recovery skipped/disabled.`);
                                 
@@ -4838,26 +4866,27 @@ const runBacktestSimulator = async (req, res) => {
                                 dailyBreakdownMap[dateStr].pnl += realPnL;
                                 dailyBreakdownMap[dateStr].trades += 1;
                                 
-                                // 🔥 ENGINE KO BAND KARO (Infinite Loop Fix)
                                 ratioEngine.status = 'COMPLETED'; 
                             }
                         }
-
                         // For Late Exit (SQUARE OFF)
                         else if (decision && decision.action === 'EXIT_ALL') {
                             const exitReason = decision.reason || "STRATEGY_EXIT";
                             const finalPnL = await executeRealExit(exitReason, currentTimeStr); 
                             
+                            // 🔥 NAYA FIX: Puraane loss/profit aur aakhiri trade ke PnL ko jod kar Final Amount nikalo
+                            const totalDailyPnL = (ratioEngine.realizedLoss || 0) + finalPnL;
+                            
                             console.log(`\n🎯 [EXIT ALL] Reason: ${exitReason} | Time: ${currentTimeStr} | Spot: ₹${spotClosePrice}`);
-                            console.log(`   💰 Final PnL booked: ₹${finalPnL.toFixed(2)}`);
+                            console.log(`   💰 Final Total PnL booked for the Day: ₹${totalDailyPnL.toFixed(2)}`);
 
                             dailyBreakdownMap[dateStr].tradesList.push({
                                 symbol: ratioEngine.status === 'RECOVERY_MODE' ? "RECOVERY_TRADE" : "RATIO_SPREAD_MAIN",
-                                pnl: finalPnL,
+                                pnl: finalPnL, // DB me list ke andar sirf is current trade ka PnL jayega
                                 exitType: exitReason,
                                 exitTime: `${dateStr} ${currentTimeStr}:00`
                             });
-                            dailyBreakdownMap[dateStr].pnl += finalPnL;
+                            dailyBreakdownMap[dateStr].pnl += finalPnL; // Total map me add ho jayega
                             dailyBreakdownMap[dateStr].trades += 1;
                             ratioEngine.status = 'COMPLETED'; 
                         }
