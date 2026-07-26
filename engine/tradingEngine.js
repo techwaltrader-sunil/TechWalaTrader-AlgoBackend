@@ -1,5 +1,4 @@
 
-
 // // ==========================================
 // // 🌟 MAIN TRADING ENGINE (THE MANAGER) 🌟
 // // ==========================================
@@ -19,6 +18,7 @@
 // // 🔍 Scanners
 // const { findStrikeByLivePremium } = require('./scanners/optionChainScanner.js');
 // const { getIndicatorSignal, getIndicatorExitSignal } = require('./scanners/indicatorScanner.js');
+// const { findSMCZones } = require('./scanners/SetupFinder.js');
 
 // // 🛡️ Risk Management
 // const { handleMtmSquareOff } = require('./features/riskManagement/mtmSquareOff.js');
@@ -38,6 +38,9 @@
 
 // const { identifySwings, checkPriceActionSignal } = require('./scanners/priceActionScanner.js');
 // const { fetchCandleData } = require('../services/candleService.js');
+
+// const SMCEntryEngine = require('./scanners/SMCEntryEngine.js');
+
 
 // // Global execution locks
 // const executionLocks = new Set();
@@ -192,29 +195,68 @@
 //                 else if (strategyType === "Price Action Based") {
 //                     const broker = await Broker.findById(deployment.brokers[0]);
 //                     if (broker && broker.engineOn) {
-//                         // कैंडल्स फेच करो (resolution '1' for 1-min)
-//                         const candles = await fetchCandleData(broker.clientId, broker.apiSecret, 'NSE', instrumentData.id, 'INDEX', '1', 1);
                         
-//                         if (candles.length > 0) {
+//                         // 🛡️ THE FIX: Dhan Security ID Fallback
+//                         const dhanIndexIds = {
+//                             "NIFTY": "13",
+//                             "BANKNIFTY": "25",
+//                             "FINNIFTY": "27",
+//                             "MIDCPNIFTY": "118",
+//                             "SENSEX": "51"
+//                         };
 
-//                             // 2. स्विंग्स डिटेक्ट करो
-//                             const swings = identifySwings(candles);
+//                         // 🔥 THE NEW FIX: Dhan API needs 'IDX_I' for Indices, not 'NSE'
+//                         let targetExchange = "IDX_I"; 
+//                         if (baseSymbol === "SENSEX") targetExchange = "BSE";
 
-//                             // 3. अपना नया स्कैनर चलाओ
-//                             // हमने strategy.data में जो priceActionSettings सेव किया था, उसे यहाँ यूज़ करेंगे
-//                             const setupType = strategy.data?.priceActionSettings?.setupType || "BOS (Break of Structure)";
-//                             const paSignal = checkPriceActionSignal(candles, swings, setupType);
+//                         // Safety Check
+//                         const safeInstrumentId = (typeof instrumentData !== 'undefined' && instrumentData.id) ? instrumentData.id : null;
+                        
+//                         const targetSecurityId = safeInstrumentId || dhanIndexIds[baseSymbol];
 
-//                             // 🔥 LOG GENERATOR: अब यह Reason भी साथ लाएगा
-//                             if (paSignal.long || paSignal.short) {
-//                                 const logReason = paSignal.reason || "Price Action Signal Triggered";
-//                                 console.log(`🚀 [PRICE ACTION] ${logReason}`);
-                                
-//                                 // यह लॉग आपके वेब-डैशबोर्ड पर भी दिखेगा
-//                                 await createAndEmitLog(broker, instrumentData.name, "SCANNER", 0, "INFO", logReason);
-                                
-//                                 if (paSignal.long) { shouldEnter = true; currentSignalType = "LONG"; }
-//                                 else if (paSignal.short) { shouldEnter = true; currentSignalType = "SHORT"; }
+//                         console.log(`🔍 [DEBUG SCANNER] BaseSymbol: ${baseSymbol} | Exchange: ${targetExchange} | Final Target ID: ${targetSecurityId}`);
+
+//                         if (!targetSecurityId) {
+//                             console.log(`⚠️ [WARNING] No Security ID found for ${baseSymbol}. Skipping tick...`);
+//                             continue; 
+//                         }
+
+//                         // 1. कैंडल्स फेच करो (🎯 अब targetExchange में 'IDX_I' जाएगा)
+//                         const candles = await fetchCandleData(broker.clientId, broker.apiSecret, targetExchange, targetSecurityId, 'INDEX', '1', 1);
+                        
+//                         if (candles && candles.length > 0) {
+//                             const deploymentIdStr = deployment._id.toString();
+
+//                             // 2. 🧠 MAP GUARD: अगर इस डिप्लॉयमेंट का स्नाइपर इंजन पहले से मैप में नहीं है, तो नया बनाओ
+//                             if (!liveSniperMap.has(deploymentIdStr)) {
+//                                 liveSniperMap.set(deploymentIdStr, new SMCEntryEngine({
+//                                     maxSlPoints: config.maxSlPoints || 20, // UI से आया हुआ Dynamic SL Size
+//                                     entryTriggers: config.entryTriggers || ['DIRECT ENTRY', 'POI ENTRY', 'SCOB ENTRY'], // UI से सिलेक्टेड ट्रिगर्स
+//                                     htf: config.htf || '5 min',
+//                                     ltf: config.ltf || '1 min'
+//                                 }));
+//                             }
+
+//                             const sniperInstance = liveSniperMap.get(deploymentIdStr);
+
+//                             // 3. SetupFinder का इस्तेमाल करके एक्टिव ज़ोन निकालो
+//                             let activeSetupZone = await findSMCZones(candles); 
+//                             let currentTrend = deployment.signalType || "BULLISH"; 
+//                             let currentLivePrice = await fetchLivePrice(baseSymbol);
+
+//                             if (activeSetupZone && currentLivePrice) {
+//                                 // 🎯 स्नाइपर इंजन को लाइव टिक और कैंडल डेटा प्रोसेस करने के लिए दें
+//                                 const currentCandle = candles[candles.length - 1];
+//                                 const sniperSignal = sniperInstance.processLiveMarket(currentLivePrice, currentCandle, activeSetupZone, currentTrend);
+
+//                                 // 4. अगर स्नाइपर ने वॉटरफॉल प्रायोरिटी पास करके ट्रिगर दबा दिया!
+//                                 if (sniperSignal && (sniperSignal.action === 'BUY' || sniperSignal.action === 'SELL')) {
+//                                     shouldEnter = true;
+//                                     currentSignalType = sniperSignal.trendType; // LONG or SHORT
+                                    
+//                                     console.log(`🎯 [SNIPER EXECUTION] Triggered via: ${sniperSignal.type} at ₹${sniperSignal.entryPrice}`);
+//                                     await createAndEmitLog(broker, instrumentData.name, "SNIPER", 0, "SUCCESS", `SMC Entry Confirmed via ${sniperSignal.type}`);
+//                                 }
 //                             }
 //                         }
 //                     }
@@ -806,6 +848,7 @@
 
 
 
+
 // ==========================================
 // 🌟 MAIN TRADING ENGINE (THE MANAGER) 🌟
 // ==========================================
@@ -848,6 +891,143 @@ const { fetchCandleData } = require('../services/candleService.js');
 
 const SMCEntryEngine = require('./scanners/SMCEntryEngine.js');
 
+
+const dhanStreamer = require('../services/dhanStreamer');
+
+const { calculateApproxBasketMargin } = require('./utils/marginCalculator.js'); 
+const { isThisExpiryDay } = require('./utils/expiryCalculator.js');
+
+// =========================================================================
+// 🧠 RATIO SPREAD: LIVE MEMORY CACHE & TICK LISTENER (THE HEARTBEAT)
+// =========================================================================
+const { checkVelocityGuard, evaluateGammaShield, generateRatioSpreadLegs } = require('../engine/strategies/ratioSpreadManager.js');
+
+// 1. Global Memory (Fast Access)
+const activeRatioDeployments = new Map(); 
+const liveLtpCache = {}; 
+
+// 🛡️ THE LIVE FIREFIGHTER (Square-off Executer)
+const executeLiveEmergencyExit = async (session, reason, currentMtm) => {
+    try {
+        console.log(`\n🚑 [FIREFIGHTER] Squaring off all active legs for ${session.symbol}. Reason: ${reason}`);
+        
+        // 1. Dhan API pe ulte orders (Square-off) fire karo
+        for (let leg of session.activeLegs) {
+            const sqAction = leg.action === 'BUY' ? 'SELL' : 'BUY';
+            const sqOrderData = { 
+                action: sqAction, 
+                quantity: leg.lots * (leg.inst.lotSize || 65), 
+                securityId: leg.inst.id, 
+                segment: leg.exchange || "NSE_FNO", 
+                orderType: "MARKET" 
+            };
+            
+            // Fire Market Order on Dhan
+            const sqResp = await placeDhanOrder(session.broker.clientId, session.broker.apiSecret, sqOrderData);
+            if (sqResp.success) {
+                console.log(`   ✅ Auto-Exited: ${leg.action} Leg @ ${leg.strike} ${leg.type}`);
+            } else {
+                console.log(`   ❌ Exit Failed for ${leg.strike}: ${sqResp.data?.remarks}`);
+            }
+        }
+
+        // 2. DB me Deployment Status 'COMPLETED' mark kar do
+        const Deployment = require('../models/deploymentModel'); // Path verify kar lijiyega
+        const depDb = await Deployment.findById(session.deploymentId);
+        if(depDb) {
+            depDb.status = 'COMPLETED';
+            depDb.exitReason = reason;
+            depDb.exitTime = new Date();
+            await depDb.save();
+        }
+
+        // 3. Trade ko Memory se hata do taki dobara check na ho
+        activeRatioDeployments.delete(session.deploymentId);
+        console.log(`🎯 [EXIT SUCCESS] Trade Closed Successfully at MTM: ₹${currentMtm.toFixed(2)}`);
+
+    } catch (error) {
+        console.error(`❌ [FIREFIGHTER ERROR]`, error.message);
+    }
+};
+
+// ⏱️ THE TICK LISTENER (Har millisecond me chalega)
+dhanStreamer.on('tick', async (tickData) => {
+    try {
+        // A) Naya price turant cache me dalo
+        liveLtpCache[tickData.securityId] = tickData.ltp;
+
+        // B) Har ek Active Ratio Spread ko check karo
+        for (let [depId, session] of activeRatioDeployments.entries()) {
+            if(session.status !== 'ACTIVE' && session.status !== 'RECOVERY_MODE') continue;
+            
+            // C) 🚨 VELOCITY GUARD CHECK (Agar Nifty/BankNifty ka tick aaya hai)
+            if (String(tickData.securityId) === String(session.spotSecurityId)) {
+                const vGuard = checkVelocityGuard(tickData.ltp, session.spotHistory, session.vWindow, session.vPoints, session.isPanicApiMode);
+                session.spotHistory = vGuard.spotHistory;
+                
+                if (vGuard.isPanic && !session.isPanicApiMode) {
+                    session.isPanicApiMode = true; // Engine Ab Panic Mode me hai
+                }
+            }
+
+            // D) 🧮 LIVE MTM CALCULATION (Lightning Fast)
+            let allPricesAvailable = true;
+            let liveMTM = 0;
+
+            for (let leg of session.activeLegs) {
+                const legLtp = liveLtpCache[leg.inst.id];
+                if (!legLtp) { allPricesAvailable = false; break; } // Agar ek bhi leg ka price nahi aaya, to ruko
+                
+                const mult = leg.lots * (leg.inst.lotSize || 65);
+                const legPnL = leg.action === 'BUY' ? (legLtp - leg.entryPrice) * mult : (leg.entryPrice - legLtp) * mult;
+                liveMTM += legPnL;
+            }
+
+            if (!allPricesAvailable) continue; 
+
+            let forceExitReason = null;
+
+            // E) 🛡️ GAMMA SHIELD CHECK
+            const now = new Date();
+            const h = String(now.getHours()).padStart(2, '0');
+            const m = String(now.getMinutes()).padStart(2, '0');
+            const currentTimeStr = `${h}:${m}`;
+
+            if (session.shieldConfig && session.estimatedMargin) {
+                const shieldState = { isActive: session.isGammaShieldActive, highestLockedProfit: session.highestLockedProfit };
+                const shieldResult = evaluateGammaShield(currentTimeStr, liveMTM, session.estimatedMargin, session.shieldConfig, shieldState);
+                
+                session.isGammaShieldActive = shieldResult.newState.isActive;
+                session.highestLockedProfit = shieldResult.newState.highestLockedProfit;
+
+                if (shieldResult.action === 'FORCE_EXIT') forceExitReason = 'GAMMA_HOUR_PROFIT_SHIELD_DROP';
+            }
+
+            // F) 🚨 HARD STOPLOSS CHECK
+            if (liveMTM <= -Math.abs(session.maxLossLimit)) {
+                forceExitReason = 'MAX_LOSS_HIT';
+            }
+
+            // G) 💣 VELOCITY PANIC EXIT (Agar market tezi se gira aur loss -70% tak pahunch gaya)
+            if (session.isPanicApiMode && liveMTM <= -Math.abs(session.maxLossLimit * 0.70)) {
+                forceExitReason = 'GAMMA_BLAST_VELOCITY_BREACH';
+            }
+
+            // H) 🔥 FINAL EXECUTION: FIRE THE EXIT!
+            if (forceExitReason) {
+                // Turant status change karo taki double-fire na ho jaye
+                session.status = 'EXECUTING_EXIT';
+                console.log(`\n⚡ [LIVE TRIGGER] Limit Breached! Reason: ${forceExitReason} | Current Live MTM: ₹${liveMTM.toFixed(2)}`);
+                
+                // Firefighter ko call kardo
+                executeLiveEmergencyExit(session, forceExitReason, liveMTM);
+            }
+        }
+    } catch (error) {
+        // Silent error handle (Taki loop crash na ho)
+    }
+});
+// =========================================================================
 
 // Global execution locks
 const executionLocks = new Set();
@@ -1158,156 +1338,459 @@ cron.schedule('*/30 * * * * *', async () => {
                             }
                             // ==============================================================
 
-                            for (const leg of strategy.data.legs) {
-                                let tradeAction = (leg.action || "BUY").toUpperCase();
-                                let tradeQty = (leg.quantity || 1) * deployment.multiplier;
+                            // 🔍 CHECK STRATEGY TYPE: Kya ye Ratio Spread hai?
+                            const isRatioSpreadStrategy = strategy.data?.legs?.some(leg => leg?.strikeCriteria === 'Ratio Spread (Prem/X)');
 
-                                let optType = leg.optionType === "Call" ? "CE" : "PE";
-                                if (currentSignalType === "LONG") optType = (tradeAction === "BUY") ? "CE" : "PE";
-                                else if (currentSignalType === "SHORT") optType = (tradeAction === "BUY") ? "PE" : "CE";
+                            if (isRatioSpreadStrategy) {
+                                // ==============================================================
+                                // 🚀 NEW LIVE MARKET ENTRY SEQUENCE (RATIO SPREAD)
+                                // ==============================================================
+                                console.log(`\n⚡ [RATIO SPREAD LIVE EXECUTION] Processing Smart Entry...`);
 
-                                let currentSpotPrice = await fetchLivePrice(baseSymbol);
-                                if (!currentSpotPrice) continue;
-
-                                const strikeCriteria = leg.strikeCriteria || "ATM pt";
-                                let instrument = null;
-                                let preFetchedLtp = null;
-
-                                if (["CP", "CP >=", "CP <=", "Delta"].includes(strikeCriteria)) {
-                                    instrument = await findStrikeByLivePremium(baseSymbol, currentSpotPrice, optType, leg.expiry || "WEEKLY", strikeCriteria, leg.strikeType || "ATM", broker);
-                                    if (instrument && instrument.ltp) preFetchedLtp = instrument.ltp;
-                                } else {
-                                    instrument = getOptionSecurityId(baseSymbol, currentSpotPrice, strikeCriteria, leg.strikeType || "ATM", optType, leg.expiry || "WEEKLY");
+                                const upperSymbol = baseSymbol;
+                                
+                                // 1. Spot Price aur ATM Strike nikalna
+                                const currentSpotPrice = await fetchLivePrice(baseSymbol);
+                                if (!currentSpotPrice) {
+                                    console.log(`⚠️ Spot price fetch failed. Skipping tick.`);
+                                    continue;
                                 }
+                                
+                                // Apni purani utils use karke ATM nikal lein
+                                const atmStrike = Math.round(currentSpotPrice / getStrikeStep(upperSymbol)) * getStrikeStep(upperSymbol);
+                                const stepSize = getStrikeStep(upperSymbol);
+                                const premiumDivisor = 4; // Target Divisor
 
-                                if (!instrument) continue;
+                                // 2. Premium Fetch Callback (Live API)
+                                const liveFetchPremiumCallback = async (optType, expectedStrike) => {
+                                    // Live market me hum fetchLiveLTP se direct true price nikalenge
+                                    let inst = getOptionSecurityId(baseSymbol, currentSpotPrice, "ATM pt", "ATM", optType, strategy.data?.legs[0]?.expiry || "WEEKLY"); // Dummy call to get structure
+                                    if(!inst) return null;
+                                    
+                                    // Yahan Dhan API call function use hoga
+                                    const ltp = await fetchLiveLTP(broker.clientId, broker.apiSecret, inst.exchange, inst.id);
+                                    if(ltp) return { price: ltp, strike: expectedStrike };
+                                    return null;
+                                };
 
-                                // 🔥 THE WAIT & TRADE INJECTION
-                                await sleep(500);
-                                const currentPremiumLtp = preFetchedLtp || await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id) || currentSpotPrice;
+                                // ATM Premiums for target
+                                const atmCe = await liveFetchPremiumCallback("CE", atmStrike) || { price: 120, strike: atmStrike };
+                                const atmPe = await liveFetchPremiumCallback("PE", atmStrike) || { price: 110, strike: atmStrike };
+                                const targetCePremium = atmCe.price / premiumDivisor;
+                                const targetPePremium = atmPe.price / premiumDivisor;
 
-                                const isWaitAndTradeActive = strategy.data?.advanceSettings?.waitAndTrade;
-                                const waitAndTradeConfig = strategy.data?.advanceSettings?.waitAndTradeConfig || {};
+                                // 3. Master Engine ko call karein
+                                const legConfig = {
+                                    executionMode: strategy.data?.advanceSettings?.legSelectionMode || 'ADAPTIVE_SKEW',
+                                    maxAsymmetricLots: strategy.data?.advanceSettings?.maxAsymmetricLots || 5,
+                                    realLotSize: (strategy.data?.instruments && strategy.data?.instruments[0]?.lotSize) ? strategy.data.instruments[0].lotSize : 65,
+                                    defaultCeLots: strategy.data?.legs[2]?.quantity || 4,
+                                    defaultPeLots: strategy.data?.legs[3]?.quantity || 4
+                                };
 
-                                if (isWaitAndTradeActive && waitAndTradeConfig.movement > 0) {
-                                    if (!deployment.waitReferencePrice) {
-                                        deployment.waitReferencePrice = currentPremiumLtp;
-                                        await deployment.save();
-                                        console.log(`⏳ [WAIT & TRADE] Ref Price: ₹${currentPremiumLtp}. Waiting for movement...`);
-                                        await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'INFO', `Wait & Trade Activated. Ref Premium: ₹${currentPremiumLtp}`);
-                                        continue;
-                                    } else {
-                                        const waitStatus = processWaitAndTrade(waitAndTradeConfig, currentPremiumLtp, deployment.waitReferencePrice);
-                                        if (!waitStatus.shouldExecute) {
-                                            continue;
-                                        } else {
-                                            console.log(`🎯 [WAIT & TRADE] Target Hit! Executing Trade...`);
-                                        }
-                                    }
-                                }
+                                const masterResult = await generateRatioSpreadLegs(
+                                    currentSpotPrice, atmStrike, upperSymbol, stepSize, targetCePremium, targetPePremium, liveFetchPremiumCallback, legConfig
+                                );
 
-                                // 🟢 PAPER TRADE ENTRY
+                                let legsToExecute = masterResult.activeLegs; 
+                                let successfulLiveLegs = [];
+                                let executionFailed = false;
+
+                                const buyLegs = legsToExecute.filter(leg => leg.action === 'BUY');
+                                const sellLegs = legsToExecute.filter(leg => leg.action === 'SELL');
+
+                                // 4. PAPER TRADE LOGIC FOR RATIO SPREAD
                                 if (deployment.executionType === 'FORWARD_TEST' || deployment.executionType === 'PAPER') {
-                                    await sleep(500);
-                                    let entryPrice = preFetchedLtp || await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id);
-
-                                    if (!entryPrice || entryPrice <= 0) {
-                                        console.log(`⚠️ LTP not found. Skipping...`);
-                                        continue;
+                                    deployment.executedLegs = [];
+                                    for (let leg of legsToExecute) {
+                                        deployment.executedLegs.push({
+                                            securityId: leg.inst.id, exchange: "NSE_FNO", symbol: `${upperSymbol} ${leg.strike} ${leg.type}`,
+                                            action: leg.action, quantity: leg.lots * leg.inst.lotSize, entryPrice: leg.entryPrice,
+                                            paperSlPrice: 0, status: 'ACTIVE', currentTrailedSL: null, entryReason: "Ratio Spread Paper"
+                                        });
                                     }
-
-                                    let paperSl = 0;
-                                    if (isPrePunchSL && entryPrice > 0 && leg.slValue > 0) {
-                                        paperSl = tradeAction === "BUY"
-                                            ? (leg.slType === 'SL%' ? entryPrice - (entryPrice * (Number(leg.slValue)/100)) : entryPrice - Number(leg.slValue))
-                                            : (leg.slType === 'SL%' ? entryPrice + (entryPrice * (Number(leg.slValue)/100)) : entryPrice + Number(leg.slValue));
-                                    }
-
-                                    // 🔥 PUSH TO ARRAY
-                                    deployment.executedLegs.push({
-                                        securityId: instrument.id,
-                                        exchange: instrument.exchange,
-                                        symbol: instrument.tradingSymbol,
-                                        action: tradeAction,
-                                        quantity: tradeQty,
-                                        entryPrice: entryPrice,
-                                        paperSlPrice: paperSl,
-                                        status: 'ACTIVE',
-                                        currentTrailedSL: null, // 🔥 SNIPER MEMORY
-                                        entryReason: deployment.waitReferencePrice ? "Wait & Trade" : (advSettings.premiumDifference ? "Premium Diff" : "Normal") // 🔥 FRONTEND TAG
-                                    });
-
                                     await deployment.save();
-                                    // await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'SUCCESS', `Paper Entry at ₹${entryPrice}`);
+                                    console.log(`📝 [PAPER TRADE] Ratio Spread Deployed Successfully.`);
 
-                                    console.log(`📝 [PAPER TRADE] [Time: ${currentTime}] Entry Placed at ₹${entryPrice} | Pre-Punch SL calculated at ₹${paperSl}`);
+                                    // =========================================================
+                                    // 🔌 START WEBSOCKET & SUBSCRIBE LIVE TOKENS (PAPER MODE)
+                                    // =========================================================
+                                    if (!dhanStreamer.isConnected) {
+                                        dhanStreamer.connect(broker.clientId, broker.apiSecret); 
+                                    }
 
-                                    await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'SUCCESS', `Paper Entry at ₹${entryPrice} (SL set at ₹${paperSl})`);
+                                    // 🔥 FIX: Paper trade me 'legsToExecute' use karenge
+                                    const liveTokens = legsToExecute.map(leg => leg.inst.id);
+                                    
+                                    if (liveTokens.length > 0) {
+                                        setTimeout(() => {
+                                            dhanStreamer.subscribeTokens("NSE_FNO", liveTokens);
+                                        }, 2000); 
+                                    }
+                                    // =========================================================
 
+
+                                    // =========================================================
+                                    // 🧮 CALCULATE MARGIN & MAX LOSS FOR PAPER
+                                    // =========================================================
+                                    let estMargin = 150000; // Fallback Default
+                                    try {
+                                        const todayStr = new Date().toISOString().split('T')[0];
+                                        const isExpDay = isThisExpiryDay(todayStr, upperSymbol, strategy.data?.legs[0]?.expiry || "WEEKLY");
+                                        // 🔥 FIX: Paper trade me margin nikalne ke liye 'legsToExecute' use hoga
+                                        estMargin = calculateApproxBasketMargin(legsToExecute, upperSymbol, isExpDay);
+                                    } catch (e) {
+                                        console.log(`⚠️ Margin calculation fallback used for Paper Trade.`);
+                                    }
+                                    
+                                    const userMaxLossAmt = Number(strategy.data?.advanceSettings?.maxLoss || 0);
+                                    const calcMaxLoss = userMaxLossAmt > 0 ? userMaxLossAmt : (estMargin * (Number(strategy.data?.advanceSettings?.maxLossPct || 1) / 100));
+
+                                    
+                                    // =========================================================
+                                    // 🔍 FIND SPOT SECURITY ID (For Velocity Guard)
+                                    // =========================================================
+                                    let spotSecurityId = "13"; // Default NIFTY 50
+                                    const checkSym = String(upperSymbol).toUpperCase().replace(/\s+/g, '');
+                                    
+                                    if (checkSym.includes("BANKNIFTY") || checkSym === "NIFTYBANK") spotSecurityId = "25";
+                                    else if (checkSym.includes("FINNIFTY")) spotSecurityId = "27";
+                                    else if (checkSym.includes("MIDCPNIFTY")) spotSecurityId = "26";
+                                    else if (checkSym.includes("SENSEX")) spotSecurityId = "51";
+                                    else if (checkSym.includes("BANKEX")) spotSecurityId = "52";
+                                    // =========================================================
+                                    
+
+                                    // 👇👇👇 NAYA CODE YAHAN FIT HUA HAI 👇👇👇
+                                    // =========================================================
+                                    // 🧠 REGISTER TO GLOBAL MEMORY (For Live Tick Tracking - PAPER)
+                                    // =========================================================
+                                    activeRatioDeployments.set(deployment._id.toString(), {
+                                        deploymentId: deployment._id.toString(),
+                                        broker: broker,
+                                        symbol: upperSymbol,
+                                        spotSecurityId: spotSecurityId,
+                                        status: 'ACTIVE',
+                                        activeLegs: legsToExecute, // 🔥 Paper mode me 'legsToExecute' jayega
+                                        
+                                        // 🔥 NEW MARGIN & LOSS LIMITS 🔥
+                                        estimatedMargin: estMargin,
+                                        maxLossLimit: calcMaxLoss,
+                                        
+                                        // Guards Memory
+                                        spotHistory: [],
+                                        isPanicApiMode: false,
+                                        isGammaShieldActive: false,
+                                        highestLockedProfit: 0,
+                                        
+                                        // Config Settings
+                                        vWindow: strategy.data?.advanceSettings?.gammaBlastSettings?.velocityWindow || 15,
+                                        vPoints: strategy.data?.advanceSettings?.gammaBlastSettings?.velocityPoints || (upperSymbol.includes("BANK") ? 250 : 100),
+                                        shieldConfig: strategy.data?.advanceSettings?.timeShieldSettings || null
+                                    });
+                                    console.log(`🎯 Engine Memory Updated! ${upperSymbol} is now under Paper Live Radar Tracking. (Max Loss Limit: -₹${calcMaxLoss.toFixed(2)})`);
+                                    // =========================================================
                                 }
 
-                                // 🔴 LIVE TRADE ENTRY
+                                // 5. REAL LIVE TRADE EXECUTION (BUY FIRST, SELL LATER)
                                 else if (deployment.executionType === 'LIVE') {
-                                    const orderData = { action: tradeAction, quantity: tradeQty, securityId: instrument.id, segment: instrument.exchange };
-                                    const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
+                                    try {
+                                        // 🟢 STEP A: FIRE BUY LEGS FIRST
+                                        console.log(`🛒 Firing BUY Legs First...`);
+                                        for (let leg of buyLegs) {
+                                            const orderData = { action: 'BUY', quantity: leg.lots * leg.inst.lotSize, securityId: leg.inst.id, segment: "NSE_FNO", orderType: "MARKET" };
+                                            const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
 
-                                    if (orderResponse.success && orderResponse.data?.orderStatus?.toUpperCase() !== "REJECTED") {
-                                        await sleep(2000);
-                                        const entryPrice = await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id) || 0;
-
-                                        let liveSlPrice = 0;
-
-                                        // 🛡️ THE NEW FIX: PRE-PUNCH SL LOGIC FOR LIVE MARKET
-                                        if (isPrePunchSL && entryPrice > 0 && leg.slValue > 0) {
-                                            // SL Price Calculate karna
-                                            const slAmt = leg.slType === 'SL%' ? (entryPrice * (Number(leg.slValue)/100)) : Number(leg.slValue);
-                                            liveSlPrice = tradeAction === "BUY" ? entryPrice - slAmt : entryPrice + slAmt;
-                                            liveSlPrice = parseFloat(liveSlPrice.toFixed(2)); // Dhan ke liye 2 decimal zaroori hai
-
-                                            // SL hamesha Entry ka opposite hota hai
-                                            const slAction = tradeAction === "BUY" ? "SELL" : "BUY";
-
-                                            console.log(`🛡️ [PRE-PUNCH] Placing SL Order at ₹${liveSlPrice} for ${instrument.tradingSymbol}`);
-
-                                            const slOrderData = {
-                                                action: slAction,
-                                                quantity: tradeQty,
-                                                securityId: instrument.id,
-                                                segment: instrument.exchange,
-                                                orderType: "STOP_LOSS_MARKET", // 🔥 Dhan ko batana ki ye SL hai
-                                                triggerPrice: liveSlPrice      // 🔥 Trigger Price set karna
-                                            };
-
-                                            // Dhan par SL Pending order bhejna
-                                            const slOrderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, slOrderData);
-
-                                            if(slOrderResponse.success) {
-                                                await createAndEmitLog(broker, instrument.tradingSymbol, slAction, tradeQty, 'INFO', `Pre-Punch SL Placed successfully at ₹${liveSlPrice}`);
+                                            if (orderResponse.success && orderResponse.data?.orderStatus?.toUpperCase() !== "REJECTED") {
+                                                const entryLTP = await fetchLiveLTP(broker.clientId, broker.apiSecret, orderData.segment, orderData.securityId) || leg.entryPrice;
+                                                successfulLiveLegs.push({ ...leg, realEntryPrice: entryLTP, status: 'ACTIVE', orderId: orderResponse.data.orderId });
+                                                console.log(`   ✅ BUY Executed: ${leg.lots} Lot(s) @ ₹${entryLTP}`);
                                             } else {
-                                                await createAndEmitLog(broker, instrument.tradingSymbol, slAction, tradeQty, 'FAILED', `Pre-Punch SL Failed: ${slOrderResponse.data?.remarks || "Unknown Error"}`);
+                                                executionFailed = true;
                                             }
                                         }
 
-                                        // 🔥 PUSH TO ARRAY
-                                        deployment.executedLegs.push({
-                                            securityId: instrument.id,
-                                            exchange: instrument.exchange,
-                                            symbol: instrument.tradingSymbol,
-                                            action: tradeAction,
-                                            quantity: tradeQty,
-                                            entryPrice: entryPrice,
-                                            paperSlPrice: liveSlPrice > 0 ? liveSlPrice : 0, // SL record karna
-                                            status: 'ACTIVE',
-                                            currentTrailedSL: null, // 🔥 SNIPER MEMORY
-                                            entryReason: deployment.waitReferencePrice ? "Wait & Trade" : (advSettings.premiumDifference ? "Premium Diff" : "Normal") // 🔥 FRONTEND TAG
-                                        });
+                                        if (executionFailed) throw new Error("BUY Legs execution failed. Halting.");
 
+                                        // ⏳ Wait for Margin Benefit
+                                        await sleep(1500);
+
+                                        // 🔴 STEP B: FIRE SELL LEGS
+                                        console.log(`🔥 Firing SELL Legs...`);
+                                        for (let leg of sellLegs) {
+                                            const orderData = { action: 'SELL', quantity: leg.lots * leg.inst.lotSize, securityId: leg.inst.id, segment: "NSE_FNO", orderType: "MARKET" };
+                                            const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
+
+                                            if (orderResponse.success && orderResponse.data?.orderStatus?.toUpperCase() !== "REJECTED") {
+                                                const entryLTP = await fetchLiveLTP(broker.clientId, broker.apiSecret, orderData.segment, orderData.securityId) || leg.entryPrice;
+                                                successfulLiveLegs.push({ ...leg, realEntryPrice: entryLTP, status: 'ACTIVE', orderId: orderResponse.data.orderId });
+                                                console.log(`   ✅ SELL Executed: ${leg.lots} Lot(s) @ ₹${entryLTP}`);
+                                            } else {
+                                                executionFailed = true;
+                                                break; 
+                                            }
+                                        }
+
+                                        // 🚑 Partial Fill Guard (Auto Square-Off)
+                                        if (executionFailed) {
+                                            console.log(`🚨 [EMERGENCY] Sell Leg Failed! Squaring off existing BUY positions...`);
+                                            for (let safeLeg of successfulLiveLegs.filter(l => l.action === 'BUY')) {
+                                                const sqData = { action: 'SELL', quantity: safeLeg.lots * safeLeg.inst.lotSize, securityId: safeLeg.inst.id, segment: "NSE_FNO", orderType: "MARKET" };
+                                                await placeDhanOrder(broker.clientId, broker.apiSecret, sqData);
+                                            }
+                                            throw new Error("Margin Shortfall on Sell Leg.");
+                                        }
+
+                                        // 💾 Save to MongoDB
+                                        for (let sLeg of successfulLiveLegs) {
+                                            deployment.executedLegs.push({
+                                                securityId: sLeg.inst.id, exchange: "NSE_FNO", symbol: `${upperSymbol} ${sLeg.strike} ${sLeg.type}`,
+                                                action: sLeg.action, quantity: sLeg.lots * sLeg.inst.lotSize, entryPrice: sLeg.realEntryPrice,
+                                                paperSlPrice: 0, status: 'ACTIVE', currentTrailedSL: null, entryReason: "Ratio Spread Live"
+                                            });
+                                        }
+                                        deployment.status = 'ACTIVE';
                                         await deployment.save();
-                                        await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'SUCCESS', `Live Entry Executed`, orderResponse.data.orderId);
-                                    } else {
-                                        await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'FAILED', orderResponse.data?.remarks || "Order Failed");
+                                        await createAndEmitLog(broker, strategy.name, "DEPLOY", 1, 'SUCCESS', `Live Ratio Spread Executed Successfully.`);
+                                        
+                                        // =========================================================
+                                        // 🔌 START WEBSOCKET & SUBSCRIBE LIVE TOKENS
+                                        // =========================================================
+                                        // 1. Agar websocket connected nahi hai, toh connect karo
+                                        if (!dhanStreamer.isConnected) {
+                                            dhanStreamer.connect(broker.clientId, broker.apiSecret); 
+                                        }
+
+                                        // 2. Successful legs me se token IDs (SecurityId) nikalo
+                                        const liveTokens = successfulLiveLegs.map(leg => leg.inst.id);
+                                        
+                                        // 3. Dhan API ko bolo in tokens par nazar rakhe
+                                        if (liveTokens.length > 0) {
+                                            setTimeout(() => {
+                                                dhanStreamer.subscribeTokens("NSE_FNO", liveTokens);
+                                            }, 2000); 
+                                        }
+                                        // =========================================================
+
+                                        // =========================================================
+                                        // 🧮 CALCULATE MARGIN & MAX LOSS FOR LIVE
+                                        // =========================================================
+                                        let estMargin = 150000; // Fallback Default
+                                        try {
+                                            const todayStr = new Date().toISOString().split('T')[0];
+                                            const isExpDay = isThisExpiryDay(todayStr, upperSymbol, strategy.data?.legs[0]?.expiry || "WEEKLY");
+                                            estMargin = calculateApproxBasketMargin(successfulLiveLegs, upperSymbol, isExpDay);
+                                        } catch (e) {
+                                            console.log(`⚠️ Margin calculation fallback used.`);
+                                        }
+                                        
+                                        const userMaxLossAmt = Number(strategy.data?.advanceSettings?.maxLoss || 0);
+                                        const calcMaxLoss = userMaxLossAmt > 0 ? userMaxLossAmt : (estMargin * (Number(strategy.data?.advanceSettings?.maxLossPct || 1) / 100));
+
+
+                          
+                                        // =========================================================
+                                        // 🔍 FIND SPOT SECURITY ID (For Velocity Guard)
+                                        // =========================================================
+                                        let spotSecurityId = "13"; // Default NIFTY 50
+                                        const checkSym = String(upperSymbol).toUpperCase().replace(/\s+/g, '');
+                                        
+                                        if (checkSym.includes("BANKNIFTY") || checkSym === "NIFTYBANK") spotSecurityId = "25";
+                                        else if (checkSym.includes("FINNIFTY")) spotSecurityId = "27";
+                                        else if (checkSym.includes("MIDCPNIFTY")) spotSecurityId = "26";
+                                        else if (checkSym.includes("SENSEX")) spotSecurityId = "51";
+                                        else if (checkSym.includes("BANKEX")) spotSecurityId = "52";
+                                        // =========================================================
+                               
+
+                                        // =========================================================
+                                        // 🧠 REGISTER TO GLOBAL MEMORY (For Live Tick Tracking)
+                                        // =========================================================
+                                        activeRatioDeployments.set(deployment._id.toString(), {
+                                            deploymentId: deployment._id.toString(),
+                                            broker: broker,
+                                            symbol: upperSymbol,
+                                            spotSecurityId: spotSecurityId,
+                                            status: 'ACTIVE',
+                                            activeLegs: successfulLiveLegs, // 🔥 LIVE me successfulLiveLegs
+                                            
+                                            // 🔥 NEW MARGIN & LOSS LIMITS 🔥
+                                            estimatedMargin: estMargin,
+                                            maxLossLimit: calcMaxLoss,
+                                            
+                                            // Guards Memory
+                                            spotHistory: [],
+                                            isPanicApiMode: false,
+                                            isGammaShieldActive: false,
+                                            highestLockedProfit: 0,
+                                            
+                                            // Config Settings
+                                            vWindow: strategy.data?.advanceSettings?.gammaBlastSettings?.velocityWindow || 15,
+                                            vPoints: strategy.data?.advanceSettings?.gammaBlastSettings?.velocityPoints || (upperSymbol.includes("BANKNIFTY") ? 250 : 100),
+                                            shieldConfig: strategy.data?.advanceSettings?.timeShieldSettings || null
+                                        });
+                                        console.log(`🎯 Engine Memory Updated! ${upperSymbol} is now under LIVE Radar Tracking. (Max Loss Limit: -₹${calcMaxLoss.toFixed(2)})`);
+                                        // =========================================================
+
+                                    } catch (error) {
+                                        await createAndEmitLog(broker, strategy.name, "FAILED", 0, 'FAILED', `Execution Aborted: ${error.message}`);
                                     }
                                 }
+                                
+                            } 
+                            else {
+                    
+                                    for (const leg of strategy.data.legs) {
+                                        let tradeAction = (leg.action || "BUY").toUpperCase();
+                                        let tradeQty = (leg.quantity || 1) * deployment.multiplier;
+
+                                        let optType = leg.optionType === "Call" ? "CE" : "PE";
+                                        if (currentSignalType === "LONG") optType = (tradeAction === "BUY") ? "CE" : "PE";
+                                        else if (currentSignalType === "SHORT") optType = (tradeAction === "BUY") ? "PE" : "CE";
+
+                                        let currentSpotPrice = await fetchLivePrice(baseSymbol);
+                                        if (!currentSpotPrice) continue;
+
+                                        const strikeCriteria = leg.strikeCriteria || "ATM pt";
+                                        let instrument = null;
+                                        let preFetchedLtp = null;
+
+                                        if (["CP", "CP >=", "CP <=", "Delta"].includes(strikeCriteria)) {
+                                            instrument = await findStrikeByLivePremium(baseSymbol, currentSpotPrice, optType, leg.expiry || "WEEKLY", strikeCriteria, leg.strikeType || "ATM", broker);
+                                            if (instrument && instrument.ltp) preFetchedLtp = instrument.ltp;
+                                        } else {
+                                            instrument = getOptionSecurityId(baseSymbol, currentSpotPrice, strikeCriteria, leg.strikeType || "ATM", optType, leg.expiry || "WEEKLY");
+                                        }
+
+                                        if (!instrument) continue;
+
+                                        // 🔥 THE WAIT & TRADE INJECTION
+                                        await sleep(500);
+                                        const currentPremiumLtp = preFetchedLtp || await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id) || currentSpotPrice;
+
+                                        const isWaitAndTradeActive = strategy.data?.advanceSettings?.waitAndTrade;
+                                        const waitAndTradeConfig = strategy.data?.advanceSettings?.waitAndTradeConfig || {};
+
+                                        if (isWaitAndTradeActive && waitAndTradeConfig.movement > 0) {
+                                            if (!deployment.waitReferencePrice) {
+                                                deployment.waitReferencePrice = currentPremiumLtp;
+                                                await deployment.save();
+                                                console.log(`⏳ [WAIT & TRADE] Ref Price: ₹${currentPremiumLtp}. Waiting for movement...`);
+                                                await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'INFO', `Wait & Trade Activated. Ref Premium: ₹${currentPremiumLtp}`);
+                                                continue;
+                                            } else {
+                                                const waitStatus = processWaitAndTrade(waitAndTradeConfig, currentPremiumLtp, deployment.waitReferencePrice);
+                                                if (!waitStatus.shouldExecute) {
+                                                    continue;
+                                                } else {
+                                                    console.log(`🎯 [WAIT & TRADE] Target Hit! Executing Trade...`);
+                                                }
+                                            }
+                                        }
+
+                                        // 🟢 PAPER TRADE ENTRY
+                                        if (deployment.executionType === 'FORWARD_TEST' || deployment.executionType === 'PAPER') {
+                                            await sleep(500);
+                                            let entryPrice = preFetchedLtp || await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id);
+
+                                            if (!entryPrice || entryPrice <= 0) {
+                                                console.log(`⚠️ LTP not found. Skipping...`);
+                                                continue;
+                                            }
+
+                                            let paperSl = 0;
+                                            if (isPrePunchSL && entryPrice > 0 && leg.slValue > 0) {
+                                                paperSl = tradeAction === "BUY"
+                                                    ? (leg.slType === 'SL%' ? entryPrice - (entryPrice * (Number(leg.slValue)/100)) : entryPrice - Number(leg.slValue))
+                                                    : (leg.slType === 'SL%' ? entryPrice + (entryPrice * (Number(leg.slValue)/100)) : entryPrice + Number(leg.slValue));
+                                            }
+
+                                            // 🔥 PUSH TO ARRAY
+                                            deployment.executedLegs.push({
+                                                securityId: instrument.id,
+                                                exchange: instrument.exchange,
+                                                symbol: instrument.tradingSymbol,
+                                                action: tradeAction,
+                                                quantity: tradeQty,
+                                                entryPrice: entryPrice,
+                                                paperSlPrice: paperSl,
+                                                status: 'ACTIVE',
+                                                currentTrailedSL: null, // 🔥 SNIPER MEMORY
+                                                entryReason: deployment.waitReferencePrice ? "Wait & Trade" : (advSettings.premiumDifference ? "Premium Diff" : "Normal") // 🔥 FRONTEND TAG
+                                            });
+
+                                            await deployment.save();
+                                            // await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'SUCCESS', `Paper Entry at ₹${entryPrice}`);
+
+                                            console.log(`📝 [PAPER TRADE] [Time: ${currentTime}] Entry Placed at ₹${entryPrice} | Pre-Punch SL calculated at ₹${paperSl}`);
+
+                                            await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'SUCCESS', `Paper Entry at ₹${entryPrice} (SL set at ₹${paperSl})`);
+
+                                        }
+
+                                        // 🔴 LIVE TRADE ENTRY
+                                        else if (deployment.executionType === 'LIVE') {
+                                            const orderData = { action: tradeAction, quantity: tradeQty, securityId: instrument.id, segment: instrument.exchange };
+                                            const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
+
+                                            if (orderResponse.success && orderResponse.data?.orderStatus?.toUpperCase() !== "REJECTED") {
+                                                await sleep(2000);
+                                                const entryPrice = await fetchLiveLTP(broker.clientId, broker.apiSecret, instrument.exchange, instrument.id) || 0;
+
+                                                let liveSlPrice = 0;
+
+                                                // 🛡️ THE NEW FIX: PRE-PUNCH SL LOGIC FOR LIVE MARKET
+                                                if (isPrePunchSL && entryPrice > 0 && leg.slValue > 0) {
+                                                    // SL Price Calculate karna
+                                                    const slAmt = leg.slType === 'SL%' ? (entryPrice * (Number(leg.slValue)/100)) : Number(leg.slValue);
+                                                    liveSlPrice = tradeAction === "BUY" ? entryPrice - slAmt : entryPrice + slAmt;
+                                                    liveSlPrice = parseFloat(liveSlPrice.toFixed(2)); // Dhan ke liye 2 decimal zaroori hai
+
+                                                    // SL hamesha Entry ka opposite hota hai
+                                                    const slAction = tradeAction === "BUY" ? "SELL" : "BUY";
+
+                                                    console.log(`🛡️ [PRE-PUNCH] Placing SL Order at ₹${liveSlPrice} for ${instrument.tradingSymbol}`);
+
+                                                    const slOrderData = {
+                                                        action: slAction,
+                                                        quantity: tradeQty,
+                                                        securityId: instrument.id,
+                                                        segment: instrument.exchange,
+                                                        orderType: "STOP_LOSS_MARKET", // 🔥 Dhan ko batana ki ye SL hai
+                                                        triggerPrice: liveSlPrice      // 🔥 Trigger Price set karna
+                                                    };
+
+                                                    // Dhan par SL Pending order bhejna
+                                                    const slOrderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, slOrderData);
+
+                                                    if(slOrderResponse.success) {
+                                                        await createAndEmitLog(broker, instrument.tradingSymbol, slAction, tradeQty, 'INFO', `Pre-Punch SL Placed successfully at ₹${liveSlPrice}`);
+                                                    } else {
+                                                        await createAndEmitLog(broker, instrument.tradingSymbol, slAction, tradeQty, 'FAILED', `Pre-Punch SL Failed: ${slOrderResponse.data?.remarks || "Unknown Error"}`);
+                                                    }
+                                                }
+
+                                                // 🔥 PUSH TO ARRAY
+                                                deployment.executedLegs.push({
+                                                    securityId: instrument.id,
+                                                    exchange: instrument.exchange,
+                                                    symbol: instrument.tradingSymbol,
+                                                    action: tradeAction,
+                                                    quantity: tradeQty,
+                                                    entryPrice: entryPrice,
+                                                    paperSlPrice: liveSlPrice > 0 ? liveSlPrice : 0, // SL record karna
+                                                    status: 'ACTIVE',
+                                                    currentTrailedSL: null, // 🔥 SNIPER MEMORY
+                                                    entryReason: deployment.waitReferencePrice ? "Wait & Trade" : (advSettings.premiumDifference ? "Premium Diff" : "Normal") // 🔥 FRONTEND TAG
+                                                });
+
+                                                await deployment.save();
+                                                await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'SUCCESS', `Live Entry Executed`, orderResponse.data.orderId);
+                                            } else {
+                                                await createAndEmitLog(broker, instrument.tradingSymbol, tradeAction, tradeQty, 'FAILED', orderResponse.data?.remarks || "Order Failed");
+                                            }
+                                        }
+                                    }
                             }
                         }
                     }
