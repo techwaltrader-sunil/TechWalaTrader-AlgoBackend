@@ -4229,7 +4229,37 @@ const runBacktestSimulator = async (req, res) => {
                     const masterResult = await generateRatioSpreadLegs(spotClosePrice, atmStrike, upperSymbol, stepSize, targetCePremium, targetPePremium, fetchPremiumCallback, legConfig);
                     
                     ratioEngine.activeLegs = masterResult.activeLegs;
-                    ratioEngine.tradeBoundaries = ratioEngine.calculateBreakevens();
+
+                    // 👇👇👇 NAYA BREAK-EVEN LOGIC (Ratio Spread Math) 👇👇👇
+                    let netPremiumPoints = 0;
+                    let bCe = {}, sCe = {}, bPe = {}, sPe = {};
+
+                    ratioEngine.activeLegs.forEach(leg => {
+                        if (leg.action === 'BUY') netPremiumPoints -= (leg.entryPrice * leg.lots);
+                        if (leg.action === 'SELL') netPremiumPoints += (leg.entryPrice * leg.lots);
+                        
+                        if (leg.type === 'CE' && leg.action === 'BUY') bCe = leg;
+                        if (leg.type === 'CE' && leg.action === 'SELL') sCe = leg;
+                        if (leg.type === 'PE' && leg.action === 'BUY') bPe = leg;
+                        if (leg.type === 'PE' && leg.action === 'SELL') sPe = leg;
+                    });
+
+                    let lowerBE = 0, upperBE = 0;
+
+                    // 📈 Upper Break-Even (CE Side)
+                    if (sCe.lots > bCe.lots) {
+                        let maxProfitCE = ((sCe.strike - bCe.strike) * bCe.lots) + netPremiumPoints;
+                        upperBE = sCe.strike + (maxProfitCE / (sCe.lots - bCe.lots));
+                    }
+
+                    // 📉 Lower Break-Even (PE Side)
+                    if (sPe.lots > bPe.lots) {
+                        let maxProfitPE = ((bPe.strike - sPe.strike) * bPe.lots) + netPremiumPoints;
+                        lowerBE = sPe.strike - (maxProfitPE / (sPe.lots - bPe.lots));
+                    }
+
+                    ratioEngine.tradeBoundaries = { lowerBreakEven: lowerBE, upperBreakEven: upperBE };
+                    // 👆👆👆 NAYA BREAK-EVEN LOGIC YAHAN KHATAM 👆👆👆
                     
                     const requestedExpiry = riskSettings?.expiryType || "WEEKLY"; 
                     const isExpiryDay = isThisExpiryDay(dateStr, upperSymbol, requestedExpiry);
@@ -4240,6 +4270,13 @@ const runBacktestSimulator = async (req, res) => {
                     const userMaxLossAmt = Number(riskSettings.maxLoss);
                     ratioEngine.maxLossLimit = userMaxLossAmt > 0 ? userMaxLossAmt : (estMargin * (Number(riskSettings.maxLossPct || 1) / 100));
 
+                    // 👇👇👇 NAYA CODE: SEBI MARGIN ALERT 👇👇👇
+                    if (isExpiryDay) {
+                        console.log(`⚠️ [GAMMA ALERT] SEBI Peak Margin Rules applied for 0 DTE Expiry Day!`);
+                    }
+                    console.log(`🏦 Est. Margin: ₹${estMargin.toFixed(2)} | 🛡️ Engine Max Loss Limit: -₹${ratioEngine.maxLossLimit.toFixed(2)}`);
+                    // 👆👆👆 NAYA CODE YAHAN KHATAM 👆👆👆
+
                     ratioEngine.riskManager = new TimeBasedRiskManager(ratioEngine.maxLossLimit, false, null, riskSettings);
                     ratioEngine.status = 'ACTIVE';
                     dailyBreakdownMap[dateStr].hasTradedTimeBased = true;
@@ -4247,6 +4284,15 @@ const runBacktestSimulator = async (req, res) => {
                     ratioEngine.entrySpotPrice = spotClosePrice;
                     
                     console.log(`\n🚀 [RATIO SPREAD MAIN ENTRY] Date: ${dateStr} | Time: ${currentTimeStr} | Spot: ₹${spotClosePrice}`);
+                    
+                    // 👇 YAHAN SE NAYA CODE ADD KAREIN 👇
+                    ratioEngine.activeLegs.forEach((leg, idx) => {
+                        console.log(`   🔸 Leg ${idx + 1}: ${leg.action} ${leg.lots} Lot(s) ${leg.type} @ Strike ${leg.strike} | Premium: ₹${leg.entryPrice.toFixed(2)}`);
+                    });
+                    
+                    if (ratioEngine.tradeBoundaries) {
+                        console.log(`🚧 Boundaries: Lower BE: ₹${ratioEngine.tradeBoundaries.lowerBreakEven?.toFixed(2)} | Upper BE: ₹${ratioEngine.tradeBoundaries.upperBreakEven?.toFixed(2)}`);
+                    }
                 }
  
                 // -------------------------------------------------------------
@@ -4603,18 +4649,34 @@ const runBacktestSimulator = async (req, res) => {
                     }
 
                     // -------------------------------------------------------------
-                    // 🚨 STEP 5: FINAL DECISION & RECOVERY
+                    // 🚨 STEP 5: FINAL DECISION & RECOVERY (Fixed for Ratio Spread)
                     // -------------------------------------------------------------
                     if (ratioEngine.riskManager) ratioEngine.riskManager.isPanicApiMode = ratioEngine.isPanicApiMode;
 
+                    // 1. Manually Calculate Mock MTM here (Bypassing old TimeBasedEngine)
+                    let mockMTM = 0;
+                    ratioEngine.activeLegs.forEach(leg => {
+                        const currentLtp = mockLTPs[leg.inst?.id] || leg.entryPrice;
+                        const mult = leg.lots * (leg.inst?.lotSize || 65);
+                        const legPnL = leg.action === 'BUY' ? (currentLtp - leg.entryPrice) * mult : (leg.entryPrice - currentLtp) * mult;
+                        mockMTM += legPnL;
+                    });
+
                     let decision = null;
+                    const currentMin = (parseInt(currentTimeStr.split(':')[0]) * 60) + parseInt(currentTimeStr.split(':')[1]);
+
+                    // 2. Exact same logic as Live Engine Tick Listener
                     if (forceShieldExit) {
                         decision = { action: 'EXIT_ALL', reason: 'GAMMA_HOUR_PROFIT_SHIELD_DROP' };
-                    } else {
-                        decision = await ratioEngine.evaluateTick(
-                            currentTimeStr, mockLTPs, spotClosePrice,
-                            async () => await fetchRealPnL("Cross-verifying")
-                        );
+                    } 
+                    else if (ratioEngine.isPanicApiMode && mockMTM <= -Math.abs(ratioEngine.maxLossLimit * 0.70)) {
+                        decision = { action: 'SL_HIT', reason: 'GAMMA_BLAST_VELOCITY_BREACH' };
+                    } 
+                    else if (mockMTM <= -Math.abs(ratioEngine.maxLossLimit)) {
+                        decision = { action: 'SL_HIT', reason: 'MAX_LOSS_HIT' };
+                    } 
+                    else if (currentMin >= exitMin) { 
+                        decision = { action: 'EXIT_ALL', reason: 'TIME_SQUAREOFF' };
                     }
 
                     if (ratioEngine.riskManager) {
