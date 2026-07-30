@@ -1426,7 +1426,7 @@ const executeLiveEmergencyExit = async (session, reason, currentMtm, currentSpot
             const sqAction = leg.action === 'BUY' ? 'SELL' : 'BUY';
             const sqOrderData = { 
                 action: sqAction, 
-                quantity: leg.lots * (leg.inst.lotSize || 65), 
+                quantity: leg.lots * (leg.inst?.lotSize || leg.inst?.lot || strategy.data.instruments[0].lot || 1),
                 securityId: leg.inst.id, 
                 segment: leg.exchange || "NSE_FNO", 
                 orderType: "MARKET" 
@@ -1575,7 +1575,7 @@ dhanStreamer.on('tick', async (tickData) => {
                 const legLtp = liveLtpCache[leg.inst.id];
                 if (!legLtp) { allPricesAvailable = false; break; } // Agar ek bhi leg ka price nahi aaya, to ruko
                 
-                const mult = leg.lots * (leg.inst.lotSize || 65);
+                const mult = leg.quantity || (leg.lots * (leg.inst?.lot || strategy.data?.instruments?.[0]?.lot || 1));
                 const legPnL = leg.action === 'BUY' ? (legLtp - leg.entryPrice) * mult : (leg.entryPrice - legLtp) * mult;
                 liveMTM += legPnL;
             }
@@ -1636,7 +1636,7 @@ dhanStreamer.on('tick', async (tickData) => {
                             // Direct Dhan REST API Call for exact LTP
                             const realLtp = await fetchLiveLTP(session.broker.clientId, session.broker.apiSecret, leg.inst.exchange, leg.inst.id);
                             const ltpToUse = realLtp || liveLtpCache[leg.inst.id];
-                            const mult = leg.lots * (leg.inst.lotSize || 65);
+                            const mult = leg.quantity || (leg.lots * (leg.inst?.lot || strategy.data?.instruments?.[0]?.lot || 1));
                             const legPnL = leg.action === 'BUY' ? (ltpToUse - leg.entryPrice) * mult : (leg.entryPrice - ltpToUse) * mult;
                             realMTM += legPnL;
                         }
@@ -2126,7 +2126,7 @@ cron.schedule('*/30 * * * * *', async () => {
                                 const legConfig = {
                                     executionMode: strategy.data?.advanceSettings?.legSelectionMode || 'ADAPTIVE_SKEW',
                                     maxAsymmetricLots: strategy.data?.advanceSettings?.maxAsymmetricLots || 5,
-                                    realLotSize: (strategy.data?.instruments && strategy.data?.instruments[0]?.lotSize) ? strategy.data.instruments[0].lotSize : 65,
+                                    realLotSize: (strategy.data?.instruments && strategy.data.instruments[0]?.lot) ? Number(strategy.data.instruments[0].lot) : 20,
                                     defaultCeLots: strategy.data?.legs[2]?.quantity || 4,
                                     defaultPeLots: strategy.data?.legs[3]?.quantity || 4
                                 };
@@ -2154,7 +2154,7 @@ cron.schedule('*/30 * * * * *', async () => {
                                         exchange: dynamicExchange, // ❌ "NSE_FNO" hata kar isey lagana hai
                                         symbol: `${upperSymbol} ${leg.strike} ${leg.type}`,
                                         action: leg.action, 
-                                        quantity: leg.lots * (leg.inst.lotSize || 65),
+                                        quantity: leg.lots * (leg.inst?.lotSize || leg.inst?.lot || strategy.data.instruments[0].lot || 1),
                                         entryPrice: leg.entryPrice,
                                         paperSlPrice: 0, 
                                         status: 'ACTIVE', 
@@ -2335,7 +2335,7 @@ cron.schedule('*/30 * * * * *', async () => {
                                             exchange: dynamicExchange,
                                             symbol: `${upperSymbol} ${sLeg.strike} ${sLeg.type}`,
                                             action: sLeg.action, 
-                                            quantity: sLeg.lots * (sLeg.inst.lotSize || 65), 
+                                            quantity: leg.lots * (leg.inst?.lotSize || leg.inst?.lot || strategy.data.instruments[0].lot || 1),
                                             entryPrice: sLeg.realEntryPrice,
                                             paperSlPrice: 0, 
                                             status: 'ACTIVE', 
