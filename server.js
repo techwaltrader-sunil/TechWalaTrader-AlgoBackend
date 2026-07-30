@@ -309,6 +309,44 @@ app.set('io', io);
 
 
 // ==========================================
+// 🚀 LIVE TERMINAL LOGS TO FRONTEND VIA SOCKET (THE HACK)
+// ==========================================
+const originalConsoleLog = console.log;
+const originalConsoleError = console.error;
+
+// Overriding console.log
+console.log = function (...args) {
+    originalConsoleLog.apply(console, args); // 1. VS Code me print karega
+    
+    // 2. Object ko string me convert karke socket se bhejega
+    const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' ');
+    
+    if (global.io) {
+        global.io.emit('system-log', {
+            message: message,
+            type: 'info',
+            time: new Date()
+        });
+    }
+};
+
+// Overriding console.error (Errors ko red color me dikhane ke liye)
+console.error = function (...args) {
+    originalConsoleError.apply(console, args); 
+    const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' ');
+    
+    if (global.io) {
+        global.io.emit('system-log', {
+            message: message,
+            type: 'error',
+            time: new Date()
+        });
+    }
+};
+// ==========================================
+
+
+// ==========================================
 // 🔥 PHASE 1: REAL LIVE P&L CALCULATOR 🔥
 // ==========================================
 const Deployment = require('./models/Deployment'); 
