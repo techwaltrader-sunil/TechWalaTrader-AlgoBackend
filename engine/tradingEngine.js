@@ -2766,16 +2766,27 @@ cron.schedule('*/30 * * * * *', async () => {
 
                         if (currentLeg.status !== 'ACTIVE') continue;
 
-                        // 🔥 NAYA FIX: Pehle WebSocket ka lightning-fast cache check karo
+                        // // 🔥 NAYA FIX: Pehle WebSocket ka lightning-fast cache check karo
+                        // let liveLtp = liveLtpCache[currentLeg.securityId];
+
+                        // // Agar Websocket data nahi laya (Error/Delay), tabhi REST API hit karo (Fallback Guard)
+                        // if (!liveLtp || liveLtp <= 0) {
+                        //     await sleep(1200); // 429 se bachne ke liye thoda wait
+                        //     liveLtp = await fetchLiveLTP(broker.clientId, broker.apiSecret, currentLeg.exchange, currentLeg.securityId);
+                            
+                        //     // REST API se jo price aaya use Websocket Cache me daal do
+                        //     if (liveLtp) liveLtpCache[currentLeg.securityId] = liveLtp; 
+                        // }
+
+
+                        // ⚡ STRICT WEBSOCKET MODE: No REST API Polling!
                         let liveLtp = liveLtpCache[currentLeg.securityId];
 
-                        // Agar Websocket data nahi laya (Error/Delay), tabhi REST API hit karo (Fallback Guard)
+                        // 🛑 THE 429 FIX: Agar WebSocket ne tick thoda delay kar diya hai, 
+                        // toh Dhan API ko hit mat karo! Chup-chaap is leg ko skip kardo, 
+                        // Websocket agle hi mili-second me naya price bhej dega.
                         if (!liveLtp || liveLtp <= 0) {
-                            await sleep(1200); // 429 se bachne ke liye thoda wait
-                            liveLtp = await fetchLiveLTP(broker.clientId, broker.apiSecret, currentLeg.exchange, currentLeg.securityId);
-                            
-                            // REST API se jo price aaya use Websocket Cache me daal do
-                            if (liveLtp) liveLtpCache[currentLeg.securityId] = liveLtp; 
+                            continue; 
                         }
 
                         if (liveLtp && liveLtp > 0) {
