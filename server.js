@@ -414,6 +414,8 @@ app.use('/api/deployments', require('./routes/deploymentRoutes'));
 app.use('/api/webhook', webhookRoutes);
 app.use('/api/algo-logs', algoLogRoutes);
 app.use('/api/backtest', backtestRoutes);
+
+app.use('/api/strategy-templates', require('./routes/templateRoutes'));
 // ==========================================
 
 
