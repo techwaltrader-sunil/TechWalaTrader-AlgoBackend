@@ -1,5 +1,3 @@
-
-
 const mongoose = require('mongoose');
 
 const strategySchema = new mongoose.Schema({

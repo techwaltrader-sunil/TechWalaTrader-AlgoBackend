@@ -1,5 +1,3 @@
-
-
 const Strategy = require('../models/Strategy');
 
 // @desc    Create a new strategy
