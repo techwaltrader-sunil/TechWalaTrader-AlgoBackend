@@ -41,6 +41,11 @@ const deploymentSchema = new mongoose.Schema({
     maxProfit: { type: Number, default: 0 },
     maxLoss: { type: Number, default: 0 },
     squareOffTime: { type: String, default: '15:15' },
+
+    marginBlocked: { 
+        type: Number, 
+        default: 0 
+    },
     
     // Overall Strategy Status
     status: {
