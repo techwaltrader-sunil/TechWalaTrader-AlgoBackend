@@ -1533,3 +1533,115 @@ cron.schedule('*/30 * * * * *', async () => {
         isEngineRunning = false;
     }
 });
+
+
+// =========================================================================
+// 🌐 GLOBAL DASHBOARD BROADCASTER (Multi-Broker Live P&L + Margin Sync)
+// =========================================================================
+const axios = require('axios');
+
+let brokerMargins = {}; // Har broker ka margin alag save hoga
+let lastMarginFetchTime = {}; // Har broker ka timer alag hoga
+const MARGIN_FETCH_INTERVAL = 30000; 
+
+// Dhan API Fund Fetcher 
+const fetchAvailableMargin = async (clientId, apiSecret) => {
+    try {
+        const res = await axios.get('https://api.dhan.co/v2/fundlimit', { 
+            headers: { 'access-token': apiSecret, 'client-id': clientId, 'Content-Type': 'application/json' },
+            timeout: 5000
+        });
+        const margin = res.data?.data?.availabelBalance || res.data?.data?.availableBalance || res.data?.availabelBalance || res.data?.availableBalance || 0;
+        return Number(margin);
+    } catch (error) {
+        return null; 
+    }
+};
+
+// 3. Multi-Broker Aggregator & Emitter
+setInterval(async () => {
+    if (!global.io) return; 
+
+    try {
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+
+        const todaysDeployments = await Deployment.find({ createdAt: { $gte: startOfDay } });
+        const activeBrokers = await Broker.find({ terminalOn: true });
+        
+        let brokerData = {}; // Saare brokers ka data isme pack hoga
+        const now = Date.now();
+
+        // 1. Initialize Active Brokers & Fetch Margins
+        for (const broker of activeBrokers) {
+            const bId = broker._id.toString();
+            brokerData[bId] = {
+                LIVE: { total: 0, booked: 0, running: 0, margin: 0 },
+                PAPER: { total: 0, booked: 0, running: 0, margin: 1000000 }
+            };
+
+            if (!lastMarginFetchTime[bId]) lastMarginFetchTime[bId] = 0;
+            if (!brokerMargins[bId]) brokerMargins[bId] = 0;
+
+            if (now - lastMarginFetchTime[bId] > MARGIN_FETCH_INTERVAL) {
+                if (broker.name && broker.name.toLowerCase().includes('dhan')) {
+                    const fetchedMargin = await fetchAvailableMargin(broker.clientId, broker.apiSecret);
+                    if (fetchedMargin !== null) brokerMargins[bId] = fetchedMargin;
+                } else {
+                    // Agar GROWW ya koi aur broker hai (jab tak uski API nahi lagti), Dummy Margin dikhao
+                    brokerMargins[bId] = 50000.00; 
+                }
+                lastMarginFetchTime[bId] = now;
+            }
+            brokerData[bId].LIVE.margin = brokerMargins[bId];
+        }
+
+        let paperBlockedMargins = {};
+
+        // 2. Segregate P&L per Broker
+        todaysDeployments.forEach(dep => {
+            if (!dep.brokers || dep.brokers.length === 0) return;
+            const bId = dep.brokers[0].toString();
+
+            if (!brokerData[bId]) {
+                brokerData[bId] = {
+                    LIVE: { total: 0, booked: 0, running: 0, margin: 0 },
+                    PAPER: { total: 0, booked: 0, running: 0, margin: 1000000 }
+                };
+            }
+
+            const isLive = dep.executionType === 'LIVE';
+            const targetData = isLive ? brokerData[bId].LIVE : brokerData[bId].PAPER;
+
+            targetData.booked += (dep.realizedPnl || 0);
+
+            let currentRunning = 0;
+            if (dep.executedLegs && dep.executedLegs.length > 0) {
+                dep.executedLegs.forEach(leg => {
+                    if (leg.status === 'ACTIVE') {
+                        const ltp = liveLtpCache[leg.securityId] || leg.entryPrice;
+                        currentRunning += leg.action === 'BUY' ? (ltp - leg.entryPrice) * leg.quantity : (leg.entryPrice - ltp) * leg.quantity;
+                    }
+                });
+            }
+            targetData.running += currentRunning;
+
+            if (!isLive && dep.status === 'ACTIVE') {
+                paperBlockedMargins[bId] = (paperBlockedMargins[bId] || 0) + 150000;
+            }
+        });
+
+        // 3. Finalize Totals
+        Object.keys(brokerData).forEach(bId => {
+            brokerData[bId].LIVE.total = brokerData[bId].LIVE.booked + brokerData[bId].LIVE.running;
+            brokerData[bId].PAPER.total = brokerData[bId].PAPER.booked + brokerData[bId].PAPER.running;
+            brokerData[bId].PAPER.margin = 1000000 + brokerData[bId].PAPER.booked - (paperBlockedMargins[bId] || 0);
+        });
+
+        // 🚀 FIRE ALL BROKERS DATA TO FRONTEND!
+        global.io.emit('market-update', brokerData);
+
+    } catch (error) {
+        // Silent catch
+    }
+}, 1500);
