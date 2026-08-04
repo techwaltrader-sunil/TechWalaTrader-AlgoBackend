@@ -811,10 +811,10 @@
 //                                     const checkSym = String(upperSymbol).toUpperCase().replace(/\s+/g, '');
                                     
 //                                     if (checkSym.includes("BANKNIFTY") || checkSym === "NIFTYBANK") spotSecurityId = "25";
-//                                     else if (checkSym.includes("FINNIFTY")) spotSecurityId = "27";
-//                                     else if (checkSym.includes("MIDCPNIFTY")) spotSecurityId = "26";
-//                                     else if (checkSym.includes("SENSEX")) spotSecurityId = "51";
-//                                     else if (checkSym.includes("BANKEX")) spotSecurityId = "52";
+                                    // else if (checkSym.includes("FINNIFTY")) spotSecurityId = "27";
+                                    // else if (checkSym.includes("MIDCPNIFTY")) spotSecurityId = "26";
+                                    // else if (checkSym.includes("SENSEX")) spotSecurityId = "51";
+                                    // else if (checkSym.includes("BANKEX")) spotSecurityId = "52";
 //                                     // =========================================================
                                     
 
@@ -1702,6 +1702,8 @@ const { isThisExpiryDay } = require('./utils/expiryCalculator.js');
 
 const { executeAutoRecovery, processRecoveryTrailing } = require('./features/riskManagement/autoRecoveryEngine.js');
 
+const { startSilentSync, recoverCrashState } = require('./features/riskManagement/crashGuard');
+
 // =========================================================================
 // 🧠 RATIO SPREAD: LIVE MEMORY CACHE & TICK LISTENER (THE HEARTBEAT)
 // =========================================================================
@@ -1710,6 +1712,16 @@ const { checkVelocityGuard, evaluateGammaShield, generateRatioSpreadLegs } = req
 // 1. Global Memory (Fast Access)
 const activeRatioDeployments = new Map(); 
 const liveLtpCache = {}; 
+
+// 👇 YAHAN SE CRASH GUARD TRIGGER HOGA 👇
+// Boot-up ke 5 second baad purane trades zinda karega
+setTimeout(() => {
+    recoverCrashState(activeRatioDeployments);
+}, 5000);
+
+// Background me har 10 sec data save karna shuru karega
+startSilentSync(activeRatioDeployments);
+// 👆 YAHAN TAK 👆
 
 // 🛡️ THE LIVE FIREFIGHTER & RECOVERY TRIGGER (Upgraded for Phase 5)
 const executeLiveEmergencyExit = async (session, reason, currentMtm, currentSpotPrice) => {

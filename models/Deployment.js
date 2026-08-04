@@ -46,6 +46,24 @@ const deploymentSchema = new mongoose.Schema({
         type: Number, 
         default: 0 
     },
+
+    sessionState: {
+        engineStatus: { type: String, default: 'ACTIVE' },
+        tradeStartTime: { type: Number, default: 0 },
+        entrySpotPrice: { type: Number, default: 0 },
+        
+        highestLockedProfit: { type: Number, default: 0 },
+        isGammaShieldActive: { type: Boolean, default: false },
+        currentTrailedSL: { type: Number, default: 0 },
+        isPanicApiMode: { type: Boolean, default: false },
+        
+        tradeBoundaries: {
+            lowerBreakEven: { type: Number, default: 0 },
+            upperBreakEven: { type: Number, default: 0 }
+        },
+        
+        customRecoveryCount: { type: Number, default: 0 }
+    },
     
     // Overall Strategy Status
     status: {

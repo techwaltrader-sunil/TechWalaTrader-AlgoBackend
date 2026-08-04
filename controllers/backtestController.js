@@ -2496,9 +2496,9 @@ const runBacktestSimulator = async (req, res) => {
                                     let decayFactor = 1.10; 
                                     let baseMultiplier = 0.0125;
                                     
-                                    if (upperSymbol.includes("BANK") || upperSymbol.includes("SENSEX")) {
+                                    if (upperSymbol.includes("BANKNIFTY") || upperSymbol.includes("SENSEX")) {
                                         decayFactor = 1.15; baseMultiplier = 0.013;
-                                    } else if (upperSymbol.includes("MID")) {
+                                    } else if (upperSymbol.includes("MIDCPNIFTY")) {
                                         decayFactor = 1.08; baseMultiplier = 0.012;
                                     }
 
