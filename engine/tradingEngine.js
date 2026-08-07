@@ -1719,7 +1719,7 @@ setTimeout(() => {
     recoverCrashState(activeRatioDeployments);
 }, 5000);
 
-// Background me har 10 sec data save karna shuru karega
+// Background me har 10 sec data save karna shuru karegaC
 startSilentSync(activeRatioDeployments);
 // 👆 YAHAN TAK 👆
 
@@ -2030,6 +2030,27 @@ cron.schedule('*/30 * * * * *', async () => {
             // 🔥 HELPERS
             const hasLegs = deployment.executedLegs && deployment.executedLegs.length > 0;
             const hasActiveLegs = hasLegs && deployment.executedLegs.some(l => l.status === 'ACTIVE');
+
+            // 👇👇👇 YAHAN LAGEGA 0-DTE GATEKEEPER 👇👇👇
+            // ==============================================================
+            // 🛑 0-DTE GATEKEEPER (THE MISSING BOUNCER)
+            // ==============================================================
+            const advSettings = strategy.data?.advanceSettings || {};
+            // Frontend se aane wala exact toggle name
+            const isZeroDteOnly = advSettings.tradeOnlyOnExpiryDays || advSettings.zeroDTE || false;
+
+            if (isZeroDteOnly && !hasLegs) {
+                const todayStr = moment().tz("Asia/Kolkata").format("YYYY-MM-DD");
+                const reqExpiry = strategy.data?.legs?.[0]?.expiry || "WEEKLY";
+                
+                // Expiry Calculator se check karenge ki kya aaj sach me expiry hai? (Holiday Shift include karke)
+                const isExpDay = isThisExpiryDay(todayStr, baseSymbol, reqExpiry);
+
+                if (!isExpDay) {
+                    continue; // Engine ko yahin se wapas bhej do, aage ka logic run mat karo!
+                }
+            }
+            // 👆👆👆 ========================================= 👆👆👆
 
             // ==============================================================
             // 🏥 0. LIVE HOSPITAL CHECK (RE-ENTRY LOGIC)

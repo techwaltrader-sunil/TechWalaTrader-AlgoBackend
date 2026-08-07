@@ -102,7 +102,8 @@ const WEEKLY_EXPIRY_RULES = {
         { start: "2000-01-01", end: "2024-11-18", dayOfWeek: 1 }  // 🔥 SEBI Update: 18 Nov 2024 ko Weekly band!
     ],
     "SENSEX": [
-        { start: "2000-01-01", end: "2025-08-31", dayOfWeek: 5 },  // Pahle (Friday)
+        { start: "2023-05-12", end: "2024-12-31", dayOfWeek: 5 },  // Pahle (Friday)
+        { start: "2025-01-01", end: "2025-08-31", dayOfWeek: 2 },  // BSE Sensex ka weekly expiry abhi (Thursday) ko gaya hai
         { start: "2025-09-01", end: "2099-12-31", dayOfWeek: 4 }  // BSE Sensex ka weekly expiry abhi (Thursday) ko gaya hai
     ]
 };

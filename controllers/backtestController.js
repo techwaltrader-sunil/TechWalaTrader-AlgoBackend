@@ -3185,3 +3185,6 @@ const runBacktestSimulator = async (req, res) => {
 };
 
 module.exports = { runBacktestSimulator };
+
+
+
