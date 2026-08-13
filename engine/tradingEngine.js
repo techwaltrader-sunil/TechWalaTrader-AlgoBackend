@@ -2443,11 +2443,35 @@ cron.schedule('*/30 * * * * *', async () => {
                                     // 👆👆👆 ========================================================== 👆👆👆
 
 
-                                    // 🔥 THE ULTIMATE FIX: Direct Database Update with Exact 'estMargin'
+
+                                    // 👇👇👇 YAHAN LAGEGA STATIC SYNC FIX (Phase 4) 👇👇👇
+                                    const staticSessionState = {
+                                        entrySpotPrice: typeof currentSpotPrice !== 'undefined' ? currentSpotPrice : (typeof spotClosePrice !== 'undefined' ? spotClosePrice : 0),
+                                        tradeStartTime: new Date().getTime(),
+                                        tradeBoundaries: {
+                                            lowerBreakEven: typeof ratioEngine !== 'undefined' ? (ratioEngine.tradeBoundaries?.lowerBreakEven || ratioEngine.lowerBE || 0) : 0,
+                                            upperBreakEven: typeof ratioEngine !== 'undefined' ? (ratioEngine.tradeBoundaries?.upperBreakEven || ratioEngine.upperBE || 0) : 0
+                                        },
+                                        highestLockedProfit: 0,
+                                        currentTrailedSL: 0,
+                                        isGammaShieldActive: false,
+                                        isPanicApiMode: false,
+                                        customRecoveryCount: 0
+                                    };
+
+                                    // 🔥 THE ULTIMATE FIX: Direct Database Update with Exact 'estMargin' & 'sessionState'
                                     await Deployment.findByIdAndUpdate(
                                         deployment._id,
-                                        { $set: { executedLegs: newLegs, status: 'ACTIVE', marginBlocked: estMargin } }
+                                        { 
+                                            $set: { 
+                                                executedLegs: newLegs, 
+                                                status: 'ACTIVE', 
+                                                marginBlocked: estMargin,
+                                                sessionState: staticSessionState // 👈 YE LINE ADD HUI HAI
+                                            } 
+                                        }
                                     );
+                                    // 👆👆👆 ======================================================= 👆👆👆
 
                                     // Engine ki memory update
                                     deployment.executedLegs = newLegs;
@@ -2477,9 +2501,12 @@ cron.schedule('*/30 * * * * *', async () => {
                                         const idxTokens = []; 
                                         
                                         legsToExecute.forEach(leg => {
-                                            const exch = String(leg.inst?.exchange || leg.exchange || "NSE_FNO").toUpperCase();
-                                            if(exch.includes("BSE")) bseTokens.push(String(leg.inst?.id || leg.securityId));
-                                            else nseTokens.push(String(leg.inst?.id || leg.securityId));
+                                            const token = String(leg.inst?.id || leg.securityId);
+                                            if (dynamicExchange === "BSE_FNO") {
+                                                bseTokens.push(token);
+                                            } else {
+                                                nseTokens.push(token);
+                                            }
                                         });
 
                                         if (spotSecurityId) idxTokens.push(String(spotSecurityId));
@@ -2596,11 +2623,40 @@ cron.schedule('*/30 * * * * *', async () => {
                                             entryReason: "Ratio Spread Live"
                                         }));
 
-                                        // 🔥 DIRECT DB UPDATE FOR LIVE TRADE with Exact 'estMargin'
+                                        // // 🔥 DIRECT DB UPDATE FOR LIVE TRADE with Exact 'estMargin'
+                                        // await Deployment.findByIdAndUpdate(
+                                        //     deployment._id,
+                                        //     { $set: { executedLegs: liveNewLegs, status: 'ACTIVE', marginBlocked: estMargin } }
+                                        // );
+
+                                        // 👇👇👇 YAHAN LAGEGA STATIC SYNC FIX (Phase 4) 👇👇👇
+                                        const staticSessionState = {
+                                            entrySpotPrice: typeof currentSpotPrice !== 'undefined' ? currentSpotPrice : (typeof spotClosePrice !== 'undefined' ? spotClosePrice : 0),
+                                            tradeStartTime: new Date().getTime(),
+                                            tradeBoundaries: {
+                                                lowerBreakEven: typeof ratioEngine !== 'undefined' ? (ratioEngine.tradeBoundaries?.lowerBreakEven || ratioEngine.lowerBE || 0) : 0,
+                                                upperBreakEven: typeof ratioEngine !== 'undefined' ? (ratioEngine.tradeBoundaries?.upperBreakEven || ratioEngine.upperBE || 0) : 0
+                                            },
+                                            highestLockedProfit: 0,
+                                            currentTrailedSL: 0,
+                                            isGammaShieldActive: false,
+                                            isPanicApiMode: false,
+                                            customRecoveryCount: 0
+                                        };
+
+                                        // 🔥 DIRECT DB UPDATE FOR LIVE TRADE with Exact 'estMargin' & 'sessionState'
                                         await Deployment.findByIdAndUpdate(
                                             deployment._id,
-                                            { $set: { executedLegs: liveNewLegs, status: 'ACTIVE', marginBlocked: estMargin } }
+                                            { 
+                                                $set: { 
+                                                    executedLegs: liveNewLegs, 
+                                                    status: 'ACTIVE', 
+                                                    marginBlocked: estMargin,
+                                                    sessionState: staticSessionStateLive // 👈 YE LINE ADD HUI HAI
+                                                } 
+                                            }
                                         );
+                                        // 👆👆👆 ======================================================= 👆👆👆
 
                                         deployment.executedLegs = liveNewLegs;
                                         deployment.status = 'ACTIVE';
@@ -2629,9 +2685,12 @@ cron.schedule('*/30 * * * * *', async () => {
                                             const idxTokens = []; 
                                             
                                             successfulLiveLegs.forEach(leg => {
-                                                const exch = String(leg.inst?.exchange || leg.exchange || "NSE_FNO").toUpperCase();
-                                                if(exch.includes("BSE")) bseTokens.push(String(leg.inst?.id || leg.securityId));
-                                                else nseTokens.push(String(leg.inst?.id || leg.securityId));
+                                                const token = String(leg.inst?.id || leg.securityId);
+                                                if (dynamicExchange === "BSE_FNO") {
+                                                    bseTokens.push(token);
+                                                } else {
+                                                    nseTokens.push(token);
+                                                }
                                             });
 
                                             if (spotSecurityId) idxTokens.push(String(spotSecurityId));

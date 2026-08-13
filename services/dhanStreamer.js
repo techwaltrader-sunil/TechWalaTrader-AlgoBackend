@@ -529,7 +529,16 @@ class DhanStreamer extends EventEmitter {
                 const securityId = buffer.readUInt32LE(4);
                 const ltp = buffer.readFloatLE(8); 
 
-                const exchangeMap = { 0: "NSE_EQ", 1: "BSE_EQ", 2: "NSE_FNO", 3: "BSE_FNO", 4: "MCX", 5: "IDX_I" };
+                const exchangeMap = { 
+                    0: "NSE_EQ", 
+                    1: "NSE_FNO", 
+                    2: "NSE_CUR", 
+                    3: "BSE_EQ", 
+                    4: "BSE_FNO",  // 👈 SENSEX/BANKEX yahan aayega!
+                    5: "BSE_CUR", 
+                    7: "MCX", 
+                    8: "IDX_I"     // 👈 Spot Nifty/Sensex yahan aayega!
+                };
                 const exchangeStr = exchangeMap[exchangeSegment] || "NSE_FNO";
 
                 this.emit('tick', {

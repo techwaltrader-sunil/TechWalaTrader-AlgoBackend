@@ -51,6 +51,8 @@ const deploymentSchema = new mongoose.Schema({
         engineStatus: { type: String, default: 'ACTIVE' },
         tradeStartTime: { type: Number, default: 0 },
         entrySpotPrice: { type: Number, default: 0 },
+
+        dte: { type: Number, default: 0 },
         
         highestLockedProfit: { type: Number, default: 0 },
         isGammaShieldActive: { type: Boolean, default: false },
