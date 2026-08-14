@@ -3343,6 +3343,21 @@ setInterval(async () => {
         // 🚀 FIRE ALL BROKERS DATA TO FRONTEND!
         global.io.emit('market-update', brokerData);
 
+        // 👇 NAYA CODE: PAYOFF CHART KE LIYE LIVE SPOT UPDATE 👇
+        // Dhan/Broker ID ke hisaab se Spot LTP nikalna (e.g., "13" NIFTY ke liye, "25" BANKNIFTY ke liye)
+        // Ensure karo ki tumhara liveLtpCache in IDs ka data store kar raha ho
+        
+        const spotUpdates = {
+            "NIFTY 50": liveLtpCache["13"] || 0,
+            "BANKNIFTY": liveLtpCache["25"] || 0,
+            "FINNIFTY": liveLtpCache["27"] || 0,
+            "SENSEX": liveLtpCache["51"] || 0
+        };
+
+        // Frontend ko bhej do (UI is object se apne symbol ka spot nikal lega)
+        global.io.emit('live-spot-update', spotUpdates);
+        // 👆 NAYA CODE YAHAN KHATAM 👆
+
     } catch (error) {
         // Silent catch
     }
