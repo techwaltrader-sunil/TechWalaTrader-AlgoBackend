@@ -3518,6 +3518,8 @@ const runBacktestSimulator = async (req, res) => {
         const allowedDaysNum = allowedDaysNames.map(d => dayMap[d.toUpperCase()]).filter(n => n !== undefined);
         // =========================================================
 
+        const skippedDates = strategy.config?.skippedDates || strategy.data?.config?.skippedDates || [];
+
         const strategyConfigString = JSON.stringify({
             legs: strategy.legs || strategy.data?.legs,
             entryConds: entryConds,
@@ -3896,6 +3898,20 @@ const runBacktestSimulator = async (req, res) => {
                 const m = String(istDate.getUTCMinutes()).padStart(2, '0');
                 const timeInMinutes = (istDate.getUTCHours() * 60) + istDate.getUTCMinutes();
                 const dateStr = istDate.toISOString().split('T')[0];
+
+
+
+                // 🔥================================================🔥
+                // 🚫 THE EVENT SKIPPER GUARD (User Blocked Dates)
+                // 🔥================================================🔥
+                if (skippedDates.includes(dateStr)) {
+                    if (dateStr !== currentDayTracker) {
+                        console.log(`⏭️ [EVENT SKIPPED] User blocked trading on ${dateStr}. Engine skipping the entire day.`);
+                        currentDayTracker = dateStr;
+                        // 🚨 YAHAN SE 'isCurrentDaySkipped = true;' HATA DIYA GAYA HAI!
+                    }
+                    continue; // Seedha agli candle par jao!
+                }
 
                 // 🔥================================================🔥
                 // 🎯 THE MASTER FIX: ONLY EXPIRY DAY FILTER (0-DTE)
@@ -5736,30 +5752,58 @@ const runBacktestSimulator = async (req, res) => {
                                 }
                             }
 
-                            if (fakeTriggerRejected) {
-                                if (isExitTime || isLastCandleOfDay) {
-                                    trade.exitReason = isLastCandleOfDay ? "EOD_SQUAREOFF" : "TIME_SQUAREOFF";
-                                    trade.exitPrice = null;
-                                    foundExactExit = false;
-                                } else {
-                                    trade.markedForExit = false;
-                                    trade.exitReason = null;
-                                    trade.exitPrice = null;
-                                    remainingTrades.push(trade);
-                                    continue;
-                                }
+                            //     if (fakeTriggerRejected) {
+                            //     // 🔥 CNC CARRY FORWARD FIX (Ghost Exit Destroyer) 🔥
+                            //     // Agar trade galti se Fake SL/TP (Freak Wick) trigger kare, toh Engine use 15:29 par
+                            //     // EOD_SQUAREOFF me convert karke close kar deta tha. Ab hum use safely resume karenge!
+                            //     const mandatoryExits = ["TIME_SQUAREOFF", "EOD_SQUAREOFF", "BTST_EXIT", "BTST_EXPIRY_EXIT", "MAX_LOSS", "MAX_PROFIT"];
+                                
+                            //     if (mandatoryExits.includes(trade.exitReason) || String(trade.exitReason).startsWith("EXIT_ALL")) {
+                            //         trade.exitReason = isLastCandleOfDay ? "EOD_SQUAREOFF" : "TIME_SQUAREOFF";
+                            //         trade.exitPrice = null;
+                            //         foundExactExit = false;
+                            //     } else {
+                            //         console.log(`🛡️ [GHOST EXIT AVOIDED] Fake ${trade.exitReason} rejected by API. CNC Trade resumed safely.`);
+                            //         trade.markedForExit = false;
+                            //         trade.exitReason = null;
+                            //         trade.exitPrice = null;
+                            //         remainingTrades.push(trade);
+                            //         continue;
+                            //     }
+                            // }
+
+
+                                if (fakeTriggerRejected) {
+                            // 🔥 CNC CARRY FORWARD FIX (Ghost Exit Destroyer) 🔥
+                            const mandatoryExits = ["TIME_SQUAREOFF", "EOD_SQUAREOFF", "BTST_EXIT", "BTST_EXPIRY_EXIT", "MAX_LOSS", "MAX_PROFIT"];
+                            
+                            if (mandatoryExits.includes(trade.exitReason) || String(trade.exitReason).startsWith("EXIT_ALL")) {
+                                trade.exitReason = isLastCandleOfDay ? "EOD_SQUAREOFF" : "TIME_SQUAREOFF";
+                                trade.exitPrice = null;
+                                foundExactExit = false;
+                            } else {
+                                // 👇 Yahan par naya detailed console.log lagaya gaya hai 👇
+                                const hStr = String(istDate.getUTCHours()).padStart(2, '0');
+                                const mStr = String(istDate.getUTCMinutes()).padStart(2, '0');
+                                console.log(`🛡️ [GHOST AVOIDED] Date: ${dateStr} | Time: ${hStr}:${mStr} | Symbol: ${trade.symbol} | Fake ${trade.exitReason} rejected. Trade resumed.`);
+                                // 👆 Naya log yahan khatam 👆
+
+                                trade.markedForExit = false;
+                                trade.exitReason = null;
+                                trade.exitPrice = null;
+                                remainingTrades.push(trade);
+                                continue;
                             }
+                        }
 
 
 
                                 if (!foundExactExit) {
-                                // 🔥 THE FIX: Zombie Bug Killed! Removed the 'else' block that was rejecting Max Loss!
-                                if (["MAX_LOSS", "MAX_PROFIT", "STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST", "LOCK_FIX_PROFIT", "LOCK_AND_TRAIL", "LEG_TRAIL_SL"].includes(trade.exitReason)) {
-                                    if (isExitTime || isLastCandleOfDay) {
-                                        trade.exitReason = isLastCandleOfDay ? "EOD_SQUAREOFF" : "TIME_SQUAREOFF";
-                                        trade.exitPrice = null;
-                                    }
-                                    // Chupchap aage badho aur Math Fallback se exitPrice nikalo! (No Else Block)
+                                    // 🔥 ZOMBIE BUG KILLED FIX (Updated for CNC) 🔥
+                                    if (["MAX_LOSS", "MAX_PROFIT", "STOPLOSS", "TARGET", "TRAILING_SL", "SL_MOVED_TO_COST", "LOCK_FIX_PROFIT", "LOCK_AND_TRAIL", "LEG_TRAIL_SL"].includes(trade.exitReason)) {
+                                        // Yahan pehle isLastCandleOfDay par EOD_SQUAREOFF me label change ho jata tha, 
+                                        // jisse CNC trades galti se EOD close lagte the. Ab label wahi rahega jo original tha!
+                                        trade.exitPrice = null; // Bas Math fallback ke liye null chhod do
                                 }
 
 
@@ -6452,7 +6496,19 @@ const runBacktestSimulator = async (req, res) => {
             }
 
             equityCurve.push({ date, pnl: currentEquity });
-            daywiseBreakdown.push({ date, dailyPnL: data.pnl, tradesTaken: data.trades, tradesList: data.tradesList });
+            
+            // 👇👇👇 YAHAN PAR NAYA FIX LAGANA HAI 👇👇👇
+            // 🔥 THE UI CLEANUP FIX 🔥
+            // Sirf wahi din UI me bhejenge jis din sach me koi trade (trades > 0) execute hua ho.
+            if (data.trades > 0) {
+                daywiseBreakdown.push({ 
+                    date, 
+                    dailyPnL: data.pnl, 
+                    tradesTaken: data.trades, 
+                    tradesList: data.tradesList 
+                });
+            }
+            // 👆👆👆 NAYA FIX YAHAN KHATAM 👆👆👆
         }
 
         // 🔥 THE VISUAL DEBUGGER PREPARATION 🔥
