@@ -3789,6 +3789,36 @@ const runBacktestSimulator = async (req, res) => {
         };
 
 
+        // 👇👇👇 YAHAN PAR NAYA HELPER FUNCTION LAGANA HAI 👇👇👇
+        // 🔥 HELPER: OTM/ITM को असली Strike Price में बदलने वाला फंक्शन 🔥
+       const calculateTargetStrike = (atmStrike, legObj, optionType) => {
+        if (!legObj) return atmStrike;
+        
+        // UI/DB से आने वाले सारे स्ट्राइक फ़ील्ड्स को एक साथ जोड़ दें (ताकि OTM 150 कभी मिस न हो)
+        const combinedStr = `${legObj.strikeCriteria || ''} ${legObj.strikeValue || ''} ${legObj.strikeType || ''} ${legObj.strikeSelection || ''}`.toUpperCase();
+        
+        let offset = 0;
+        const numMatch = combinedStr.match(/\d+/);
+        const points = numMatch ? parseInt(numMatch[0]) : 0;
+        
+        const isCE = optionType === "CE" || optionType === "CALL";
+
+        // Call और Put के हिसाब से असली कैलकुलेशन
+        if (combinedStr.includes("OTM")) {
+            offset = isCE ? points : -points;
+        } else if (combinedStr.includes("ITM")) {
+            offset = isCE ? -points : points;
+        } else if (combinedStr.includes("+")) {
+            offset = points;
+        } else if (combinedStr.includes("-")) {
+            offset = -points;
+        }
+
+        return atmStrike + offset;
+    };
+        // 👆👆👆 NAYA HELPER FUNCTION YAHAN KHATAM 👆👆👆
+
+
         const calcTradePnL = (entryP, exitP, qty, action) => {
             if (action === "BUY") return (exitP - entryP) * qty;
             return (entryP - exitP) * qty;
@@ -5448,9 +5478,37 @@ const runBacktestSimulator = async (req, res) => {
 
                         const tradeDTE = getTradingDaysToExpiry(istDate, actualTradeExpiryStr);
 
-                        if (tradeDTE <= cncExitDays && isExitTime) forceSquareOff = true;
-                        else if (tradeDTE <= 0 && isLastCandleOfDay) forceSquareOff = true; 
-                        else if (isExitTime && trade.exitReason) forceSquareOff = true; 
+                        // 🔥 THE FIX: Chunk 1 me CNC ki entry ke liye global exitMin 15:30 set ho gaya tha.
+                        // Isliye CNC एग्ज़िट के लिए UI का Square Off Time यहाँ फ्रेश कैलकुलेट करेंगे!
+                        let cncTargetMin = 915; // default 15:15
+                        const uiSqTime = strategy.config?.squareOff || strategy.data?.config?.squareOff || strategy.config?.squareOffTime || strategy.data?.config?.squareOffTime || "03:15 PM";
+                        if (uiSqTime) {
+                            const [eh, emStr] = uiSqTime.split(':');
+                            if (emStr) {
+                                const em = emStr.split(' ')[0];
+                                let h = parseInt(eh);
+                                if (uiSqTime.toUpperCase().includes('PM') && h !== 12) h += 12;
+                                if (uiSqTime.toUpperCase().includes('AM') && h === 12) h -= 12;
+                                cncTargetMin = h * 60 + parseInt(em);
+                            }
+                        }
+
+                        // 🎯 CNC EXIT LOGIC
+                        if (tradeDTE <= cncExitDays) {
+                            // अब यह ग्लोबल (930) की जगह UI वाले सही टाइम (cncTargetMin) पर कटेगा
+                            if (timeInMinutes >= cncTargetMin) {
+                                forceSquareOff = true;
+                                trade.exitReason = "TIME_SQUAREOFF"; // 🔥 Standard Tag use kiya taaki Gatekeeper smooth rahe
+                            } 
+                            // Fallback: अगर किसी वजह से तय समय मिस हो जाए
+                            else if (isLastCandleOfDay) {
+                                forceSquareOff = true;
+                                trade.exitReason = "EOD_SQUAREOFF";
+                            }
+                        } 
+                        else if (isExitTime && trade.exitReason) {
+                            forceSquareOff = true;
+                        }
                     }
 
                     // 🔥 PURANI LINE KO ISSE REPLACE KAREIN 👇
@@ -6142,16 +6200,29 @@ const runBacktestSimulator = async (req, res) => {
                         }
                     }
 
+                    // let finalEntryPrice = isOptionsTrade ? 0 : spotClosePrice;
+                    // let validTrade = true;
+                    // let premiumChartData = null;
+                    // let targetStrike = calculateATM(spotClosePrice, upperSymbol);
+                    // const strikeCriteria = legData.strikeCriteria || "ATM pt";
+                    // const strikeType = legData.strikeType || "ATM";
+
                     let finalEntryPrice = isOptionsTrade ? 0 : spotClosePrice;
                     let validTrade = true;
                     let premiumChartData = null;
-                    let targetStrike = calculateATM(spotClosePrice, upperSymbol);
-                    const strikeCriteria = legData.strikeCriteria || "ATM pt";
-                    const strikeType = legData.strikeType || "ATM";
-                    const reqExpiry = autoCorrectExpiryType(upperSymbol, dateStr, legData.expiry || "WEEKLY");
 
-                    // 🔥 THE FIX: Agar CNC trade lene ka din hai, toh targetCncExpiryLabel (Next Expiry) use karo
+                    // 🎯 STEP 1: Asli Strike Calculate karo (jaise 24600 + 150 = 24750)
+                    const atmStrike = calculateATM(spotClosePrice, upperSymbol);
+                    
+                    // 🔥 THE ROOT CAUSE KILLED: Ab helper sidha pura legData object padhega
+                    let targetStrike = calculateTargetStrike(atmStrike, legData, activeOptionType);
+
+                    // 🛡️ STEP 2: THE "GHOST OVERWRITE" PROTECTOR
+                    const strikeType = targetStrike.toString(); 
+                    
+                    const reqExpiry = autoCorrectExpiryType(upperSymbol, dateStr, legData.expiry || "WEEKLY");
                     const expiryLabel = (orderType === "CNC" && isCncEntryDay) ? targetCncExpiryLabel : getNearestExpiryString(dateStr, upperSymbol, reqExpiry);
+
                     let tradeSymbol = `${upperSymbol} ${targetStrike} ${activeOptionType} (${expiryLabel})`;
 
                     if (isOptionsTrade && broker) {
@@ -6162,7 +6233,11 @@ const runBacktestSimulator = async (req, res) => {
                         const expectedMonth = targetExpStr.substring(2, 5);
                         const expectedDhanDateStr = `${expectedDay} ${expectedMonth}`;
 
-                        const optionConfig = getOptionSecurityId(upperSymbol, spotClosePrice, strikeCriteria, strikeType, activeOptionType, reqExpiry);
+                        // Master Hack to prevent Ghost Overwrite
+                        const fakeSpotPrice = targetStrike;
+                        const fakeStrikeCriteria = "ATM pt";
+
+                        const optionConfig = getOptionSecurityId(upperSymbol, fakeSpotPrice, fakeStrikeCriteria, strikeType, activeOptionType, reqExpiry);
 
                         if (optionConfig && optionConfig.strike && optionConfig.tradingSymbol.includes(expectedDhanDateStr)) {
                             targetStrike = optionConfig.strike;
@@ -6188,20 +6263,65 @@ const runBacktestSimulator = async (req, res) => {
                         if (!apiSuccess) {
                             try {
                                 await sleep(500);
-                                const formattedStrikeForRolling = strikeType.replace(/\s+/g, '').toUpperCase();
-                                const expRes = await withRetry(() => fetchExpiredOptionData(broker.clientId, broker.apiSecret, spotSecurityId, formattedStrikeForRolling, activeOptionType, dateStr, dateStr, reqExpiry));
-                                if (expRes.success && expRes.data && expRes.data.close) {
-                                    const exactMatchIndex = expRes.data.start_Time.findIndex(t => {
-                                        const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
-                                        return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
-                                    });
-                                    if (isTimeBased) {
-                                        finalEntryPrice = exactMatchIndex !== -1 ? expRes.data.open[exactMatchIndex] : expRes.data.open[0];
-                                    } else {
-                                        finalEntryPrice = exactMatchIndex !== -1 ? expRes.data.close[exactMatchIndex] : expRes.data.close[0];
+
+                                const stepSize = getStrikeStepSize(upperSymbol);
+                                const rawStepDiff = Math.round((targetStrike - atmStrike) / stepSize);
+                                const absStep = Math.abs(rawStepDiff);
+
+                                // 🔥 THE DEEP-SEA DIVER CANDIDATES (From your check-rolling-api.js) 🔥
+                                // Dhan ke saare nakhre ek sath handle karenge
+                                let labelsToTry = absStep === 0 ? ["ATM"] : [
+                                    `ITM${absStep}`, `OTM${absStep}`, 
+                                    `ITM-${absStep}`, `OTM-${absStep}`, 
+                                    `-${absStep}`, `${absStep}`
+                                ];
+                                labelsToTry = [...new Set(labelsToTry)]; // Duplicate hatao
+
+                                let expFlag = "WEEK"; let expCode = 1;
+                                if (reqExpiry.toUpperCase() === "MONTHLY") { expFlag = "MONTH"; }
+                                else if (reqExpiry.toUpperCase() === "NEXT WEEKLY" || reqExpiry.toUpperCase() === "NEXT WEEK") { expCode = 2; }
+                                const exchSegment = (Number(spotSecurityId) === 51 || Number(spotSecurityId) === 69) ? "BSE_FNO" : "NSE_FNO";
+
+                                const axios = require('axios');
+
+                                for (let label of labelsToTry) {
+                                    const payload = {
+                                        exchangeSegment: exchSegment, interval: "1", securityId: Number(spotSecurityId), instrument: "OPTIDX",
+                                        expiryFlag: expFlag, expiryCode: expCode, 
+                                        drvOptionType: activeOptionType === "CE" ? "CALL" : "PUT", 
+                                        requiredData: ["open", "close", "strike"], fromDate: dateStr, toDate: dateStr, strike: label
+                                    };
+                                    
+                                    let optRes;
+                                    try {
+                                        optRes = await axios.post('https://api.dhan.co/v2/charts/rollingoption', payload, {
+                                            headers: { 'access-token': broker.apiSecret, 'client-id': broker.clientId, 'Content-Type': 'application/json' },
+                                            timeout: 5000
+                                        });
+                                    } catch(e) { continue; } // Rate limit/Error aaya to aage badho
+
+                                    const optKey = activeOptionType === "CE" ? "ce" : "pe";
+                                    if (optRes && optRes.data && optRes.data.data && optRes.data.data[optKey]) {
+                                        const chart = optRes.data.data[optKey];
+                                        
+                                        // 🎯 STEP 1: Tumhare test script ki tarah Time Index dhundo
+                                        const exactMatchIndex = chart.timestamp.findIndex(t => {
+                                            const optTime = new Date(t * 1000 + (5.5 * 60 * 60 * 1000));
+                                            return optTime.getUTCHours() === istDate.getUTCHours() && optTime.getUTCMinutes() === istDate.getUTCMinutes();
+                                        });
+
+                                        let indexToUse = exactMatchIndex !== -1 ? exactMatchIndex : (chart.open && chart.open.length > 0 ? 0 : -1);
+
+                                        // 🛑 STEP 2: THE ULTIMATE STRIKE GATEKEEPER
+                                        // Dhan ne US WAKT (indexToUse) par kaunsi strike di thi?
+                                        if (indexToUse !== -1 && chart.strike && Number(chart.strike[indexToUse]) === targetStrike) {
+                                            finalEntryPrice = isTimeBased ? chart.open[indexToUse] : chart.close[indexToUse];
+                                            premiumChartData = optRes.data;
+                                            apiSuccess = true;
+                                            break; // BINGO! Sahi strike mil gayi, loop tod do!
+                                        }
                                     }
-                                    premiumChartData = expRes.data;
-                                    apiSuccess = true;
+                                    await sleep(200); // Dhan API ko saans lene do
                                 }
                             } catch (e) { }
                         }
@@ -6216,7 +6336,6 @@ const runBacktestSimulator = async (req, res) => {
                     }
 
                     if (validTrade) {
-                        // 🔥 NAYA CODE: Direct openTrades me na daal kar temp memory me rakho
                         tempPendingTrades.push({
                             id: `leg_${legIndex}`,
                             legConfig: legData,
@@ -6232,12 +6351,21 @@ const runBacktestSimulator = async (req, res) => {
                             lastKnownPremium: finalEntryPrice,
                             markedForExit: false,
                             currentTrailedSL: null,
-                            spotSlPrice: currentCandleSniperSignal ? currentCandleSniperSignal.spotSlPrice : 0, // 🔥 SPOT SL SAVE HO GAYA
+                            spotSlPrice: currentCandleSniperSignal ? currentCandleSniperSignal.spotSlPrice : 0,
                             entryReason: currentEntryReason
                         });
                         tempLtps.push(finalEntryPrice);
                     }
-                } // <-- Leg Loop yahan khatam hota hai
+                } // <-- LEG LOOP YAHAN KHATAM HOTA HAI
+
+                // ==============================================================
+                // ⚖️ NEW FIX: ALL OR NOTHING GATEKEEPER (Partial Trade Blocker)
+                // ==============================================================
+                if (tempPendingTrades.length !== strategyLegs.length) {
+                    console.log(`⚠️ [ALL OR NOTHING] Trade Aborted on ${dateStr}! Only fetched ${tempPendingTrades.length} out of ${strategyLegs.length} legs. Protecting from unhedged position.`);
+                    tempPendingTrades = []; // Data adhura hai, poori array clear kardo
+                    tempLtps = [];
+                }
 
                 // ==============================================================
                 // ⚖️ GATEKEEPER: PREMIUM DIFFERENCE CHECK (BACKTEST)

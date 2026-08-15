@@ -612,7 +612,7 @@ const axios = require('axios');
 
 // 🔥 1. APNI DETAILS YAHAN DALEIN
 const CLIENT_ID = "1103238744"; 
-const ACCESS_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzgzOTMyMzkwLCJpYXQiOjE3ODM4NDU5OTAsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTAzMjM4NzQ0In0.yNvws-FZfo4uKg3ICu_Pt9XaW8pVOWCIutpcTH1u8MDV8pqiXPl0zrplAa5OR-tiSXbYurKB61vhLAC-y4LvTQ";
+const ACCESS_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzg2ODUxNzg3LCJpYXQiOjE3ODY3NjUzODcsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTAzMjM4NzQ0In0.hHPLqfYatVL3Sl-isgpkdANvFNQJHsubL_Z3M-bkfDepK7r2POiwESlh1rKEue1pKMP9cz_BbOL_hC72Ygs8Rw";
 
 // 🛑 Dhan API ko hang hone se bachane ke liye chota sa timeout/delay
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -795,7 +795,7 @@ async function runAllTests() {
     console.log("🚦 STARTING API TESTS (AS PER SEBI NEW EXPIRY RULES) 🚦\n");
 
     // // ✅ NSE - WEEKLY ALLOWED
-    await fetchFixedStrikeData("NIFTY", "2026-07-07", "WEEKLY", "CE", "ATM", "09:32", "10:10");
+    await fetchFixedStrikeData("NIFTY", "2026-07-07", "WEEKLY", "PE", "ATM", "09:32", "10:10");
     // await delay(2000);
 
     // // ✅ BSE - WEEKLY ALLOWED
