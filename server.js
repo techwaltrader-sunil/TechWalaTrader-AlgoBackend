@@ -449,13 +449,19 @@ const dotenv = require('dotenv');
 const cors = require('cors');
 const http = require('http'); // ✅ Import HTTP
 const { Server } = require('socket.io'); // ✅ Import Socket.io
+
+
 const connectDB = require('./config/db');
+const { initPostgresDB } = require('./config/postgres');
+
 const colors = require('colors');
 const cron = require('node-cron'); 
 
 // Config
 dotenv.config();
+
 connectDB();
+initPostgresDB();
 
 const webhookRoutes = require('./routes/webhookRoutes');
 const algoLogRoutes = require('./routes/algoLogRoutes');
@@ -463,6 +469,8 @@ const backtestRoutes = require('./routes/backtestRoutes');
 const { downloadAndParseInstruments } = require('./services/instrumentService'); 
 
 const app = express();
+
+
 
 // ==========================================
 // ⏰ AUTOMATIC CSV UPDATER (CRON JOB)
@@ -535,6 +543,7 @@ app.use('/api/webhook', webhookRoutes);
 app.use('/api/algo-logs', algoLogRoutes);
 app.use('/api/backtest', backtestRoutes);
 app.use('/api/strategy-templates', require('./routes/templateRoutes'));
+app.use('/api/simulator', require('./routes/simulatorRoutes'));
 // ==========================================
 
 
