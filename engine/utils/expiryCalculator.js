@@ -225,7 +225,23 @@ const isThisExpiryDay = (tradeDateStr, symbolStr, reqExpiry = "WEEKLY") => {
     return expiryStringOutput.includes(formattedCurrentDate);
 };
 
+// 🔥 NEW: Precision DTE Calculator (Days to Expiry)
+const calculateDTE = (currentTimestamp, expiryDateStr) => {
+    const current = new Date(currentTimestamp);
+    const expiry = new Date(expiryDateStr);
+    
+    // Indian Market ke hisaab se expiry dopahar 3:30 PM (15:30) par hoti hai
+    expiry.setHours(15, 30, 0, 0);
+    
+    const diffMs = expiry - current;
+    const diffDays = diffMs / (1000 * 60 * 60 * 24); // Milliseconds ko Days me badla
+    
+    // Agar expiry ka time nikal chuka hai (0 ya negative), toh BSM error se bachne ke liye 0.001 return karenge
+    return diffDays > 0 ? diffDays : 0.001;
+};
+
 module.exports = {
     getNearestExpiryString,
     isThisExpiryDay,
+    calculateDTE,
 };

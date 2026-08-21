@@ -45,6 +45,15 @@ const brokerSchema = new mongoose.Schema({
   performance: { 
     type: String, 
     default: "0.00" 
+  },
+
+  paperBookedPnl: { 
+    type: Number, 
+    default: 0 
+  },
+  paperAvailableMargin: { 
+    type: Number, 
+    default: 1500000 // Default 15 Lakh ka Virtual Margin
   }
 });
 

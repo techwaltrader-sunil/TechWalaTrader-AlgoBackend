@@ -44,10 +44,12 @@
 // const dhanStreamer = require('../services/dhanStreamer.js');
 
 // const { calculateApproxBasketMargin } = require('./utils/marginCalculator.js'); 
-// const { isThisExpiryDay } = require('./utils/expiryCalculator.js');
+// const { isThisExpiryDay, getNearestExpiryString, calculateDTE } = require('./utils/expiryCalculator.js');
 
 
 // const { executeAutoRecovery, processRecoveryTrailing } = require('./features/riskManagement/autoRecoveryEngine.js');
+
+// const { startSilentSync, recoverCrashState } = require('./features/riskManagement/crashGuard');
 
 // // =========================================================================
 // // 🧠 RATIO SPREAD: LIVE MEMORY CACHE & TICK LISTENER (THE HEARTBEAT)
@@ -57,6 +59,16 @@
 // // 1. Global Memory (Fast Access)
 // const activeRatioDeployments = new Map(); 
 // const liveLtpCache = {}; 
+
+// // 👇 YAHAN SE CRASH GUARD TRIGGER HOGA 👇
+// // Boot-up ke 5 second baad purane trades zinda karega
+// setTimeout(() => {
+//     recoverCrashState(activeRatioDeployments);
+// }, 5000);
+
+// // Background me har 10 sec data save karna shuru karegaC
+// startSilentSync(activeRatioDeployments);
+// // 👆 YAHAN TAK 👆
 
 // // 🛡️ THE LIVE FIREFIGHTER & RECOVERY TRIGGER (Upgraded for Phase 5)
 // const executeLiveEmergencyExit = async (session, reason, currentMtm, currentSpotPrice) => {
@@ -365,6 +377,27 @@
 //             // 🔥 HELPERS
 //             const hasLegs = deployment.executedLegs && deployment.executedLegs.length > 0;
 //             const hasActiveLegs = hasLegs && deployment.executedLegs.some(l => l.status === 'ACTIVE');
+
+//             // 👇👇👇 YAHAN LAGEGA 0-DTE GATEKEEPER 👇👇👇
+//             // ==============================================================
+//             // 🛑 0-DTE GATEKEEPER (THE MISSING BOUNCER)
+//             // ==============================================================
+//             const advSettings = strategy.data?.advanceSettings || {};
+//             // Frontend se aane wala exact toggle name
+//             const isZeroDteOnly = advSettings.tradeOnlyOnExpiryDays || advSettings.zeroDTE || false;
+
+//             if (isZeroDteOnly && !hasLegs) {
+//                 const todayStr = moment().tz("Asia/Kolkata").format("YYYY-MM-DD");
+//                 const reqExpiry = strategy.data?.legs?.[0]?.expiry || "WEEKLY";
+                
+//                 // Expiry Calculator se check karenge ki kya aaj sach me expiry hai? (Holiday Shift include karke)
+//                 const isExpDay = isThisExpiryDay(todayStr, baseSymbol, reqExpiry);
+
+//                 if (!isExpDay) {
+//                     continue; // Engine ko yahin se wapas bhej do, aage ka logic run mat karo!
+//                 }
+//             }
+//             // 👆👆👆 ========================================= 👆👆👆
 
 //             // ==============================================================
 //             // 🏥 0. LIVE HOSPITAL CHECK (RE-ENTRY LOGIC)
@@ -718,16 +751,17 @@
 //                                 const buyLegs = legsToExecute.filter(leg => leg.action === 'BUY');
 //                                 const sellLegs = legsToExecute.filter(leg => leg.action === 'SELL');
 
-//                                 // 4. PAPER TRADE LOGIC FOR RATIO SPREAD
+//                                 // ==============================================================
+//                                 // 🚀 4. PAPER TRADE LOGIC FOR RATIO SPREAD
+//                                 // ==============================================================
 //                                 if (deployment.executionType === 'FORWARD_TEST' || deployment.executionType === 'PAPER') {
                                     
-//                                     // 🔥 THE FIX: Dynamic Exchange Selector
 //                                     const dynamicExchange = (upperSymbol.includes("SENSEX") || upperSymbol.includes("BANKEX")) ? "BSE_FNO" : "NSE_FNO";
 
 //                                     // 1. Naye legs ka array banao
 //                                     const newLegs = legsToExecute.map(leg => ({
 //                                         securityId: leg.inst.id, 
-//                                         exchange: dynamicExchange, // ❌ "NSE_FNO" hata kar isey lagana hai
+//                                         exchange: dynamicExchange,
 //                                         symbol: `${upperSymbol} ${leg.strike} ${leg.type}`,
 //                                         action: leg.action, 
 //                                         quantity: leg.lots * (leg.inst?.lotSize || leg.inst?.lot || strategy.data.instruments[0].lot || 1),
@@ -738,55 +772,7 @@
 //                                         entryReason: "Ratio Spread Paper"
 //                                     }));
 
-//                                     // 🔥 THE ULTIMATE FIX: Direct Database Update (Bypasses VersionError)
-//                                     // Ye line bina kisi error ke DB me purane legs hatakar naye daal degi
-//                                     await Deployment.findByIdAndUpdate(
-//                                         deployment._id,
-//                                         { $set: { executedLegs: newLegs, status: 'ACTIVE', marginBlocked: estMargin } } 
-//                                     );
-
-//                                     // 2. Engine ki memory me bhi naye legs daal do taki aage ka code na fute
-//                                     deployment.executedLegs = newLegs;
-//                                     deployment.status = 'ACTIVE';
-
-//                                     console.log(`📝 [PAPER TRADE] Ratio Spread Deployed Successfully with 4 Legs.`);
-
-//                                     // =========================================================
-//                                     // 🔌 START WEBSOCKET & SUBSCRIBE LIVE TOKENS (PAPER MODE)
-//                                     // =========================================================
-//                                     if (!dhanStreamer.isConnected) {
-//                                         dhanStreamer.connect(broker.clientId, broker.apiSecret); 
-//                                     }
-
-//                                     setTimeout(() => {
-//                                         const nseTokens = [];
-//                                         const bseTokens = [];
-//                                         const idxTokens = []; // 🔥 INDICES KE LIYE NAYA ARRAY
-                                        
-//                                         const targetLegs = deployment.executionType === 'LIVE' ? successfulLiveLegs : legsToExecute;
-                                        
-//                                         targetLegs.forEach(leg => {
-//                                             const exch = String(leg.inst?.exchange || leg.exchange || "NSE_FNO").toUpperCase();
-                                            
-//                                             // Dhan ke options NSE_FNO ya BSE_FNO hote hain
-//                                             if(exch.includes("BSE")) bseTokens.push(String(leg.inst?.id || leg.securityId));
-//                                             else nseTokens.push(String(leg.inst?.id || leg.securityId));
-//                                         });
-
-//                                         // 🛡️ THE FIX: Nifty/Sensex Spot id hamesha "IDX_I" segment me jata hai!
-//                                         if (spotSecurityId) {
-//                                             idxTokens.push(String(spotSecurityId));
-//                                         }
-
-//                                         // Fire Accurate Subscriptions Without Mixing Segments
-//                                         if (nseTokens.length > 0) dhanStreamer.subscribeTokens("NSE_FNO", nseTokens);
-//                                         if (bseTokens.length > 0) dhanStreamer.subscribeTokens("BSE_FNO", bseTokens);
-//                                         if (idxTokens.length > 0) dhanStreamer.subscribeTokens("IDX_I", idxTokens);
-                                        
-//                                     }, 2000);
-//                                     // =========================================================
-
-
+//                                     // 👇👇👇 MARGIN CALCULATION KO YAHAN UPAR KHISKA DIYA GAYA HAI 👇👇👇
 //                                     // =========================================================
 //                                     // 🧮 CALCULATE MARGIN & MAX LOSS FOR PAPER
 //                                     // =========================================================
@@ -794,7 +780,6 @@
 //                                     try {
 //                                         const todayStr = new Date().toISOString().split('T')[0];
 //                                         const isExpDay = isThisExpiryDay(todayStr, upperSymbol, strategy.data?.legs[0]?.expiry || "WEEKLY");
-//                                         // 🔥 FIX: Paper trade me margin nikalne ke liye 'legsToExecute' use hoga
 //                                         estMargin = calculateApproxBasketMargin(legsToExecute, upperSymbol, isExpDay);
 //                                     } catch (e) {
 //                                         console.log(`⚠️ Margin calculation fallback used for Paper Trade.`);
@@ -802,59 +787,108 @@
                                     
 //                                     const userMaxLossAmt = Number(strategy.data?.advanceSettings?.maxLoss || 0);
 //                                     const calcMaxLoss = userMaxLossAmt > 0 ? userMaxLossAmt : (estMargin * (Number(strategy.data?.advanceSettings?.maxLossPct || 1) / 100));
+//                                     // 👆👆👆 ========================================================== 👆👆👆
 
-                                    
+
+
+//                                     // 👇👇👇 YAHAN LAGEGA STATIC SYNC FIX (Phase 4) 👇👇👇
+//                                     const staticSessionState = {
+//                                         entrySpotPrice: typeof currentSpotPrice !== 'undefined' ? currentSpotPrice : (typeof spotClosePrice !== 'undefined' ? spotClosePrice : 0),
+//                                         tradeStartTime: new Date().getTime(),
+//                                         tradeBoundaries: {
+//                                             lowerBreakEven: typeof ratioEngine !== 'undefined' ? (ratioEngine.tradeBoundaries?.lowerBreakEven || ratioEngine.lowerBE || 0) : 0,
+//                                             upperBreakEven: typeof ratioEngine !== 'undefined' ? (ratioEngine.tradeBoundaries?.upperBreakEven || ratioEngine.upperBE || 0) : 0
+//                                         },
+//                                         highestLockedProfit: 0,
+//                                         currentTrailedSL: 0,
+//                                         isGammaShieldActive: false,
+//                                         isPanicApiMode: false,
+//                                         customRecoveryCount: 0
+//                                     };
+
+//                                     // 🔥 THE ULTIMATE FIX: Direct Database Update with Exact 'estMargin' & 'sessionState'
+//                                     await Deployment.findByIdAndUpdate(
+//                                         deployment._id,
+//                                         { 
+//                                             $set: { 
+//                                                 executedLegs: newLegs, 
+//                                                 status: 'ACTIVE', 
+//                                                 marginBlocked: estMargin,
+//                                                 sessionState: staticSessionState // 👈 YE LINE ADD HUI HAI
+//                                             } 
+//                                         }
+//                                     );
+//                                     // 👆👆👆 ======================================================= 👆👆👆
+
+//                                     // Engine ki memory update
+//                                     deployment.executedLegs = newLegs;
+//                                     deployment.status = 'ACTIVE';
+//                                     deployment.marginBlocked = estMargin;
+
+//                                     console.log(`📝 [PAPER TRADE] Ratio Spread Deployed Successfully with 4 Legs. (Blocked Margin: ₹${estMargin})`);
+
 //                                     // =========================================================
+//                                     // 🔌 START WEBSOCKET & SUBSCRIBE LIVE TOKENS (PAPER MODE)
+//                                     // =========================================================
+//                                     if (!dhanStreamer.isConnected) dhanStreamer.connect(broker.clientId, broker.apiSecret); 
+
 //                                     // 🔍 FIND SPOT SECURITY ID (For Velocity Guard)
-//                                     // =========================================================
 //                                     let spotSecurityId = "13"; // Default NIFTY 50
 //                                     const checkSym = String(upperSymbol).toUpperCase().replace(/\s+/g, '');
                                     
 //                                     if (checkSym.includes("BANKNIFTY") || checkSym === "NIFTYBANK") spotSecurityId = "25";
-                                    // else if (checkSym.includes("FINNIFTY")) spotSecurityId = "27";
-                                    // else if (checkSym.includes("MIDCPNIFTY")) spotSecurityId = "26";
-                                    // else if (checkSym.includes("SENSEX")) spotSecurityId = "51";
-                                    // else if (checkSym.includes("BANKEX")) spotSecurityId = "52";
-//                                     // =========================================================
-                                    
+//                                     else if (checkSym.includes("FINNIFTY")) spotSecurityId = "27";
+//                                     else if (checkSym.includes("MIDCPNIFTY")) spotSecurityId = "26";
+//                                     else if (checkSym.includes("SENSEX")) spotSecurityId = "51";
+//                                     else if (checkSym.includes("BANKEX")) spotSecurityId = "52";
 
-//                                     // 👇👇👇 NAYA CODE YAHAN FIT HUA HAI 👇👇👇
-//                                     // =========================================================
-//                                     // 🧠 REGISTER TO GLOBAL MEMORY (For Live Tick Tracking - PAPER)
-//                                     // =========================================================
+//                                     setTimeout(() => {
+//                                         const nseTokens = [];
+//                                         const bseTokens = [];
+//                                         const idxTokens = []; 
+                                        
+//                                         legsToExecute.forEach(leg => {
+//                                             const token = String(leg.inst?.id || leg.securityId);
+//                                             if (dynamicExchange === "BSE_FNO") {
+//                                                 bseTokens.push(token);
+//                                             } else {
+//                                                 nseTokens.push(token);
+//                                             }
+//                                         });
+
+//                                         if (spotSecurityId) idxTokens.push(String(spotSecurityId));
+
+//                                         if (nseTokens.length > 0) dhanStreamer.subscribeTokens("NSE_FNO", nseTokens);
+//                                         if (bseTokens.length > 0) dhanStreamer.subscribeTokens("BSE_FNO", bseTokens);
+//                                         if (idxTokens.length > 0) dhanStreamer.subscribeTokens("IDX_I", idxTokens);
+//                                     }, 2000);
+
+//                                     // 🧠 REGISTER TO GLOBAL MEMORY
 //                                     activeRatioDeployments.set(deployment._id.toString(), {
 //                                         deploymentId: deployment._id.toString(),
 //                                         broker: broker,
 //                                         symbol: upperSymbol,
 //                                         spotSecurityId: spotSecurityId,
 //                                         status: 'ACTIVE',
-//                                         activeLegs: legsToExecute, // 🔥 Paper mode me 'legsToExecute' jayega
-                                        
-//                                         // 🔥 NEW MARGIN & LOSS LIMITS 🔥
+//                                         activeLegs: legsToExecute,
 //                                         estimatedMargin: estMargin,
 //                                         maxLossLimit: calcMaxLoss,
-                                        
-//                                         // Guards Memory
 //                                         spotHistory: [],
 //                                         isPanicApiMode: false,
 //                                         isGammaShieldActive: false,
 //                                         highestLockedProfit: 0,
-                                        
-//                                         // Config Settings
 //                                         vWindow: strategy.data?.advanceSettings?.gammaBlastSettings?.velocityWindow || 15,
 //                                         vPoints: strategy.data?.advanceSettings?.gammaBlastSettings?.velocityPoints || (upperSymbol.includes("BANK") ? 250 : 100),
 //                                         shieldConfig: strategy.data?.advanceSettings?.timeShieldSettings || null,
-
 //                                         riskSettings: strategy.data?.riskManagement || {},
 //                                         gammaBlastSettings: strategy.data?.advanceSettings?.gammaBlastSettings || {},
-
-                                        
 //                                     });
-//                                     console.log(`🎯 Engine Memory Updated! ${upperSymbol} is now under Paper Live Radar Tracking. (Max Loss Limit: -₹${calcMaxLoss.toFixed(2)})`);
-//                                     // =========================================================
+//                                     console.log(`🎯 Engine Memory Updated! ${upperSymbol} is now under Paper Live Radar Tracking.`);
 //                                 }
 
-//                                 // 5. REAL LIVE TRADE EXECUTION (BUY FIRST, SELL LATER)
+//                                 // ==============================================================
+//                                 // 🚀 5. REAL LIVE TRADE EXECUTION (BUY FIRST, SELL LATER)
+//                                 // ==============================================================
 //                                 else if (deployment.executionType === 'LIVE') {
 //                                     try {
 //                                         const dynamicExchange = (upperSymbol.includes("SENSEX") || upperSymbol.includes("BANKEX")) ? "BSE_FNO" : "NSE_FNO";
@@ -875,14 +909,12 @@
 //                                         }
 
 //                                         if (executionFailed) throw new Error("BUY Legs execution failed. Halting.");
-
-//                                         // ⏳ Wait for Margin Benefit
-//                                         await sleep(1500);
+//                                         await sleep(1500); // ⏳ Wait for Margin Benefit
 
 //                                         // 🔴 STEP B: FIRE SELL LEGS
 //                                         console.log(`🔥 Firing SELL Legs...`);
 //                                         for (let leg of sellLegs) {
-//                                             const orderData = { action: 'SELL', quantity: leg.lots * leg.inst.lotSize, securityId: leg.inst.id, segment: "NSE_FNO", orderType: "MARKET" };
+//                                             const orderData = { action: 'SELL', quantity: leg.lots * leg.inst.lotSize, securityId: leg.inst.id, segment: dynamicExchange, orderType: "MARKET" };
 //                                             const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
 
 //                                             if (orderResponse.success && orderResponse.data?.orderStatus?.toUpperCase() !== "REJECTED") {
@@ -899,72 +931,13 @@
 //                                         if (executionFailed) {
 //                                             console.log(`🚨 [EMERGENCY] Sell Leg Failed! Squaring off existing BUY positions...`);
 //                                             for (let safeLeg of successfulLiveLegs.filter(l => l.action === 'BUY')) {
-//                                                 const sqData = { action: 'SELL', quantity: safeLeg.lots * safeLeg.inst.lotSize, securityId: safeLeg.inst.id, segment: "NSE_FNO", orderType: "MARKET" };
+//                                                 const sqData = { action: 'SELL', quantity: safeLeg.lots * safeLeg.inst.lotSize, securityId: safeLeg.inst.id, segment: dynamicExchange, orderType: "MARKET" };
 //                                                 await placeDhanOrder(broker.clientId, broker.apiSecret, sqData);
 //                                             }
 //                                             throw new Error("Margin Shortfall on Sell Leg.");
 //                                         }
 
-//                                         // 💾 Save to MongoDB (LIVE TRADE)
-//                                         const liveNewLegs = successfulLiveLegs.map(sLeg => ({
-//                                             securityId: sLeg.inst.id, 
-//                                             exchange: dynamicExchange,
-//                                             symbol: `${upperSymbol} ${sLeg.strike} ${sLeg.type}`,
-//                                             action: sLeg.action, 
-//                                             quantity: leg.lots * (leg.inst?.lotSize || leg.inst?.lot || strategy.data.instruments[0].lot || 1),
-//                                             entryPrice: sLeg.realEntryPrice,
-//                                             paperSlPrice: 0, 
-//                                             status: 'ACTIVE', 
-//                                             currentTrailedSL: null, 
-//                                             entryReason: "Ratio Spread Live"
-//                                         }));
-
-//                                         // 🔥 DIRECT DB UPDATE FOR LIVE TRADE
-//                                         await Deployment.findByIdAndUpdate(
-//                                             deployment._id,
-//                                             { $set: { executedLegs: liveNewLegs, status: 'ACTIVE', marginBlocked: estMargin } }
-//                                         );
-
-//                                         deployment.executedLegs = liveNewLegs;
-//                                         deployment.status = 'ACTIVE';
-
-//                                         await createAndEmitLog(broker, strategy.name, "DEPLOY", 1, 'SUCCESS', `Live Ratio Spread Executed Successfully.`);
-                                        
-//                                         // =========================================================
-//                                         // 🔌 START WEBSOCKET & SUBSCRIBE LIVE TOKENS (SMART SYNC)
-//                                         // =========================================================
-//                                         if (!dhanStreamer.isConnected) {
-//                                             dhanStreamer.connect(broker.clientId, broker.apiSecret); 
-//                                         }
-
-//                                         setTimeout(() => {
-//                                             const nseTokens = [];
-//                                             const bseTokens = [];
-//                                             const idxTokens = []; // 🔥 INDICES KE LIYE NAYA ARRAY
-                                            
-//                                             const targetLegs = deployment.executionType === 'LIVE' ? successfulLiveLegs : legsToExecute;
-                                            
-//                                             targetLegs.forEach(leg => {
-//                                                 const exch = String(leg.inst?.exchange || leg.exchange || "NSE_FNO").toUpperCase();
-                                                
-//                                                 // Dhan ke options NSE_FNO ya BSE_FNO hote hain
-//                                                 if(exch.includes("BSE")) bseTokens.push(String(leg.inst?.id || leg.securityId));
-//                                                 else nseTokens.push(String(leg.inst?.id || leg.securityId));
-//                                             });
-
-//                                             // 🛡️ THE FIX: Nifty/Sensex Spot id hamesha "IDX_I" segment me jata hai!
-//                                             if (spotSecurityId) {
-//                                                 idxTokens.push(String(spotSecurityId));
-//                                             }
-
-//                                             // Fire Accurate Subscriptions Without Mixing Segments
-//                                             if (nseTokens.length > 0) dhanStreamer.subscribeTokens("NSE_FNO", nseTokens);
-//                                             if (bseTokens.length > 0) dhanStreamer.subscribeTokens("BSE_FNO", bseTokens);
-//                                             if (idxTokens.length > 0) dhanStreamer.subscribeTokens("IDX_I", idxTokens);
-                                            
-//                                         }, 2000);
-//                                         // =========================================================
-
+//                                         // 👇👇👇 MARGIN CALCULATION KO YAHAN UPAR KHISKA DIYA GAYA HAI 👇👇👇
 //                                         // =========================================================
 //                                         // 🧮 CALCULATE MARGIN & MAX LOSS FOR LIVE
 //                                         // =========================================================
@@ -972,6 +945,7 @@
 //                                         try {
 //                                             const todayStr = new Date().toISOString().split('T')[0];
 //                                             const isExpDay = isThisExpiryDay(todayStr, upperSymbol, strategy.data?.legs[0]?.expiry || "WEEKLY");
+//                                             // 🔥 LIVE me successfulLiveLegs ke basis par calculate hoga
 //                                             estMargin = calculateApproxBasketMargin(successfulLiveLegs, upperSymbol, isExpDay);
 //                                         } catch (e) {
 //                                             console.log(`⚠️ Margin calculation fallback used.`);
@@ -979,13 +953,71 @@
                                         
 //                                         const userMaxLossAmt = Number(strategy.data?.advanceSettings?.maxLoss || 0);
 //                                         const calcMaxLoss = userMaxLossAmt > 0 ? userMaxLossAmt : (estMargin * (Number(strategy.data?.advanceSettings?.maxLossPct || 1) / 100));
+//                                         // 👆👆👆 ========================================================== 👆👆👆
 
+                                        
+//                                         // 💾 Save to MongoDB (LIVE TRADE)
+//                                         const liveNewLegs = successfulLiveLegs.map(sLeg => ({
+//                                             securityId: sLeg.inst.id, 
+//                                             exchange: dynamicExchange,
+//                                             symbol: `${upperSymbol} ${sLeg.strike} ${sLeg.type}`,
+//                                             action: sLeg.action, 
+//                                             quantity: sLeg.lots * (sLeg.inst?.lotSize || sLeg.inst?.lot || strategy.data.instruments[0].lot || 1),
+//                                             entryPrice: sLeg.realEntryPrice,
+//                                             paperSlPrice: 0, 
+//                                             status: 'ACTIVE', 
+//                                             currentTrailedSL: null, 
+//                                             entryReason: "Ratio Spread Live"
+//                                         }));
 
-                          
+//                                         // // 🔥 DIRECT DB UPDATE FOR LIVE TRADE with Exact 'estMargin'
+//                                         // await Deployment.findByIdAndUpdate(
+//                                         //     deployment._id,
+//                                         //     { $set: { executedLegs: liveNewLegs, status: 'ACTIVE', marginBlocked: estMargin } }
+//                                         // );
+
+//                                         // 👇👇👇 YAHAN LAGEGA STATIC SYNC FIX (Phase 4) 👇👇👇
+//                                         const staticSessionState = {
+//                                             entrySpotPrice: typeof currentSpotPrice !== 'undefined' ? currentSpotPrice : (typeof spotClosePrice !== 'undefined' ? spotClosePrice : 0),
+//                                             tradeStartTime: new Date().getTime(),
+//                                             tradeBoundaries: {
+//                                                 lowerBreakEven: typeof ratioEngine !== 'undefined' ? (ratioEngine.tradeBoundaries?.lowerBreakEven || ratioEngine.lowerBE || 0) : 0,
+//                                                 upperBreakEven: typeof ratioEngine !== 'undefined' ? (ratioEngine.tradeBoundaries?.upperBreakEven || ratioEngine.upperBE || 0) : 0
+//                                             },
+//                                             highestLockedProfit: 0,
+//                                             currentTrailedSL: 0,
+//                                             isGammaShieldActive: false,
+//                                             isPanicApiMode: false,
+//                                             customRecoveryCount: 0
+//                                         };
+
+//                                         // 🔥 DIRECT DB UPDATE FOR LIVE TRADE with Exact 'estMargin' & 'sessionState'
+//                                         await Deployment.findByIdAndUpdate(
+//                                             deployment._id,
+//                                             { 
+//                                                 $set: { 
+//                                                     executedLegs: liveNewLegs, 
+//                                                     status: 'ACTIVE', 
+//                                                     marginBlocked: estMargin,
+//                                                     sessionState: staticSessionStateLive // 👈 YE LINE ADD HUI HAI
+//                                                 } 
+//                                             }
+//                                         );
+//                                         // 👆👆👆 ======================================================= 👆👆👆
+
+//                                         deployment.executedLegs = liveNewLegs;
+//                                         deployment.status = 'ACTIVE';
+//                                         deployment.marginBlocked = estMargin;
+
+//                                         await createAndEmitLog(broker, strategy.name, "DEPLOY", 1, 'SUCCESS', `Live Ratio Spread Executed. (Margin: ₹${estMargin})`);
+                                        
 //                                         // =========================================================
+//                                         // 🔌 START WEBSOCKET & SUBSCRIBE LIVE TOKENS (SMART SYNC)
+//                                         // =========================================================
+//                                         if (!dhanStreamer.isConnected) dhanStreamer.connect(broker.clientId, broker.apiSecret); 
+
 //                                         // 🔍 FIND SPOT SECURITY ID (For Velocity Guard)
-//                                         // =========================================================
-//                                         let spotSecurityId = "13"; // Default NIFTY 50
+//                                         let spotSecurityId = "13"; 
 //                                         const checkSym = String(upperSymbol).toUpperCase().replace(/\s+/g, '');
                                         
 //                                         if (checkSym.includes("BANKNIFTY") || checkSym === "NIFTYBANK") spotSecurityId = "25";
@@ -993,37 +1025,48 @@
 //                                         else if (checkSym.includes("MIDCPNIFTY")) spotSecurityId = "26";
 //                                         else if (checkSym.includes("SENSEX")) spotSecurityId = "51";
 //                                         else if (checkSym.includes("BANKEX")) spotSecurityId = "52";
-//                                         // =========================================================
-                               
 
-//                                         // =========================================================
-//                                         // 🧠 REGISTER TO GLOBAL MEMORY (For Live Tick Tracking)
-//                                         // =========================================================
+//                                         setTimeout(() => {
+//                                             const nseTokens = [];
+//                                             const bseTokens = [];
+//                                             const idxTokens = []; 
+                                            
+//                                             successfulLiveLegs.forEach(leg => {
+//                                                 const token = String(leg.inst?.id || leg.securityId);
+//                                                 if (dynamicExchange === "BSE_FNO") {
+//                                                     bseTokens.push(token);
+//                                                 } else {
+//                                                     nseTokens.push(token);
+//                                                 }
+//                                             });
+
+//                                             if (spotSecurityId) idxTokens.push(String(spotSecurityId));
+
+//                                             if (nseTokens.length > 0) dhanStreamer.subscribeTokens("NSE_FNO", nseTokens);
+//                                             if (bseTokens.length > 0) dhanStreamer.subscribeTokens("BSE_FNO", bseTokens);
+//                                             if (idxTokens.length > 0) dhanStreamer.subscribeTokens("IDX_I", idxTokens);
+                                            
+//                                         }, 2000);
+
+//                                         // 🧠 REGISTER TO GLOBAL MEMORY
 //                                         activeRatioDeployments.set(deployment._id.toString(), {
 //                                             deploymentId: deployment._id.toString(),
 //                                             broker: broker,
 //                                             symbol: upperSymbol,
 //                                             spotSecurityId: spotSecurityId,
 //                                             status: 'ACTIVE',
-//                                             activeLegs: successfulLiveLegs, // 🔥 LIVE me successfulLiveLegs
-                                            
-//                                             // 🔥 NEW MARGIN & LOSS LIMITS 🔥
+//                                             activeLegs: successfulLiveLegs, 
 //                                             estimatedMargin: estMargin,
 //                                             maxLossLimit: calcMaxLoss,
-                                            
-//                                             // Guards Memory
 //                                             spotHistory: [],
 //                                             isPanicApiMode: false,
 //                                             isGammaShieldActive: false,
 //                                             highestLockedProfit: 0,
-                                            
-//                                             // Config Settings
 //                                             vWindow: strategy.data?.advanceSettings?.gammaBlastSettings?.velocityWindow || 15,
 //                                             vPoints: strategy.data?.advanceSettings?.gammaBlastSettings?.velocityPoints || (upperSymbol.includes("BANKNIFTY") ? 250 : 100),
 //                                             shieldConfig: strategy.data?.advanceSettings?.timeShieldSettings || null
 //                                         });
-//                                         console.log(`🎯 Engine Memory Updated! ${upperSymbol} is now under LIVE Radar Tracking. (Max Loss Limit: -₹${calcMaxLoss.toFixed(2)})`);
-//                                         // =========================================================
+//                                         console.log(`🎯 Engine Memory Updated! ${upperSymbol} is now under LIVE Radar Tracking.`);
 
 //                                     } catch (error) {
 //                                         await createAndEmitLog(broker, strategy.name, "FAILED", 0, 'FAILED', `Execution Aborted: ${error.message}`);
@@ -1202,6 +1245,7 @@
 //                     if (shouldExit) {
 //                         executionLocks.add(exitLockKey);
 //                         console.log(`📉 INDICATOR EXIT TRIGGERED! Strategy: ${strategy.name}`);
+//                         let totalExitPnl = 0; // 🔥 Track PnL to sync with DB
 
 //                         for (let i = 0; i < deployment.executedLegs.length; i++) {
 //                             let currentLeg = deployment.executedLegs[i];
@@ -1225,11 +1269,12 @@
 
 //                                     deployment.pnl = (deployment.pnl || 0) + finalPnl;
 //                                     deployment.realizedPnl = (deployment.realizedPnl || 0) + finalPnl;
+//                                     totalExitPnl += finalPnl; // 🔥 Add to tracker
 
 //                                     await createAndEmitLog(broker, currentLeg.symbol, exitAction, currentLeg.quantity, 'SUCCESS', `Paper Indicator Exit. P&L: ₹${finalPnl.toFixed(2)}`);
 //                                 }
 //                             }
-//                             // LIVE
+//                             // LIVE (Remains Same)
 //                             else if (deployment.executionType === 'LIVE') {
 //                                 const orderData = { action: exitAction, quantity: currentLeg.quantity, securityId: currentLeg.securityId, segment: currentLeg.exchange };
 //                                 const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
@@ -1257,6 +1302,18 @@
 //                         deployment.exitRemarks = "Indicator Exit condition met";
 //                         await deployment.save();
 
+//                         // 👇👇👇 STEP 2 FIX: PAPER P&L PERMANENT STORAGE 👇👇👇
+//                         if (totalExitPnl !== 0 && (deployment.executionType === 'PAPER' || deployment.executionType === 'FORWARD_TEST')) {
+//                             try {
+//                                 const BrokerModel = require('../models/Broker');
+//                                 await BrokerModel.findByIdAndUpdate(deployment.brokers[0], {
+//                                     $inc: { paperBookedPnl: totalExitPnl, paperAvailableMargin: totalExitPnl }
+//                                 });
+//                                 console.log(`💾 [DB SYNC] Paper Trade P&L (₹${totalExitPnl.toFixed(2)}) permanently saved!`);
+//                             } catch (err) { console.error("⚠️ DB Sync Error:", err.message); }
+//                         }
+//                         // 👆👆👆 ========================================= 👆👆👆
+
 //                         if (strategy.data?.advanceSettings?.exitAllOnSlTgt) {
 //                             await handleExitAllOnSlTgt(strategy, deployment, broker, "Indicator Exit");
 //                         }
@@ -1277,6 +1334,7 @@
 //                 if (currentMinutes >= squareOffMinutes) {
 //                     executionLocks.add(exitLockKey);
 //                     console.log(`⏰ TIME SQUARE-OFF TRIGGERED! Strategy: ${strategy.name}`);
+//                     let totalTimeExitPnl = 0; // 🔥 Track PnL to sync with DB
 
 //                     const broker = await Broker.findById(deployment.brokers[0]);
 //                     if (broker && broker.engineOn) {
@@ -1303,17 +1361,18 @@
 
 //                                     deployment.pnl = (deployment.pnl || 0) + finalPnl;
 //                                     deployment.realizedPnl = (deployment.realizedPnl || 0) + finalPnl;
+//                                     totalTimeExitPnl += finalPnl; // 🔥 Add to tracker
 
 //                                     await createAndEmitLog(broker, currentLeg.symbol, exitAction, currentLeg.quantity, 'SUCCESS', `Paper Auto-Exit (Time). P&L: ₹${finalPnl.toFixed(2)}`);
 //                                 }
 //                             }
-//                             // LIVE
+//                             // LIVE (Remains Same)
 //                             else if (deployment.executionType === 'LIVE') {
 //                                 const orderData = { action: exitAction, quantity: currentLeg.quantity, securityId: currentLeg.securityId, segment: currentLeg.exchange };
 //                                 const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
 
 //                                 if (orderResponse.success) {
-//                                     currentLeg.status = 'COMPLETED'; // Will sync properly with Webhook
+//                                     currentLeg.status = 'COMPLETED'; 
 //                                     currentLeg.exitReason = "Time Auto Square-Off";
 //                                     await createAndEmitLog(broker, currentLeg.symbol, exitAction, currentLeg.quantity, 'INFO', `Live Time Auto Square-Off order placed.`);
 //                                 }
@@ -1322,6 +1381,18 @@
 //                         deployment.status = 'COMPLETED';
 //                         deployment.exitRemarks = "Time Auto Square-Off";
 //                         await deployment.save();
+
+//                         // 👇👇👇 STEP 2 FIX: PAPER P&L PERMANENT STORAGE 👇👇👇
+//                         if (totalTimeExitPnl !== 0 && (deployment.executionType === 'PAPER' || deployment.executionType === 'FORWARD_TEST')) {
+//                             try {
+//                                 const BrokerModel = require('../models/Broker');
+//                                 await BrokerModel.findByIdAndUpdate(deployment.brokers[0], {
+//                                     $inc: { paperBookedPnl: totalTimeExitPnl, paperAvailableMargin: totalTimeExitPnl }
+//                                 });
+//                                 console.log(`💾 [DB SYNC] Paper Trade P&L (₹${totalTimeExitPnl.toFixed(2)}) permanently saved!`);
+//                             } catch (err) { console.error("⚠️ DB Sync Error:", err.message); }
+//                         }
+//                         // 👆👆👆 ========================================= 👆👆👆
 //                     }
 //                 }
 //             }
@@ -1465,6 +1536,18 @@
 //                                 deployment.pnl = (deployment.pnl || 0) + finalPnl;
 //                                 deployment.realizedPnl = (deployment.realizedPnl || 0) + finalPnl;
 
+//                                 // 👇👇👇 STEP 2 FIX: PER-LEG P&L PERMANENT STORAGE 👇👇👇
+//                                 if (deployment.executionType === 'PAPER' || deployment.executionType === 'FORWARD_TEST') {
+//                                     try {
+//                                         const BrokerModel = require('../models/Broker');
+//                                         await BrokerModel.findByIdAndUpdate(deployment.brokers[0], {
+//                                             $inc: { paperBookedPnl: finalPnl, paperAvailableMargin: finalPnl }
+//                                         });
+//                                         console.log(`💾 [DB SYNC] Leg SL/TP Hit! P&L (₹${finalPnl.toFixed(2)}) permanently saved!`);
+//                                     } catch (err) { console.error("⚠️ DB Sync Error:", err.message); }
+//                                 }
+//                                 // 👆👆👆 ========================================= 👆👆👆
+
 //                                 const allCompleted = deployment.executedLegs.every(l => l.status === 'COMPLETED');
 //                                 const hospitalQueue = liveHospitalMap.get(deployment._id.toString()) || [];
 
@@ -1540,8 +1623,8 @@
 // // =========================================================================
 // const axios = require('axios');
 
-// let brokerMargins = {}; // Har broker ka margin alag save hoga
-// let lastMarginFetchTime = {}; // Har broker ka timer alag hoga
+// let brokerMargins = {}; 
+// let lastMarginFetchTime = {}; 
 // const MARGIN_FETCH_INTERVAL = 30000; 
 
 // // Dhan API Fund Fetcher 
@@ -1569,15 +1652,34 @@
 //         const todaysDeployments = await Deployment.find({ createdAt: { $gte: startOfDay } });
 //         const activeBrokers = await Broker.find({ terminalOn: true });
         
-//         let brokerData = {}; // Saare brokers ka data isme pack hoga
+//         let brokerData = {}; 
 //         const now = Date.now();
+//         let paperBlockedMargins = {};
 
-//         // 1. Initialize Active Brokers & Fetch Margins
+//         // 1. Initialize Active Brokers & Auto-Heal 0 Margin in DB
 //         for (const broker of activeBrokers) {
 //             const bId = broker._id.toString();
+
+//             // 🔧 AUTO-HEAL: Agar DB me margin 0 ya invalid ho, to use 15 Lakh + Booked P&L kar do
+//             let validPaperMargin = broker.paperAvailableMargin;
+//             if (!validPaperMargin || validPaperMargin === 0) {
+//                 validPaperMargin = 1500000 + (broker.paperBookedPnl || 0);
+                
+//                 // MongoDB ko bhi backend se chup-chaap fix kar do
+//                 await Broker.findByIdAndUpdate(bId, { 
+//                     paperAvailableMargin: validPaperMargin 
+//                 });
+//                 console.log(`🔧 [AUTO-HEAL] Broker ${broker.name} paper margin healed to ₹${validPaperMargin}`);
+//             }
+
 //             brokerData[bId] = {
 //                 LIVE: { total: 0, booked: 0, running: 0, margin: 0 },
-//                 PAPER: { total: 0, booked: 0, running: 0, margin: 1000000 }
+//                 PAPER: { 
+//                     total: 0, 
+//                     booked: broker.paperBookedPnl || 0,
+//                     running: 0, 
+//                     margin: validPaperMargin
+//                 }
 //             };
 
 //             if (!lastMarginFetchTime[bId]) lastMarginFetchTime[bId] = 0;
@@ -1588,7 +1690,6 @@
 //                     const fetchedMargin = await fetchAvailableMargin(broker.clientId, broker.apiSecret);
 //                     if (fetchedMargin !== null) brokerMargins[bId] = fetchedMargin;
 //                 } else {
-//                     // Agar GROWW ya koi aur broker hai (jab tak uski API nahi lagti), Dummy Margin dikhao
 //                     brokerMargins[bId] = 50000.00; 
 //                 }
 //                 lastMarginFetchTime[bId] = now;
@@ -1596,50 +1697,65 @@
 //             brokerData[bId].LIVE.margin = brokerMargins[bId];
 //         }
 
-//         let paperBlockedMargins = {};
-
-//         // 2. Segregate P&L per Broker
+//         // 2. Calculate Running P&L and Blocked Margins
 //         todaysDeployments.forEach(dep => {
 //             if (!dep.brokers || dep.brokers.length === 0) return;
 //             const bId = dep.brokers[0].toString();
 
-//             if (!brokerData[bId]) {
-//                 brokerData[bId] = {
-//                     LIVE: { total: 0, booked: 0, running: 0, margin: 0 },
-//                     PAPER: { total: 0, booked: 0, running: 0, margin: 1000000 }
-//                 };
-//             }
+//             if (!brokerData[bId]) return;
 
 //             const isLive = dep.executionType === 'LIVE';
 //             const targetData = isLive ? brokerData[bId].LIVE : brokerData[bId].PAPER;
 
-//             targetData.booked += (dep.realizedPnl || 0);
+//             if (isLive) {
+//                 targetData.booked += (dep.realizedPnl || 0);
+//             }
 
+//             // Running P&L (Only for ACTIVE trades)
 //             let currentRunning = 0;
-//             if (dep.executedLegs && dep.executedLegs.length > 0) {
+//             if (dep.status === 'ACTIVE' && dep.executedLegs && dep.executedLegs.length > 0) {
 //                 dep.executedLegs.forEach(leg => {
 //                     if (leg.status === 'ACTIVE') {
 //                         const ltp = liveLtpCache[leg.securityId] || leg.entryPrice;
-//                         currentRunning += leg.action === 'BUY' ? (ltp - leg.entryPrice) * leg.quantity : (leg.entryPrice - ltp) * leg.quantity;
+//                         currentRunning += leg.action === 'BUY' 
+//                             ? (ltp - leg.entryPrice) * leg.quantity 
+//                             : (leg.entryPrice - ltp) * leg.quantity;
 //                     }
 //                 });
 //             }
 //             targetData.running += currentRunning;
 
+//             // Blocked Margin (Only for ACTIVE Paper trades)
 //             if (!isLive && dep.status === 'ACTIVE') {
-//                 paperBlockedMargins[bId] = (paperBlockedMargins[bId] || 0) + 150000;
+//                 let tradeCapital = dep.marginBlocked || 0;
+//                 paperBlockedMargins[bId] = (paperBlockedMargins[bId] || 0) + tradeCapital;
 //             }
 //         });
 
-//         // 3. Finalize Totals
+//         // 3. Finalize Totals & Available Margin
 //         Object.keys(brokerData).forEach(bId => {
+//             const brokerObj = activeBrokers.find(b => b._id.toString() === bId);
+//             const basePaperMargin = (brokerObj && brokerObj.paperAvailableMargin && brokerObj.paperAvailableMargin > 0) 
+//                 ? brokerObj.paperAvailableMargin 
+//                 : 1500000;
+
 //             brokerData[bId].LIVE.total = brokerData[bId].LIVE.booked + brokerData[bId].LIVE.running;
 //             brokerData[bId].PAPER.total = brokerData[bId].PAPER.booked + brokerData[bId].PAPER.running;
-//             brokerData[bId].PAPER.margin = 1000000 + brokerData[bId].PAPER.booked - (paperBlockedMargins[bId] || 0);
+            
+//             // Available Margin = Base Margin - Currently Blocked Margin
+//             brokerData[bId].PAPER.margin = basePaperMargin - (paperBlockedMargins[bId] || 0);
 //         });
 
-//         // 🚀 FIRE ALL BROKERS DATA TO FRONTEND!
+//         // 🚀 Emit to Frontend
 //         global.io.emit('market-update', brokerData);
+
+//         const spotUpdates = {
+//             "NIFTY 50": liveLtpCache["13"] || 0,
+//             "BANKNIFTY": liveLtpCache["25"] || 0,
+//             "FINNIFTY": liveLtpCache["27"] || 0,
+//             "SENSEX": liveLtpCache["51"] || 0
+//         };
+//         global.io.emit('live-spot-update', spotUpdates);
 
 //     } catch (error) {
 //         // Silent catch
@@ -1697,7 +1813,7 @@ const SMCEntryEngine = require('./scanners/SMCEntryEngine.js');
 const dhanStreamer = require('../services/dhanStreamer.js');
 
 const { calculateApproxBasketMargin } = require('./utils/marginCalculator.js'); 
-const { isThisExpiryDay } = require('./utils/expiryCalculator.js');
+const { isThisExpiryDay, getNearestExpiryString, calculateDTE } = require('./utils/expiryCalculator.js');
 
 
 const { executeAutoRecovery, processRecoveryTrailing } = require('./features/riskManagement/autoRecoveryEngine.js');
@@ -2425,7 +2541,6 @@ cron.schedule('*/30 * * * * *', async () => {
                                         entryReason: "Ratio Spread Paper"
                                     }));
 
-                                    // 👇👇👇 MARGIN CALCULATION KO YAHAN UPAR KHISKA DIYA GAYA HAI 👇👇👇
                                     // =========================================================
                                     // 🧮 CALCULATE MARGIN & MAX LOSS FOR PAPER
                                     // =========================================================
@@ -2440,17 +2555,58 @@ cron.schedule('*/30 * * * * *', async () => {
                                     
                                     const userMaxLossAmt = Number(strategy.data?.advanceSettings?.maxLoss || 0);
                                     const calcMaxLoss = userMaxLossAmt > 0 ? userMaxLossAmt : (estMargin * (Number(strategy.data?.advanceSettings?.maxLossPct || 1) / 100));
-                                    // 👆👆👆 ========================================================== 👆👆👆
 
+                                    // =========================================================
+                                    // 🧮 CALCULATE EXACT RATIO SPREAD BREAKEVENS FOR PAPER DB
+                                    // =========================================================
+                                    let calculatedLowerBE = 0;
+                                    let calculatedUpperBE = 0;
 
+                                    let buyCE = legsToExecute.find(l => l.action === 'BUY' && l.type === 'CE');
+                                    let buyPE = legsToExecute.find(l => l.action === 'BUY' && l.type === 'PE');
+                                    let sellCE = legsToExecute.find(l => l.action === 'SELL' && l.type === 'CE');
+                                    let sellPE = legsToExecute.find(l => l.action === 'SELL' && l.type === 'PE');
 
-                                    // 👇👇👇 YAHAN LAGEGA STATIC SYNC FIX (Phase 4) 👇👇👇
+                                    if (buyCE && buyPE && sellCE && sellPE) {
+                                        let netDebit = (buyCE.entryPrice * buyCE.lots) + (buyPE.entryPrice * buyPE.lots) - (sellCE.entryPrice * sellCE.lots) - (sellPE.entryPrice * sellPE.lots);
+                                        let extraPeSells = sellPE.lots - buyPE.lots;
+                                        let extraCeSells = sellCE.lots - buyCE.lots;
+                                        
+                                        if (extraPeSells > 0 && extraCeSells > 0) {
+                                            let maxProfitDown = ((buyPE.strike - sellPE.strike) * buyPE.lots) - netDebit;
+                                            calculatedLowerBE = sellPE.strike - (maxProfitDown / extraPeSells);
+                                            
+                                            let maxProfitUp = ((sellCE.strike - buyCE.strike) * buyCE.lots) - netDebit;
+                                            calculatedUpperBE = sellCE.strike + (maxProfitUp / extraCeSells);
+                                            
+                                            calculatedLowerBE = Number(calculatedLowerBE.toFixed(2));
+                                            calculatedUpperBE = Number(calculatedUpperBE.toFixed(2));
+                                        }
+                                    }
+
+                                    // =========================================================
+                                    // 🗓️ CALCULATE DTE FOR POP (FRONTEND SIGMA LINES)
+                                    // =========================================================
+                                    let currentDte = 1; // Default
+                                    try {
+                                        const todayStr = new Date().toISOString().split('T')[0];
+                                        const reqExp = strategy.data?.legs[0]?.expiry || "WEEKLY";
+                                        
+                                        const expStringOut = getNearestExpiryString(todayStr, upperSymbol, reqExp); 
+                                        const rawDateStr = expStringOut.replace("Upcoming EXP ", "").replace("EXP ", "").trim();
+                                        
+                                        currentDte = calculateDTE(new Date().getTime(), rawDateStr);
+                                    } catch(err) {
+                                        console.log("⚠️ DTE Calculation fallback used.");
+                                    }
+
+                                    // 👇👇👇 STATIC SYNC FIX (Phase 4) 👇👇👇
                                     const staticSessionState = {
                                         entrySpotPrice: typeof currentSpotPrice !== 'undefined' ? currentSpotPrice : (typeof spotClosePrice !== 'undefined' ? spotClosePrice : 0),
                                         tradeStartTime: new Date().getTime(),
                                         tradeBoundaries: {
-                                            lowerBreakEven: typeof ratioEngine !== 'undefined' ? (ratioEngine.tradeBoundaries?.lowerBreakEven || ratioEngine.lowerBE || 0) : 0,
-                                            upperBreakEven: typeof ratioEngine !== 'undefined' ? (ratioEngine.tradeBoundaries?.upperBreakEven || ratioEngine.upperBE || 0) : 0
+                                            lowerBreakEven: calculatedLowerBE, // 🔥 EXACT BREAKEVEN
+                                            upperBreakEven: calculatedUpperBE  // 🔥 EXACT BREAKEVEN
                                         },
                                         highestLockedProfit: 0,
                                         currentTrailedSL: 0,
@@ -2459,7 +2615,7 @@ cron.schedule('*/30 * * * * *', async () => {
                                         customRecoveryCount: 0
                                     };
 
-                                    // 🔥 THE ULTIMATE FIX: Direct Database Update with Exact 'estMargin' & 'sessionState'
+                                    // 🔥 THE ULTIMATE FIX: Direct Database Update with Exact 'estMargin', 'sessionState' & 'dte'
                                     await Deployment.findByIdAndUpdate(
                                         deployment._id,
                                         { 
@@ -2467,11 +2623,11 @@ cron.schedule('*/30 * * * * *', async () => {
                                                 executedLegs: newLegs, 
                                                 status: 'ACTIVE', 
                                                 marginBlocked: estMargin,
-                                                sessionState: staticSessionState // 👈 YE LINE ADD HUI HAI
+                                                sessionState: staticSessionState, 
+                                                dte: currentDte // 👈🔥 POP CALCULATION KE LIYE DTE SAVE KIYA
                                             } 
                                         }
                                     );
-                                    // 👆👆👆 ======================================================= 👆👆👆
 
                                     // Engine ki memory update
                                     deployment.executedLegs = newLegs;
@@ -2485,7 +2641,6 @@ cron.schedule('*/30 * * * * *', async () => {
                                     // =========================================================
                                     if (!dhanStreamer.isConnected) dhanStreamer.connect(broker.clientId, broker.apiSecret); 
 
-                                    // 🔍 FIND SPOT SECURITY ID (For Velocity Guard)
                                     let spotSecurityId = "13"; // Default NIFTY 50
                                     const checkSym = String(upperSymbol).toUpperCase().replace(/\s+/g, '');
                                     
@@ -2590,7 +2745,6 @@ cron.schedule('*/30 * * * * *', async () => {
                                             throw new Error("Margin Shortfall on Sell Leg.");
                                         }
 
-                                        // 👇👇👇 MARGIN CALCULATION KO YAHAN UPAR KHISKA DIYA GAYA HAI 👇👇👇
                                         // =========================================================
                                         // 🧮 CALCULATE MARGIN & MAX LOSS FOR LIVE
                                         // =========================================================
@@ -2598,7 +2752,6 @@ cron.schedule('*/30 * * * * *', async () => {
                                         try {
                                             const todayStr = new Date().toISOString().split('T')[0];
                                             const isExpDay = isThisExpiryDay(todayStr, upperSymbol, strategy.data?.legs[0]?.expiry || "WEEKLY");
-                                            // 🔥 LIVE me successfulLiveLegs ke basis par calculate hoga
                                             estMargin = calculateApproxBasketMargin(successfulLiveLegs, upperSymbol, isExpDay);
                                         } catch (e) {
                                             console.log(`⚠️ Margin calculation fallback used.`);
@@ -2606,10 +2759,8 @@ cron.schedule('*/30 * * * * *', async () => {
                                         
                                         const userMaxLossAmt = Number(strategy.data?.advanceSettings?.maxLoss || 0);
                                         const calcMaxLoss = userMaxLossAmt > 0 ? userMaxLossAmt : (estMargin * (Number(strategy.data?.advanceSettings?.maxLossPct || 1) / 100));
-                                        // 👆👆👆 ========================================================== 👆👆👆
 
-                                        
-                                        // 💾 Save to MongoDB (LIVE TRADE)
+                                        // 💾 Save to MongoDB (LIVE TRADE) Array
                                         const liveNewLegs = successfulLiveLegs.map(sLeg => ({
                                             securityId: sLeg.inst.id, 
                                             exchange: dynamicExchange,
@@ -2623,19 +2774,58 @@ cron.schedule('*/30 * * * * *', async () => {
                                             entryReason: "Ratio Spread Live"
                                         }));
 
-                                        // // 🔥 DIRECT DB UPDATE FOR LIVE TRADE with Exact 'estMargin'
-                                        // await Deployment.findByIdAndUpdate(
-                                        //     deployment._id,
-                                        //     { $set: { executedLegs: liveNewLegs, status: 'ACTIVE', marginBlocked: estMargin } }
-                                        // );
+                                        // =========================================================
+                                        // 🧮 CALCULATE EXACT RATIO SPREAD BREAKEVENS FOR LIVE DB
+                                        // =========================================================
+                                        let calculatedLowerBE = 0;
+                                        let calculatedUpperBE = 0;
 
-                                        // 👇👇👇 YAHAN LAGEGA STATIC SYNC FIX (Phase 4) 👇👇👇
-                                        const staticSessionState = {
+                                        let liveBuyCE = successfulLiveLegs.find(l => l.action === 'BUY' && l.type === 'CE');
+                                        let liveBuyPE = successfulLiveLegs.find(l => l.action === 'BUY' && l.type === 'PE');
+                                        let liveSellCE = successfulLiveLegs.find(l => l.action === 'SELL' && l.type === 'CE');
+                                        let liveSellPE = successfulLiveLegs.find(l => l.action === 'SELL' && l.type === 'PE');
+
+                                        if (liveBuyCE && liveBuyPE && liveSellCE && liveSellPE) {
+                                            // realEntryPrice use kar rahe hain kyunki live market me slippage ho sakti hai
+                                            let netDebit = (liveBuyCE.realEntryPrice * liveBuyCE.lots) + (liveBuyPE.realEntryPrice * liveBuyPE.lots) - (liveSellCE.realEntryPrice * liveSellCE.lots) - (liveSellPE.realEntryPrice * liveSellPE.lots);
+                                            let extraPeSells = liveSellPE.lots - liveBuyPE.lots;
+                                            let extraCeSells = liveSellCE.lots - liveBuyCE.lots;
+                                            
+                                            if (extraPeSells > 0 && extraCeSells > 0) {
+                                                let maxProfitDown = ((liveBuyPE.strike - liveSellPE.strike) * liveBuyPE.lots) - netDebit;
+                                                calculatedLowerBE = liveSellPE.strike - (maxProfitDown / extraPeSells);
+                                                
+                                                let maxProfitUp = ((liveSellCE.strike - liveBuyCE.strike) * liveBuyCE.lots) - netDebit;
+                                                calculatedUpperBE = liveSellCE.strike + (maxProfitUp / extraCeSells);
+                                                
+                                                calculatedLowerBE = Number(calculatedLowerBE.toFixed(2));
+                                                calculatedUpperBE = Number(calculatedUpperBE.toFixed(2));
+                                            }
+                                        }
+
+                                        // =========================================================
+                                        // 🗓️ CALCULATE DTE FOR POP (FRONTEND SIGMA LINES)
+                                        // =========================================================
+                                        let currentDte = 1; // Default
+                                        try {
+                                            const todayStr = new Date().toISOString().split('T')[0];
+                                            const reqExp = strategy.data?.legs[0]?.expiry || "WEEKLY";
+                                            
+                                            const expStringOut = getNearestExpiryString(todayStr, upperSymbol, reqExp); 
+                                            const rawDateStr = expStringOut.replace("Upcoming EXP ", "").replace("EXP ", "").trim();
+                                            
+                                            currentDte = calculateDTE(new Date().getTime(), rawDateStr);
+                                        } catch(err) {
+                                            console.log("⚠️ Live DTE Calculation fallback used.");
+                                        }
+
+                                        // 👇👇👇 STATIC SYNC FIX (Phase 4) 👇👇👇
+                                        const staticSessionStateLive = {
                                             entrySpotPrice: typeof currentSpotPrice !== 'undefined' ? currentSpotPrice : (typeof spotClosePrice !== 'undefined' ? spotClosePrice : 0),
                                             tradeStartTime: new Date().getTime(),
                                             tradeBoundaries: {
-                                                lowerBreakEven: typeof ratioEngine !== 'undefined' ? (ratioEngine.tradeBoundaries?.lowerBreakEven || ratioEngine.lowerBE || 0) : 0,
-                                                upperBreakEven: typeof ratioEngine !== 'undefined' ? (ratioEngine.tradeBoundaries?.upperBreakEven || ratioEngine.upperBE || 0) : 0
+                                                lowerBreakEven: calculatedLowerBE, // 🔥 LIVE EXACT BREAKEVEN
+                                                upperBreakEven: calculatedUpperBE  // 🔥 LIVE EXACT BREAKEVEN
                                             },
                                             highestLockedProfit: 0,
                                             currentTrailedSL: 0,
@@ -2644,7 +2834,7 @@ cron.schedule('*/30 * * * * *', async () => {
                                             customRecoveryCount: 0
                                         };
 
-                                        // 🔥 DIRECT DB UPDATE FOR LIVE TRADE with Exact 'estMargin' & 'sessionState'
+                                        // 🔥 THE ULTIMATE FIX: Direct Database Update with Exact 'estMargin', 'sessionState' & 'dte'
                                         await Deployment.findByIdAndUpdate(
                                             deployment._id,
                                             { 
@@ -2652,11 +2842,11 @@ cron.schedule('*/30 * * * * *', async () => {
                                                     executedLegs: liveNewLegs, 
                                                     status: 'ACTIVE', 
                                                     marginBlocked: estMargin,
-                                                    sessionState: staticSessionStateLive // 👈 YE LINE ADD HUI HAI
+                                                    sessionState: staticSessionStateLive,
+                                                    dte: currentDte // 👈🔥 POP CALCULATION KE LIYE DTE SAVE KIYA
                                                 } 
                                             }
                                         );
-                                        // 👆👆👆 ======================================================= 👆👆👆
 
                                         deployment.executedLegs = liveNewLegs;
                                         deployment.status = 'ACTIVE';
@@ -2669,7 +2859,6 @@ cron.schedule('*/30 * * * * *', async () => {
                                         // =========================================================
                                         if (!dhanStreamer.isConnected) dhanStreamer.connect(broker.clientId, broker.apiSecret); 
 
-                                        // 🔍 FIND SPOT SECURITY ID (For Velocity Guard)
                                         let spotSecurityId = "13"; 
                                         const checkSym = String(upperSymbol).toUpperCase().replace(/\s+/g, '');
                                         
@@ -2898,6 +3087,7 @@ cron.schedule('*/30 * * * * *', async () => {
                     if (shouldExit) {
                         executionLocks.add(exitLockKey);
                         console.log(`📉 INDICATOR EXIT TRIGGERED! Strategy: ${strategy.name}`);
+                        let totalExitPnl = 0; // 🔥 Track PnL to sync with DB
 
                         for (let i = 0; i < deployment.executedLegs.length; i++) {
                             let currentLeg = deployment.executedLegs[i];
@@ -2921,11 +3111,12 @@ cron.schedule('*/30 * * * * *', async () => {
 
                                     deployment.pnl = (deployment.pnl || 0) + finalPnl;
                                     deployment.realizedPnl = (deployment.realizedPnl || 0) + finalPnl;
+                                    totalExitPnl += finalPnl; // 🔥 Add to tracker
 
                                     await createAndEmitLog(broker, currentLeg.symbol, exitAction, currentLeg.quantity, 'SUCCESS', `Paper Indicator Exit. P&L: ₹${finalPnl.toFixed(2)}`);
                                 }
                             }
-                            // LIVE
+                            // LIVE (Remains Same)
                             else if (deployment.executionType === 'LIVE') {
                                 const orderData = { action: exitAction, quantity: currentLeg.quantity, securityId: currentLeg.securityId, segment: currentLeg.exchange };
                                 const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
@@ -2953,6 +3144,18 @@ cron.schedule('*/30 * * * * *', async () => {
                         deployment.exitRemarks = "Indicator Exit condition met";
                         await deployment.save();
 
+                        // 👇👇👇 STEP 2 FIX: PAPER P&L PERMANENT STORAGE 👇👇👇
+                        if (totalExitPnl !== 0 && (deployment.executionType === 'PAPER' || deployment.executionType === 'FORWARD_TEST')) {
+                            try {
+                                const BrokerModel = require('../models/Broker');
+                                await BrokerModel.findByIdAndUpdate(deployment.brokers[0], {
+                                    $inc: { paperBookedPnl: totalExitPnl, paperAvailableMargin: totalExitPnl }
+                                });
+                                console.log(`💾 [DB SYNC] Paper Trade P&L (₹${totalExitPnl.toFixed(2)}) permanently saved!`);
+                            } catch (err) { console.error("⚠️ DB Sync Error:", err.message); }
+                        }
+                        // 👆👆👆 ========================================= 👆👆👆
+
                         if (strategy.data?.advanceSettings?.exitAllOnSlTgt) {
                             await handleExitAllOnSlTgt(strategy, deployment, broker, "Indicator Exit");
                         }
@@ -2973,6 +3176,7 @@ cron.schedule('*/30 * * * * *', async () => {
                 if (currentMinutes >= squareOffMinutes) {
                     executionLocks.add(exitLockKey);
                     console.log(`⏰ TIME SQUARE-OFF TRIGGERED! Strategy: ${strategy.name}`);
+                    let totalTimeExitPnl = 0; // 🔥 Track PnL to sync with DB
 
                     const broker = await Broker.findById(deployment.brokers[0]);
                     if (broker && broker.engineOn) {
@@ -2999,17 +3203,18 @@ cron.schedule('*/30 * * * * *', async () => {
 
                                     deployment.pnl = (deployment.pnl || 0) + finalPnl;
                                     deployment.realizedPnl = (deployment.realizedPnl || 0) + finalPnl;
+                                    totalTimeExitPnl += finalPnl; // 🔥 Add to tracker
 
                                     await createAndEmitLog(broker, currentLeg.symbol, exitAction, currentLeg.quantity, 'SUCCESS', `Paper Auto-Exit (Time). P&L: ₹${finalPnl.toFixed(2)}`);
                                 }
                             }
-                            // LIVE
+                            // LIVE (Remains Same)
                             else if (deployment.executionType === 'LIVE') {
                                 const orderData = { action: exitAction, quantity: currentLeg.quantity, securityId: currentLeg.securityId, segment: currentLeg.exchange };
                                 const orderResponse = await placeDhanOrder(broker.clientId, broker.apiSecret, orderData);
 
                                 if (orderResponse.success) {
-                                    currentLeg.status = 'COMPLETED'; // Will sync properly with Webhook
+                                    currentLeg.status = 'COMPLETED'; 
                                     currentLeg.exitReason = "Time Auto Square-Off";
                                     await createAndEmitLog(broker, currentLeg.symbol, exitAction, currentLeg.quantity, 'INFO', `Live Time Auto Square-Off order placed.`);
                                 }
@@ -3018,6 +3223,18 @@ cron.schedule('*/30 * * * * *', async () => {
                         deployment.status = 'COMPLETED';
                         deployment.exitRemarks = "Time Auto Square-Off";
                         await deployment.save();
+
+                        // 👇👇👇 STEP 2 FIX: PAPER P&L PERMANENT STORAGE 👇👇👇
+                        if (totalTimeExitPnl !== 0 && (deployment.executionType === 'PAPER' || deployment.executionType === 'FORWARD_TEST')) {
+                            try {
+                                const BrokerModel = require('../models/Broker');
+                                await BrokerModel.findByIdAndUpdate(deployment.brokers[0], {
+                                    $inc: { paperBookedPnl: totalTimeExitPnl, paperAvailableMargin: totalTimeExitPnl }
+                                });
+                                console.log(`💾 [DB SYNC] Paper Trade P&L (₹${totalTimeExitPnl.toFixed(2)}) permanently saved!`);
+                            } catch (err) { console.error("⚠️ DB Sync Error:", err.message); }
+                        }
+                        // 👆👆👆 ========================================= 👆👆👆
                     }
                 }
             }
@@ -3161,6 +3378,18 @@ cron.schedule('*/30 * * * * *', async () => {
                                 deployment.pnl = (deployment.pnl || 0) + finalPnl;
                                 deployment.realizedPnl = (deployment.realizedPnl || 0) + finalPnl;
 
+                                // 👇👇👇 STEP 2 FIX: PER-LEG P&L PERMANENT STORAGE 👇👇👇
+                                if (deployment.executionType === 'PAPER' || deployment.executionType === 'FORWARD_TEST') {
+                                    try {
+                                        const BrokerModel = require('../models/Broker');
+                                        await BrokerModel.findByIdAndUpdate(deployment.brokers[0], {
+                                            $inc: { paperBookedPnl: finalPnl, paperAvailableMargin: finalPnl }
+                                        });
+                                        console.log(`💾 [DB SYNC] Leg SL/TP Hit! P&L (₹${finalPnl.toFixed(2)}) permanently saved!`);
+                                    } catch (err) { console.error("⚠️ DB Sync Error:", err.message); }
+                                }
+                                // 👆👆👆 ========================================= 👆👆👆
+
                                 const allCompleted = deployment.executedLegs.every(l => l.status === 'COMPLETED');
                                 const hospitalQueue = liveHospitalMap.get(deployment._id.toString()) || [];
 
@@ -3236,8 +3465,8 @@ cron.schedule('*/30 * * * * *', async () => {
 // =========================================================================
 const axios = require('axios');
 
-let brokerMargins = {}; // Har broker ka margin alag save hoga
-let lastMarginFetchTime = {}; // Har broker ka timer alag hoga
+let brokerMargins = {}; 
+let lastMarginFetchTime = {}; 
 const MARGIN_FETCH_INTERVAL = 30000; 
 
 // Dhan API Fund Fetcher 
@@ -3265,15 +3494,34 @@ setInterval(async () => {
         const todaysDeployments = await Deployment.find({ createdAt: { $gte: startOfDay } });
         const activeBrokers = await Broker.find({ terminalOn: true });
         
-        let brokerData = {}; // Saare brokers ka data isme pack hoga
+        let brokerData = {}; 
         const now = Date.now();
+        let paperBlockedMargins = {};
 
-        // 1. Initialize Active Brokers & Fetch Margins
+        // 1. Initialize Active Brokers & Auto-Heal 0 Margin in DB
         for (const broker of activeBrokers) {
             const bId = broker._id.toString();
+
+            // 🔧 AUTO-HEAL: Agar DB me margin 0 ya invalid ho, to use 15 Lakh + Booked P&L kar do
+            let validPaperMargin = broker.paperAvailableMargin;
+            if (!validPaperMargin || validPaperMargin === 0) {
+                validPaperMargin = 1500000 + (broker.paperBookedPnl || 0);
+                
+                // MongoDB ko bhi backend se chup-chaap fix kar do
+                await Broker.findByIdAndUpdate(bId, { 
+                    paperAvailableMargin: validPaperMargin 
+                });
+                console.log(`🔧 [AUTO-HEAL] Broker ${broker.name} paper margin healed to ₹${validPaperMargin}`);
+            }
+
             brokerData[bId] = {
                 LIVE: { total: 0, booked: 0, running: 0, margin: 0 },
-                PAPER: { total: 0, booked: 0, running: 0, margin: 1500000 }
+                PAPER: { 
+                    total: 0, 
+                    booked: broker.paperBookedPnl || 0,
+                    running: 0, 
+                    margin: validPaperMargin
+                }
             };
 
             if (!lastMarginFetchTime[bId]) lastMarginFetchTime[bId] = 0;
@@ -3284,7 +3532,6 @@ setInterval(async () => {
                     const fetchedMargin = await fetchAvailableMargin(broker.clientId, broker.apiSecret);
                     if (fetchedMargin !== null) brokerMargins[bId] = fetchedMargin;
                 } else {
-                    // Agar GROWW ya koi aur broker hai (jab tak uski API nahi lagti), Dummy Margin dikhao
                     brokerMargins[bId] = 50000.00; 
                 }
                 lastMarginFetchTime[bId] = now;
@@ -3292,71 +3539,104 @@ setInterval(async () => {
             brokerData[bId].LIVE.margin = brokerMargins[bId];
         }
 
-        let paperBlockedMargins = {};
+        // // 2. Calculate Running P&L and Blocked Margins
+        // todaysDeployments.forEach(dep => {
+        //     if (!dep.brokers || dep.brokers.length === 0) return;
+        //     const bId = dep.brokers[0].toString();
 
-        // 2. Segregate P&L per Broker
+        //     if (!brokerData[bId]) return;
+
+        //     const isLive = dep.executionType === 'LIVE';
+        //     const targetData = isLive ? brokerData[bId].LIVE : brokerData[bId].PAPER;
+
+        //     if (isLive) {
+        //         targetData.booked += (dep.realizedPnl || 0);
+        //     }
+
+        //     // Running P&L (Only for ACTIVE trades)
+        //     let currentRunning = 0;
+        //     if (dep.status === 'ACTIVE' && dep.executedLegs && dep.executedLegs.length > 0) {
+        //         dep.executedLegs.forEach(leg => {
+        //             if (leg.status === 'ACTIVE') {
+        //                 const ltp = liveLtpCache[leg.securityId] || leg.entryPrice;
+        //                 currentRunning += leg.action === 'BUY' 
+        //                     ? (ltp - leg.entryPrice) * leg.quantity 
+        //                     : (leg.entryPrice - ltp) * leg.quantity;
+        //             }
+        //         });
+        //     }
+        //     targetData.running += currentRunning;
+
+        //     // Blocked Margin (Only for ACTIVE Paper trades)
+        //     if (!isLive && dep.status === 'ACTIVE') {
+        //         let tradeCapital = dep.marginBlocked || 0;
+        //         paperBlockedMargins[bId] = (paperBlockedMargins[bId] || 0) + tradeCapital;
+        //     }
+        // });
+
+        // 2. Calculate Running P&L and Blocked Margins
         todaysDeployments.forEach(dep => {
             if (!dep.brokers || dep.brokers.length === 0) return;
             const bId = dep.brokers[0].toString();
 
-            if (!brokerData[bId]) {
-                brokerData[bId] = {
-                    LIVE: { total: 0, booked: 0, running: 0, margin: 0 },
-                    PAPER: { total: 0, booked: 0, running: 0, margin: 1000000 }
-                };
-            }
+            if (!brokerData[bId]) return;
 
             const isLive = dep.executionType === 'LIVE';
             const targetData = isLive ? brokerData[bId].LIVE : brokerData[bId].PAPER;
 
-            targetData.booked += (dep.realizedPnl || 0);
+            // 🔥 THE FIX: Double Counting se bachne ke liye 
+            if (isLive) {
+                // Live me hum lifetime DB se nahi utha rahe, isliye aaj ka jodna padega
+                targetData.booked += (dep.realizedPnl || 0);
+            } 
+            // PAPER ke liye humne uper sidha DB (broker.paperBookedPnl) se Lifetime utha liya hai, 
+            // jisme aaj ka exit P&L automatically juda hua hai. Isliye yahan dobara nahi jodenge!
 
+            // Running P&L (Only for ACTIVE trades)
             let currentRunning = 0;
-            if (dep.executedLegs && dep.executedLegs.length > 0) {
+            if (dep.status === 'ACTIVE' && dep.executedLegs && dep.executedLegs.length > 0) {
                 dep.executedLegs.forEach(leg => {
                     if (leg.status === 'ACTIVE') {
                         const ltp = liveLtpCache[leg.securityId] || leg.entryPrice;
-                        currentRunning += leg.action === 'BUY' ? (ltp - leg.entryPrice) * leg.quantity : (leg.entryPrice - ltp) * leg.quantity;
+                        currentRunning += leg.action === 'BUY' 
+                            ? (ltp - leg.entryPrice) * leg.quantity 
+                            : (leg.entryPrice - ltp) * leg.quantity;
                     }
                 });
             }
             targetData.running += currentRunning;
 
+            // Blocked Margin (Only for ACTIVE Paper trades)
             if (!isLive && dep.status === 'ACTIVE') {
-                
-                // 🔥 100% DYNAMIC EXACT MARGIN
-                // Ab ye reverse calculation nahi karega, seedha DB se exact margin uthayega
-                // Agar DB me by-chance na mile toh 15Lakh fallback use karega
-                let tradeCapital = dep.marginBlocked || 1500000;
-                
+                let tradeCapital = dep.marginBlocked || 0;
                 paperBlockedMargins[bId] = (paperBlockedMargins[bId] || 0) + tradeCapital;
             }
         });
 
-        // 3. Finalize Totals
+        // 3. Finalize Totals & Available Margin
         Object.keys(brokerData).forEach(bId => {
+            const brokerObj = activeBrokers.find(b => b._id.toString() === bId);
+            const basePaperMargin = (brokerObj && brokerObj.paperAvailableMargin && brokerObj.paperAvailableMargin > 0) 
+                ? brokerObj.paperAvailableMargin 
+                : 1500000;
+
             brokerData[bId].LIVE.total = brokerData[bId].LIVE.booked + brokerData[bId].LIVE.running;
             brokerData[bId].PAPER.total = brokerData[bId].PAPER.booked + brokerData[bId].PAPER.running;
-            brokerData[bId].PAPER.margin = 1500000 + brokerData[bId].PAPER.booked - (paperBlockedMargins[bId] || 0);
+            
+            // Available Margin = Base Margin - Currently Blocked Margin
+            brokerData[bId].PAPER.margin = basePaperMargin - (paperBlockedMargins[bId] || 0);
         });
 
-        // 🚀 FIRE ALL BROKERS DATA TO FRONTEND!
+        // 🚀 Emit to Frontend
         global.io.emit('market-update', brokerData);
 
-        // 👇 NAYA CODE: PAYOFF CHART KE LIYE LIVE SPOT UPDATE 👇
-        // Dhan/Broker ID ke hisaab se Spot LTP nikalna (e.g., "13" NIFTY ke liye, "25" BANKNIFTY ke liye)
-        // Ensure karo ki tumhara liveLtpCache in IDs ka data store kar raha ho
-        
         const spotUpdates = {
             "NIFTY 50": liveLtpCache["13"] || 0,
             "BANKNIFTY": liveLtpCache["25"] || 0,
             "FINNIFTY": liveLtpCache["27"] || 0,
             "SENSEX": liveLtpCache["51"] || 0
         };
-
-        // Frontend ko bhej do (UI is object se apne symbol ka spot nikal lega)
         global.io.emit('live-spot-update', spotUpdates);
-        // 👆 NAYA CODE YAHAN KHATAM 👆
 
     } catch (error) {
         // Silent catch
