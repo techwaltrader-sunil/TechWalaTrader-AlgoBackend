@@ -433,7 +433,7 @@
 
 
 
-require('dotenv').config({ path: '../.env' }); 
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 const axios = require('axios');
 const cron = require('node-cron');
 const { pool } = require('../config/postgres');
