@@ -468,6 +468,8 @@ const algoLogRoutes = require('./routes/algoLogRoutes');
 const backtestRoutes = require('./routes/backtestRoutes');
 const { downloadAndParseInstruments } = require('./services/instrumentService'); 
 
+const aocRoutes = require('./routes/aocRoutes');
+
 const app = express();
 
 
@@ -544,6 +546,7 @@ app.use('/api/algo-logs', algoLogRoutes);
 app.use('/api/backtest', backtestRoutes);
 app.use('/api/strategy-templates', require('./routes/templateRoutes'));
 app.use('/api/simulator', require('./routes/simulatorRoutes'));
+app.use('/api/aoc', aocRoutes);
 // ==========================================
 
 
