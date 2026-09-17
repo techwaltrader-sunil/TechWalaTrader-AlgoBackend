@@ -93,6 +93,10 @@
 /**
  * Normal Cumulative Distribution Function
  */
+
+
+
+
 const normalCDF = (x) => {
     const t = 1 / (1 + 0.2316419 * Math.abs(x));
     const d = 0.39894228 * Math.exp(-x * x / 2);

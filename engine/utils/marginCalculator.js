@@ -20,7 +20,7 @@ const calculateApproxBasketMargin = (legs, baseSymbol = "NIFTY 50", isExpiryDay 
         if (symbol.includes("BANK")) return 15;
         if (symbol.includes("SENSEX")) return 10;
         if (symbol.includes("FINNIFTY")) return 25;
-        if (symbol.includes("MIDCP")) return 50; 
+        if (symbol.includes("MIDCPNIFTY")) return 50; 
         return 65; // NIFTY 50 ka naya default (Current SEBI Rules)
     };
 
