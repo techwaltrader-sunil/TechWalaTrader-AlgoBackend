@@ -216,6 +216,119 @@
 
 
 
+// const path = require('path');
+// require('dotenv').config({ path: path.join(__dirname, '../.env') });
+// const axios = require('axios');
+// const { pool } = require('../config/postgres');
+// const mongoose = require('mongoose');
+
+// // ==========================================
+// // 🔌 MONGODB CONNECTION
+// // ==========================================
+// const brokerSchema = new mongoose.Schema({}, { strict: false, collection: 'brokers' });
+// const Broker = mongoose.models.Broker || mongoose.model('Broker', brokerSchema);
+
+// async function getDynamicHeaders() {
+//     try {
+//         const broker = await Broker.findOne({ name: "Dhan" }); 
+//         if (!broker || !broker.apiSecret) return null;
+//         return {
+//             'access-token': broker.apiSecret, 
+//             'client-id': broker.clientId,      
+//             'Content-Type': 'application/json'
+//         };
+//     } catch (error) {
+//         return null;
+//     }
+// }
+
+// // ==========================================
+// // 🚀 THE JUGAD (FETCH 5-MIN SPOT & SAVE)
+// // ==========================================
+// async function runJugad() {
+//     console.log("⚡ JUGAD SCRIPT STARTED: Fetching 1-Min NIFTY spot data...");
+    
+//     const headers = await getDynamicHeaders();
+//     if (!headers) {
+//         console.log("❌ Token not found in DB.");
+//         process.exit();
+//     }
+
+//     const startDate = "2026-08-04"; 
+//     const endDate = "2026-08-05"; 
+//     const fromDate = startDate;
+//     const toDate = endDate;
+
+//     try {
+//         const response = await axios.post('https://api.dhan.co/v2/charts/intraday', { 
+//             securityId: "13", 
+//             exchangeSegment: "IDX_I", 
+//             instrument: "INDEX", 
+//             interval: "1", // 🎯 1-Minute SMC timeframe
+//             fromDate: fromDate, 
+//             toDate: toDate 
+//         }, { headers });
+
+//         // 🎯 FIX 1: Reverted to response.data (Terminal me yahi structure dikh raha hai)
+//         const chartData = response.data;
+
+//         // 🎯 FIX 2: Reverted to chartData.timestamp
+//         if (chartData && chartData.timestamp && chartData.timestamp.length > 0) {
+//             const client = await pool.connect();
+//             try {
+//                 await client.query('BEGIN');
+                
+//                 for (let i = 0; i < chartData.timestamp.length; i++) {
+//                     // Epoch to Milliseconds conversion
+//                     let date = new Date(chartData.timestamp[i] * 1000);
+                    
+//                     const query = `
+//                         INSERT INTO historical_candles (symbol, timestamp, open, high, low, close, volume) 
+//                         VALUES ($1, $2, $3, $4, $5, $6, $7)
+//                         ON CONFLICT (symbol, timestamp) DO UPDATE SET 
+//                             open = EXCLUDED.open, high = EXCLUDED.high, 
+//                             low = EXCLUDED.low, close = EXCLUDED.close, volume = EXCLUDED.volume;
+//                     `;
+                    
+//                     await client.query(query, [
+//                         'NIFTY', 
+//                         date.toISOString(), 
+//                         chartData.open[i], 
+//                         chartData.high[i], 
+//                         chartData.low[i], 
+//                         chartData.close[i], 
+//                         chartData.volume[i] || 0
+//                     ]);
+//                 }
+                
+//                 await client.query('COMMIT');
+//                 console.log(`🎉 [JUGAD SUCCESS] Total ${chartData.timestamp.length} (1-Minute) candles saved to Database!`);
+//             } catch (dbError) {
+//                 await client.query('ROLLBACK');
+//                 console.error("❌ DB Error:", dbError.message);
+//             } finally {
+//                 client.release();
+//             }
+//         } else {
+//             console.log("⚠️ No data received. Structure might be empty.");
+//             console.log("Response:", response.data); 
+//         }
+//     } catch (error) {
+//         console.error("❌ API Error:", error.response ? error.response.data : error.message);
+//     }
+    
+//     console.log("✅ Done! Data saved.");
+//     process.exit();
+// }
+
+// // 🚦 RUN
+// mongoose.connect(process.env.MONGO_URI).then(() => {
+//     runJugad();
+// });
+
+
+
+
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 const axios = require('axios');
@@ -254,9 +367,10 @@ async function runJugad() {
         process.exit();
     }
 
-    const syncDate = "2026-08-31"; 
-    const fromDate = syncDate;
-    const toDate = syncDate;
+    const startDate = "2026-08-27"; 
+    const endDate = "2026-08-31"; 
+    const fromDate = startDate;
+    const toDate = endDate;
 
     try {
         const response = await axios.post('https://api.dhan.co/v2/charts/intraday', { 
@@ -268,18 +382,16 @@ async function runJugad() {
             toDate: toDate 
         }, { headers });
 
-        // 🎯 FIX 1: Reverted to response.data (Terminal me yahi structure dikh raha hai)
         const chartData = response.data;
 
-        // 🎯 FIX 2: Reverted to chartData.timestamp
         if (chartData && chartData.timestamp && chartData.timestamp.length > 0) {
             const client = await pool.connect();
             try {
                 await client.query('BEGIN');
                 
                 for (let i = 0; i < chartData.timestamp.length; i++) {
-                    // Epoch to Milliseconds conversion
-                    let date = new Date(chartData.timestamp[i] * 1000);
+                    // 🎯 FIX: Epoch टाइमस्टैम्प में 60 सेकंड जोड़कर उसे 1 मिनट आगे शिफ्ट किया गया है
+                    let date = new Date((chartData.timestamp[i] + 60) * 1000);
                     
                     const query = `
                         INSERT INTO historical_candles (symbol, timestamp, open, high, low, close, volume) 
@@ -301,7 +413,7 @@ async function runJugad() {
                 }
                 
                 await client.query('COMMIT');
-                console.log(`🎉 [JUGAD SUCCESS] Total ${chartData.timestamp.length} (5-Minute) candles saved to Database!`);
+                console.log(`🎉 [JUGAD SUCCESS] Total ${chartData.timestamp.length} (1-Minute) candles saved to Database!`);
             } catch (dbError) {
                 await client.query('ROLLBACK');
                 console.error("❌ DB Error:", dbError.message);
