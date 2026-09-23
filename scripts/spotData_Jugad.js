@@ -367,8 +367,8 @@ async function runJugad() {
         process.exit();
     }
 
-    const startDate = "2026-08-27"; 
-    const endDate = "2026-08-31"; 
+    const startDate = "2026-09-01"; 
+    const endDate = "2026-09-15"; 
     const fromDate = startDate;
     const toDate = endDate;
 
