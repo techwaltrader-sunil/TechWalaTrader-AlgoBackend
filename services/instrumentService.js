@@ -735,5 +735,98 @@ const getOptionSecurityId = (baseSymbol, spotPrice, strikeCriteria, strikeType, 
     };
 };
 
+
+// 🔥 NAYA FUNCTION: Option Chain ke 210 Tokens (±2600 points) nikalne ke liye
+const getOptionChainTokens = (baseSymbol, expiryDate, spotPrice) => {
+    // console.log(`getOptionChainTokens called with spotPrice: ${spotPrice}`);
+    
+    let targetBase = String(baseSymbol).toUpperCase().replace(' 50', '').trim();
+    if (targetBase === "NIFTY BANK") targetBase = "BANKNIFTY";
+    else if (targetBase === "NIFTY FIN SERVICE") targetBase = "FINNIFTY";
+    else if (targetBase === "NIFTY MID SELECT") targetBase = "MIDCPNIFTY";
+
+    const step = getStrikeStep(targetBase);
+    const atmStrike = Math.round(spotPrice / step) * step;
+
+    // ±2600 Points ki range
+    const minStrike = atmStrike - 2600;
+    const maxStrike = atmStrike + 2600;
+
+    // nfoInstruments (RAM) se matching strikes filter karna
+    const matches = nfoInstruments.filter(inst => {
+        if (inst.instrumentType !== 'OPTIDX') return false; 
+        if (inst.strike < minStrike || inst.strike > maxStrike) return false; 
+        
+        const ts = inst.tradingSymbol;
+        if (!ts.startsWith(targetBase + "-")) return false; 
+        if (!inst.expiry.startsWith(expiryDate)) return false; 
+        
+        return true;
+    });
+
+    // 🎯 THE SILENT KILLER FIX: Dhan WebSocket expects "NSE_FNO" (not OPTIDX)
+    const isBSE = targetBase === "SENSEX" || targetBase === "BANKEX";
+    const exchangeSeg = isBSE ? "BSE_FNO" : "NSE_FNO";
+
+    return matches.map(opt => ({
+        ExchangeSegment: exchangeSeg, // 👈 🎯 यहाँ OPTIDX की जगह NSE_FNO कर दिया!
+        SecurityId: opt.id.toString()
+    }));
+};
+
+// 🔥 NAYA FUNCTION: Table ka dhancha (Skeleton)
+// 🎯 THE FIX: Bracket me spotPrice add kiya gaya hai
+const getOptionChainSkeleton = (baseSymbol, expiryDate, spotPrice) => { 
+    let targetBase = String(baseSymbol).toUpperCase().replace(' 50', '').trim();
+    if (targetBase === "NIFTY BANK") targetBase = "BANKNIFTY";
+
+    const step = getStrikeStep(targetBase);
+    
+    // 🎯 THE FIX: spotPrice ab upar se aayega, error nahi aayega
+    const validSpot = (spotPrice && spotPrice > 0) ? spotPrice : 23200; 
+    const atmStrike = Math.round(validSpot / step) * step;
+
+    const minStrike = atmStrike - 2600;
+    const maxStrike = atmStrike + 2600;
+
+    const matches = nfoInstruments.filter(inst => {
+        if (inst.instrumentType !== 'OPTIDX') return false;
+        if (inst.strike < minStrike || inst.strike > maxStrike) return false; 
+
+        const ts = inst.tradingSymbol;
+        if (!ts.startsWith(targetBase + "-")) return false; 
+        if (!inst.expiry.startsWith(expiryDate)) return false; 
+        return true;
+    });
+
+    const chainMap = {};
+    matches.forEach(inst => {
+        const strike = inst.strike;
+        if (!chainMap[strike]) {
+            chainMap[strike] = { 
+                strikePrice: strike, strike: strike, 
+                CE: { ltp: 0, volume: 0, oi: 0, oiChg: 0, token: '' }, 
+                PE: { ltp: 0, volume: 0, oi: 0, oiChg: 0, token: '' } 
+            };
+        }
+        const isCE = inst.tradingSymbol.endsWith('CE') || inst.customSymbol.endsWith('CE');
+        if (isCE) {
+            chainMap[strike].CE.token = inst.id.toString();
+        } else {
+            chainMap[strike].PE.token = inst.id.toString();
+        }
+    });
+
+    return Object.values(chainMap).sort((a, b) => a.strikePrice - b.strikePrice);
+};
+
 // 🔥 MODULE EXPORTS ME GET_FUTURE_SECURITY_ID ADD KIYA GAYA HAI
-module.exports = { downloadAndParseInstruments, getOptionSecurityId, getStrikeStep, getFutureSecurityId, sleep};
+module.exports = { 
+    downloadAndParseInstruments, 
+    getOptionSecurityId, 
+    getStrikeStep, 
+    getFutureSecurityId, 
+    sleep,
+    getOptionChainTokens,
+    getOptionChainSkeleton
+};

@@ -367,8 +367,8 @@ async function runJugad() {
         process.exit();
     }
 
-    const startDate = "2026-09-01"; 
-    const endDate = "2026-09-15"; 
+    const startDate = "2026-09-23";
+    const endDate = "2026-09-24"; 
     const fromDate = startDate;
     const toDate = endDate;
 
@@ -391,7 +391,7 @@ async function runJugad() {
                 
                 for (let i = 0; i < chartData.timestamp.length; i++) {
                     // 🎯 FIX: Epoch टाइमस्टैम्प में 60 सेकंड जोड़कर उसे 1 मिनट आगे शिफ्ट किया गया है
-                    let date = new Date((chartData.timestamp[i] + 60) * 1000);
+                    let date = new Date(chartData.timestamp[i] * 1000);
                     
                     const query = `
                         INSERT INTO historical_candles (symbol, timestamp, open, high, low, close, volume) 
