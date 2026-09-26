@@ -1841,21 +1841,3 @@ setInterval(async () => {
     }
 }, 1500);
 
-
-
-// // 🛠️ DUMMY TICK GENERATOR (सिर्फ मार्केट बंद होने पर टेस्टिंग के लिए)
-// // जब असली मार्केट में टेस्ट करना हो, तो इसे डिलीट या कमेंट कर देना!
-// setInterval(() => {
-//     if (!global.io) return;
-    
-//     // 24100 के आस-पास का एक रैंडम डमी प्राइस बनाना
-//     const dummyLtp = 24100 + (Math.random() * 40 - 20); 
-    
-//     // '13' NIFTY 50 का टोकन है
-//     global.io.emit('live-spot-update', { symbol: '13', ltp: dummyLtp }); 
-    
-//     // BankNifty के लिए '25'
-//     const dummyBankNiftyLtp = 51000 + (Math.random() * 100 - 50);
-//     global.io.emit('live-spot-update', { symbol: '25', ltp: dummyBankNiftyLtp });
-
-// }, 1000); // हर 1 सेकंड में डेटा भेजेगा
